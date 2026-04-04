@@ -1,0 +1,6 @@
+[submodule "src/maxon_epos4_ros2"]
+	path = src/maxon_epos4_ros2
+	url = https://github.com/MattMax319/maxon_epos4_ros2.git
+[submodule "src/external/maxon_epos4_ros2"]
+	path = src/external/maxon_epos4_ros2
+	url = https://github.com/MattMax319/maxon_epos4_ros2.git

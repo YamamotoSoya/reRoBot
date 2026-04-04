@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   reRobot:
-    container_name: reRobot_env
+    container_name: reRoBot_env
     network_mode: host
     build:
       context: .
