@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  reRobot:
+    container_name: reRobot_env
+    network_mode: host
+    build:
+      context: .
+      dockerfile: Dockerfile
+    tty: true
+    stdin_open: true
+    environment:
+      - DISPLAY=${DISPLAY}
+      - QT_X11_NO_MITSHM=1
+    volumes:
+      - ./src:/workspace/src
+      - ros_build:/workspace/build
+      - ros_install:/workspace/install
+      - ros_log:/workspace/log
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    command: bash
+
+volumes:
+  ros_build:
+  ros_install:
+  ros_log:
