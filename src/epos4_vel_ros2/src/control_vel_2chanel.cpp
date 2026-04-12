@@ -33,7 +33,7 @@ class Epos4_Control2_Node : public rclcpp::Node{
 
             m1_subscription_ = create_subscription<sensor_msgs::msg::JointState>(
                 "/motor1/cia402_device_1/joint_states", 10,
-                std::bind(&Epos4_Vel_Node::jointStateCallback_m1, this, std::placeholders::_1));
+                std::bind(&Epos4_Control2_Node::jointStateCallback_m1, this, std::placeholders::_1));
 
 
             // motor2
@@ -50,14 +50,19 @@ class Epos4_Control2_Node : public rclcpp::Node{
 
             m2_subscription_ = create_subscription<sensor_msgs::msg::JointState>(
                 "/motor2/cia402_device_1/joint_states", 10,
-                std::bind(&Epos4_Vel_Node::jointStateCallback_m2, this, std::placeholders::_1));
+                std::bind(&Epos4_Control2_Node::jointStateCallback_m2, this, std::placeholders::_1));
 
             // initializing and conection
             topic_timer_ = this->create_wall_timer(10ms, std::bind(&Epos4_Control2_Node::timer_callback, this));
 
             RCLCPP_INFO(this->get_logger(), "Auto-initializing EPOS4...");
-            call_trigger_service(client_driver_init_, "init");
-            call_trigger_service(client_driver_enable_, "enable");
+            call_trigger_service(m1_client_driver_init_, "init");
+            call_trigger_service(m1_client_driver_enable_, "enable");
+            call_trigger_service(m1_client_driver_csv_mode_, "cyclic_velocity_mode");
+            call_trigger_service(m2_client_driver_init_, "init");
+            call_trigger_service(m2_client_driver_enable_, "enable");
+            call_trigger_service(m2_client_driver_csv_mode_, "cyclic_velocity_mode");
+            
 
             input_thread_ = std::thread(&Epos4_Control2_Node::input_loop, this);
             
@@ -70,7 +75,7 @@ class Epos4_Control2_Node : public rclcpp::Node{
             display_menu();
         }
 
-        ~Epos4_Vel_Node()
+        ~Epos4_Control2_Node()
         {
             if (input_thread_.joinable())
             {
@@ -81,6 +86,7 @@ class Epos4_Control2_Node : public rclcpp::Node{
     private:
 
         // motor1
+        double m1_value_ = 0.0;
         bool js_arrived_m1_ = false;
         rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr m1_clientdriver_init_;
         rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr m1_clientdriver_halt_;
@@ -101,6 +107,7 @@ class Epos4_Control2_Node : public rclcpp::Node{
         std::thread m1_input_thread_;
 
         // motor2
+        double m2_value_ = 0.0;
         bool js_arrived_m2_ = false;
         rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr m2_client_driver_init_;
         rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr m2_clientdriver_halt_;
@@ -122,7 +129,8 @@ class Epos4_Control2_Node : public rclcpp::Node{
 
         void shutdown_node(){
             RCLCPP_INFO(get_logger(), "Sending disable command before exit...");
-            call_trigger_service(client_driver_disable_, "disable");
+            call_trigger_service(m1_client_driver_disable_, "disable");
+            call_trigger_service(m2_client_driver_disable_, "disable");
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
             RCLCPP_INFO(get_logger(), "Exit node ");
@@ -131,12 +139,17 @@ class Epos4_Control2_Node : public rclcpp::Node{
 
         void timer_callback(double value)
         {
-            auto tpdo_msg = canopen_interfaces::msg::COData();
-            tpdo_msg.index = 0x60FF;
-            tpdo_msg.subindex = 0x00;
-            tpdo_msg.data = static_cast<int>(value);
-            tpdo_publisher_->publish(tpdo_msg);
+            auto m1_msg = canopen_interfaces::msg::codata();
+            m1_msg.index = 0x60ff;
+            m1_msg.subindex = 0x00;
+            m1_msg.data = static_cast<int>(m1_value_);
+            m1_tpdo_publisher_->publish(m1_msg);
             
+            auto m2_msg = canopen_interfaces::msg::codata();
+            m2_msg.index = 0x60ff;
+            m2_msg.subindex = 0x00;
+            m2_msg.data = static_cast<int>(m2_value_);
+            m2_tpdo_publisher_->publish(m2_msg);
         }
 
         void jointStateCallback_m1(const sensor_msgs::msg::JointState::SharedPtr msg)
@@ -196,15 +209,37 @@ class Epos4_Control2_Node : public rclcpp::Node{
         void display_menu()
         {
             RCLCPP_INFO(get_logger(), "MENU");
-            RCLCPP_INFO(get_logger(), "1 - driver init");
-            RCLCPP_INFO(get_logger(), "2 - driver halt");
-            RCLCPP_INFO(get_logger(), "3 - driver enable");
-            RCLCPP_INFO(get_logger(), "4 - driver disable");
-            RCLCPP_INFO(get_logger(), "5 - velocity mode");
-            RCLCPP_INFO(get_logger(), "6 - set Target velocity ");
-            RCLCPP_INFO(get_logger(), "7 - get Position Actual Value");
-            RCLCPP_INFO(get_logger(), "8 - cyclic velocity mode");
-            RCLCPP_INFO(get_logger(), "9 - Exit");
+            RCLCPP_INFO(get_logger(), "w - UP");
+            RCLCPP_INFO(get_logger(), "s - DOWN");
+            RCLCPP_INFO(get_logger(), "q - Exit");
+        }
+
+        void input_loop(){
+            float key;
+            float max_speed = 99999.9;
+
+            while (key != "q"){
+                std::cin >> key;
+
+                if(key == "w"){
+                    m1_value_ += 10;
+                    m2_value_ += 10;
+                    if(m1_value_ > max_speed) m1_value_ = max_speed;
+                    if(m2_value_ > max_speed) m2_value_ = max_speed;
+                }else if(key == "s"){
+                    m1_value_ -= 10;
+                    m2_value_ -= 10;
+                    if(m1_value_ < max_speed) m1_value_ = -1*max_speed;
+                    if(m2_value_ < max_speed) m2_value_ = -1*max_speed;
+                }
+
+                RCLCPP_INFO(get_logger(), "Input Value = m1:%f m2:%f", m1_value_,m2_value_);
+                RCLCPP_INFO(get_logger(), "Position Actual Value = m1:%f m2:%f", joint_state_m1_.position[0],joint_state_m2_.position[0]);
+
+
+            }
+            RCLCPP_INFO(get_logger(), "Exiting...");
+            shutdown_node();
         }
 
     }
