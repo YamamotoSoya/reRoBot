@@ -21,8 +21,18 @@ ament_target_dependencies(epos4_vel
   canopen_interfaces
 )
 
+add_executable(control_vel_2chanel src/control_vel_2chanel.cpp)
+ament_target_dependencies(control_vel_2chanel
+  rclcpp
+  std_msgs
+  std_srvs
+  sensor_msgs
+  canopen_interfaces
+)
+
 install(TARGETS
   epos4_vel
+  control_vel_2chanel
   DESTINATION lib/${PROJECT_NAME}
 )
 
