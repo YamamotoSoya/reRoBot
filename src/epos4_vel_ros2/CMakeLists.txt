@@ -31,8 +31,8 @@ ament_target_dependencies(control_vel_2chanel
 )
 
 install(TARGETS
-  epos4_vel
-  control_vel_2chanel
+  epos4_vel_test
+  2chanel_test
   DESTINATION lib/${PROJECT_NAME}
 )
 

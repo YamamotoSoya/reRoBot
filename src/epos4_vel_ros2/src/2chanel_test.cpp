@@ -128,6 +128,8 @@ private:
 
     void shutdown_node()
     {
+        m1_value_ = 0.0;
+        m2_value_ = 0.0;
         RCLCPP_INFO(get_logger(), "Sending disable command before exit...");
         call_trigger_service(m1_client_driver_disable_, "disable");
         call_trigger_service(m2_client_driver_disable_, "disable");
@@ -237,9 +239,9 @@ private:
             {
                 m1_value_ -= 10;
                 m2_value_ -= 10;
-                if (m1_value_ < max_speed)
+                if (m1_value_ < -1 * max_speed)
                     m1_value_ = -1 * max_speed;
-                if (m2_value_ < max_speed)
+                if (m2_value_ < -1 * max_speed)
                     m2_value_ = -1 * max_speed;
             }
 
