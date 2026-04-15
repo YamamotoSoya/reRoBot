@@ -68,7 +68,6 @@ public:
         call_trigger_service(m2_client_driver_enable_, "enable");
         call_trigger_service(m2_client_driver_csv_mode_, "cyclic_velocity_mode");
 
-        input_thread_ = std::thread(&Epos4_Control2_Node::input_loop, this);
 
         RCLCPP_INFO(get_logger(), "********************************************");
         RCLCPP_INFO(get_logger(), "maxon EPOS4 Control (velocity)");
@@ -76,15 +75,11 @@ public:
         RCLCPP_INFO(get_logger(), "run first bus_config_cia402_epos4_vel.launch.py");
         RCLCPP_INFO(get_logger(), "********************************************");
 
-        display_menu();
     }
 
     ~Epos4_Control2_Node()
     {
-        if (input_thread_.joinable())
-        {
-            input_thread_.join();
-        }
+        shutdown_node();
     }
 
 private:
@@ -133,7 +128,6 @@ private:
 
     //
     rclcpp::TimerBase::SharedPtr topic_timer_;
-    std::thread input_thread_;
 
     void shutdown_node()
     {
@@ -165,13 +159,15 @@ private:
         if (js_arrived_m1_ && js_arrived_m2_ &&
             !m1_joint_state_.position.empty() && !m2_joint_state_.position.empty())
         {
+            int count_enc_m1 = m1_joint_state_.position[0];
+            int count_enc_m2 = m1_joint_state_.position[0]; 
             auto encoder_msg = sensor_msgs::msg::JointState();
             encoder_msg.header.stamp = this->now();
             encoder_msg.name = {"m1_wheel", "m2_wheel"};
             encoder_msg.position = {m1_joint_state_.position[0], m2_joint_state_.position[0]};
 
             if (!m1_joint_state_.velocity.empty() && !m2_joint_state_.velocity.empty())
-            {
+            {//velocity topic 
                 encoder_msg.velocity = {m1_joint_state_.velocity[0], m2_joint_state_.velocity[0]};
             }
 
@@ -183,7 +179,7 @@ private:
     {
         double x = msg->linear.x;
         double yaw = msg->angular.z;
-        //逆運動学をここに記載
+        //Write IK here!!
         m1_value_ = 0.0;
         m2_value_ = 0.0;
     }
@@ -229,67 +225,6 @@ private:
             std::bind(&Epos4_Control2_Node::trigger_callback, this, std::placeholders::_1));
     }
 
-    void target_callback(rclcpp::Client<canopen_interfaces::srv::COTargetDouble>::SharedFuture future)
-    {
-        auto response = future.get();
-        if (response->success)
-        {
-            RCLCPP_INFO(get_logger(), "Target Service call successful");
-        }
-        else
-        {
-            RCLCPP_ERROR(get_logger(), "Target Service call failed");
-        }
-    }
-
-    void display_menu()
-    {
-        RCLCPP_INFO(get_logger(), "MENU");
-        RCLCPP_INFO(get_logger(), "w - UP");
-        RCLCPP_INFO(get_logger(), "s - DOWN");
-        RCLCPP_INFO(get_logger(), "q - Exit");
-    }
-
-    void input_loop()
-    {
-        char key;
-        std::cin >> key;
-        float max_speed = 99999.9;
-
-        while (key != 'q')
-        {
-            std::cin >> key;
-
-            if (key == 'w')
-            {
-                m1_value_ += 10;
-                m2_value_ += 10;
-                if (m1_value_ > max_speed)
-                    m1_value_ = max_speed;
-                if (m2_value_ > max_speed)
-                    m2_value_ = max_speed;
-            }
-            else if (key == 's')
-            {
-                m1_value_ -= 10;
-                m2_value_ -= 10;
-                if (m1_value_ < -1 * max_speed)
-                    m1_value_ = -1 * max_speed;
-                if (m2_value_ < -1 * max_speed)
-                    m2_value_ = -1 * max_speed;
-            }
-
-            if (js_arrived_m1_ && js_arrived_m2_)
-            {
-                RCLCPP_INFO(get_logger(), "Input Value = m1:%f m2:%f", m1_value_, m2_value_);
-                RCLCPP_INFO(get_logger(), "Position Actual Value = m1:%f m2:%f", m1_joint_state_.position[0], m2_joint_state_.position[0]);
-                js_arrived_m1_ = false;
-                js_arrived_m2_ = false;
-            }
-        }
-        RCLCPP_INFO(get_logger(), "Exiting...");
-        shutdown_node();
-    }
 };
 
 int main(int argc, char **argv)
