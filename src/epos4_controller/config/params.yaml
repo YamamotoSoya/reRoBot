@@ -1,0 +1,4 @@
+epos4_controller_node:
+  ros_parameters:
+    tread_width: 0.41 #[m]
+    tire_diam: 0.15   #[m]

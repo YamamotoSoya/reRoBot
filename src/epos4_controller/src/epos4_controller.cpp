@@ -1,4 +1,5 @@
 #include "rclcpp/rclcpp.hpp"
+#include "geometry_msgs/msg/twist.hpp"
 #include "std_msgs/msg/float64.hpp"
 #include "std_srvs/srv/trigger.hpp"
 #include "sensor_msgs/msg/joint_state.hpp"
@@ -16,7 +17,7 @@ using namespace std::chrono_literals;
 class Epos4_Control2_Node : public rclcpp::Node
 {
 public:
-    Epos4_Control2_Node() : Node("epos4_cmd_vel_node")
+    Epos4_Control2_Node() : Node("epos4_controller_node")
     {
 
         // motor1
@@ -56,6 +57,12 @@ public:
             std::bind(&Epos4_Control2_Node::cmdSpeedCallback, this, std::placeholders::_1));
 
         encoder_publisher_ = this->create_publisher<sensor_msgs::msg::JointState>("/robot_encoder_states", 10);
+
+        //YAMLparams
+        declare_parameter("tread_width",0.41);
+        declare_parameter("tire_diam",0.15);
+        tread_width_ = get_paramater("tread_width").as_float();
+        tire_diam_ = get_parametr("tire_diam").as_float();
 
         // initializing and conection
         topic_timer_ = this->create_wall_timer(10ms, std::bind(&Epos4_Control2_Node::timer_callback, this));
@@ -129,6 +136,10 @@ private:
     //
     rclcpp::TimerBase::SharedPtr topic_timer_;
 
+    //YAMLparameter
+    float tread_width_;
+    float tire_diam_;
+
     void shutdown_node()
     {
         m1_value_ = 0.0;
@@ -175,7 +186,7 @@ private:
         }
     }
 
-    void cmdSpeedCallback(const std_msgs::msg::Float64::SharedPtr msg)
+    void cmdSpeedCallback(const geometry_msgs::msg::Twist::SharedPtr msg)
     {
         double x = msg->linear.x;
         double yaw = msg->angular.z;
