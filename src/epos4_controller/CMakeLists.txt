@@ -12,6 +12,9 @@ find_package(std_srvs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(canopen_interfaces REQUIRED)
+find_package(nav_msgs REQUIRED)
+find_package(tf2 REQUIRED)
+find_package(tf2_ros REQUIRED)
 
 
 add_executable(epos4_controller src/epos4_controller.cpp)
@@ -24,8 +27,19 @@ ament_target_dependencies(epos4_controller
   canopen_interfaces
 )
 
+add_executable(epos4_odmetry src/epos4_odmetry.cpp)
+ament_target_dependencies(epos4_odmetry
+  rclcpp
+  sensor_msgs
+  geometry_msgs
+  nav_msgs
+  tf2
+  tf2_ros
+)
+
 install(TARGETS
   epos4_controller
+  epos4_odmetry
   DESTINATION lib/${PROJECT_NAME}
 )
 
