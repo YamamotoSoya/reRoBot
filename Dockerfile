@@ -11,6 +11,10 @@ RUN apt-get update && apt-get install -y \
     nano \
     vim \
     ros-jazzy-ros2-control \
+    # --- Visualization ---
+    ros-jazzy-rviz2 \
+    ros-jazzy-rqt \
+    ros-jazzy-rqt-common-plugins \
     # --- CANopen ---
     can-utils \
     ros-jazzy-canopen \
