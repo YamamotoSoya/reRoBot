@@ -18,6 +18,7 @@ public:
     {
         declare_parameter("tread_width", 0.41);
         declare_parameter("tire_diam", 0.15);
+        declare_parameter("gear_ratio", 1.0);
         declare_parameter("odom_frame_id", std::string("odom"));
         declare_parameter("base_frame_id", std::string("base_link"));
         declare_parameter("publish_tf", true);
@@ -26,6 +27,7 @@ public:
 
         tread_width_ = get_parameter("tread_width").as_double();
         wheel_radius_ = get_parameter("tire_diam").as_double() * 0.5;
+        gear_ratio_ = get_parameter("gear_ratio").as_double();
         odom_frame_id_ = get_parameter("odom_frame_id").as_string();
         base_frame_id_ = get_parameter("base_frame_id").as_string();
         publish_tf_ = get_parameter("publish_tf").as_bool();
@@ -51,8 +53,10 @@ private:
             return;
         }
 
-        double pos_left = msg->position[0];
-        double pos_right = msg->position[1];
+        // motor-side position -> wheel-side position via gear ratio
+        const double inv_gear = (gear_ratio_ != 0.0) ? (1.0 / gear_ratio_) : 1.0;
+        double pos_left = msg->position[0] * inv_gear;
+        double pos_right = msg->position[1] * inv_gear;
         if (invert_left_)  pos_left  = -pos_left;
         if (invert_right_) pos_right = -pos_right;
 
@@ -93,8 +97,8 @@ private:
         double v_lin = 0.0;
         double v_ang = 0.0;
         if (msg->velocity.size() >= 2) {
-            double w_left = msg->velocity[0];
-            double w_right = msg->velocity[1];
+            double w_left = msg->velocity[0] * inv_gear;
+            double w_right = msg->velocity[1] * inv_gear;
             if (invert_left_)  w_left  = -w_left;
             if (invert_right_) w_right = -w_right;
             double v_l = w_left * wheel_radius_;
@@ -150,6 +154,7 @@ private:
 
     double tread_width_;
     double wheel_radius_;
+    double gear_ratio_;
     std::string odom_frame_id_;
     std::string base_frame_id_;
     bool publish_tf_;

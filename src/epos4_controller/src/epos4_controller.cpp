@@ -32,9 +32,9 @@ public:
         m1_client_target_ = this->create_client<canopen_interfaces::srv::COTargetDouble>("/motor1/cia402_device_1/target");
         m1_tpdo_publisher_ = this->create_publisher<canopen_interfaces::msg::COData>("/motor1/cia402_device_1/tpdo", 10);
 
-        m1_subscription_ = create_subscription<sensor_msgs::msg::JointState>(
-            "/motor1/cia402_device_1/joint_states", 10,
-            std::bind(&Epos4_Control2_Node::jointStateCallback_m1, this, std::placeholders::_1));
+        // m1_subscription_ = create_subscription<sensor_msgs::msg::JointState>(
+        //     "/motor1/cia402_device_1/joint_states", 10,
+        //     std::bind(&Epos4_Control2_Node::jointStateCallback_m1, this, std::placeholders::_1));
 
         // motor2
         m2_client_driver_init_ = this->create_client<std_srvs::srv::Trigger>("/motor2/cia402_device_2/init");
@@ -48,21 +48,27 @@ public:
         m2_client_target_ = this->create_client<canopen_interfaces::srv::COTargetDouble>("/motor2/cia402_device_2/target");
         m2_tpdo_publisher_ = this->create_publisher<canopen_interfaces::msg::COData>("/motor2/cia402_device_2/tpdo", 10);
 
-        m2_subscription_ = create_subscription<sensor_msgs::msg::JointState>(
-            "/motor2/cia402_device_2/joint_states", 10,
-            std::bind(&Epos4_Control2_Node::jointStateCallback_m2, this, std::placeholders::_1));
+        // m2_subscription_ = create_subscription<sensor_msgs::msg::JointState>(
+        //     "/motor2/cia402_device_2/joint_states", 10,
+        //     std::bind(&Epos4_Control2_Node::jointStateCallback_m2, this, std::placeholders::_1));
 
         cmd_speed_subscription_ = this->create_subscription<geometry_msgs::msg::Twist>(
             "/robot_speed_cmd", 10,
             std::bind(&Epos4_Control2_Node::cmdSpeedCallback, this, std::placeholders::_1));
 
-        encoder_publisher_ = this->create_publisher<sensor_msgs::msg::JointState>("/robot_encoder_states", 10);
+        // encoder_publisher_ = this->create_publisher<sensor_msgs::msg::JointState>("/robot_encoder_states", 10);
 
         //YAMLparams
         declare_parameter("tread_width",0.41);
         declare_parameter("tire_diam",0.15);
-        tread_width_ = get_paramater("tread_width").as_float();
-        tire_diam_ = get_parametr("tire_diam").as_float();
+        declare_parameter("gear_ratio", 1.0);
+        declare_parameter("invert_left", false);
+        declare_parameter("invert_right", false);
+        tread_width_ = get_parameter("tread_width").as_double();
+        tire_diam_ = get_parameter("tire_diam").as_double();
+        gear_ratio_ = get_parameter("gear_ratio").as_double();
+        invert_left_ = get_parameter("invert_left").as_bool();
+        invert_right_ = get_parameter("invert_right").as_bool();
 
         // initializing and conection
         topic_timer_ = this->create_wall_timer(10ms, std::bind(&Epos4_Control2_Node::timer_callback, this));
@@ -92,7 +98,7 @@ public:
 private:
     // motor1
     double m1_value_ = 0.0;
-    bool js_arrived_m1_ = false;
+    // bool js_arrived_m1_ = false;
     rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr m1_client_driver_init_;
     rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr m1_client_driver_halt_;
     rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr m1_client_driver_recover_;
@@ -106,13 +112,13 @@ private:
 
     rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr m1_publisher_;
     rclcpp::Publisher<canopen_interfaces::msg::COData>::SharedPtr m1_tpdo_publisher_;
-    rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr m1_subscription_;
+    // rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr m1_subscription_;
 
-    sensor_msgs::msg::JointState m1_joint_state_;
+    // sensor_msgs::msg::JointState m1_joint_state_;
 
     // motor2
     double m2_value_ = 0.0;
-    bool js_arrived_m2_ = false;
+    // bool js_arrived_m2_ = false;
     rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr m2_client_driver_init_;
     rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr m2_client_driver_halt_;
     rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr m2_client_driver_recover_;
@@ -126,19 +132,22 @@ private:
 
     rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr m2_publisher_;
     rclcpp::Publisher<canopen_interfaces::msg::COData>::SharedPtr m2_tpdo_publisher_;
-    rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr m2_subscription_;
+    // rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr m2_subscription_;
 
     rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_speed_subscription_;
-    rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr encoder_publisher_;
+    // rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr encoder_publisher_;
 
-    sensor_msgs::msg::JointState m2_joint_state_;
+    // sensor_msgs::msg::JointState m2_joint_state_;
 
     //
     rclcpp::TimerBase::SharedPtr topic_timer_;
 
     //YAMLparameter
-    float tread_width_;
-    float tire_diam_;
+    double tread_width_;
+    double tire_diam_;
+    double gear_ratio_;
+    bool invert_left_;
+    bool invert_right_;
 
     void shutdown_node()
     {
@@ -167,23 +176,23 @@ private:
         m2_msg.data = static_cast<int>(m2_value_);
         m2_tpdo_publisher_->publish(m2_msg);
 
-        if (js_arrived_m1_ && js_arrived_m2_ &&
-            !m1_joint_state_.position.empty() && !m2_joint_state_.position.empty())
-        {
-            int count_enc_m1 = m1_joint_state_.position[0];
-            int count_enc_m2 = m1_joint_state_.position[0]; 
-            auto encoder_msg = sensor_msgs::msg::JointState();
-            encoder_msg.header.stamp = this->now();
-            encoder_msg.name = {"m1_wheel", "m2_wheel"};
-            encoder_msg.position = {m1_joint_state_.position[0], m2_joint_state_.position[0]};
-
-            if (!m1_joint_state_.velocity.empty() && !m2_joint_state_.velocity.empty())
-            {//velocity topic 
-                encoder_msg.velocity = {m1_joint_state_.velocity[0], m2_joint_state_.velocity[0]};
-            }
-
-            encoder_publisher_->publish(encoder_msg);
-        }
+        // if (js_arrived_m1_ && js_arrived_m2_ &&
+        //     !m1_joint_state_.position.empty() && !m2_joint_state_.position.empty())
+        // {
+        //     int count_enc_m1 = m1_joint_state_.position[0];
+        //     int count_enc_m2 = m1_joint_state_.position[0];
+        //     auto encoder_msg = sensor_msgs::msg::JointState();
+        //     encoder_msg.header.stamp = this->now();
+        //     encoder_msg.name = {"m1_wheel", "m2_wheel"};
+        //     encoder_msg.position = {m1_joint_state_.position[0], m2_joint_state_.position[0]};
+        //
+        //     if (!m1_joint_state_.velocity.empty() && !m2_joint_state_.velocity.empty())
+        //     {//velocity topic
+        //         encoder_msg.velocity = {m1_joint_state_.velocity[0], m2_joint_state_.velocity[0]};
+        //     }
+        //
+        //     encoder_publisher_->publish(encoder_msg);
+        // }
     }
 
     void cmdSpeedCallback(const geometry_msgs::msg::Twist::SharedPtr msg)
@@ -191,21 +200,29 @@ private:
         double x = msg->linear.x;
         double yaw = msg->angular.z;
         //Write IK here!!
-        m1_value_ = 0.0;
-        m2_value_ = 0.0;
+        // differential-drive inverse kinematics: body twist -> per-wheel linear speed [m/s]
+        double v_left = x - yaw * tread_width_ * 0.5;  
+        double v_right = x + yaw * tread_width_ * 0.5; 
+        // wheel linear speed [m/s] -> wheel rotational speed [rpm] (EPOS4 target velocity unit)
+        double wheel_circumference = M_PI * tire_diam_; 
+        // wheel rpm -> motor rpm via gear ratio (motor rpm = wheel rpm * gear_ratio)
+        double rpm_left = (v_left / wheel_circumference) * 60.0 * gear_ratio_;
+        double rpm_right = (v_right / wheel_circumference) * 60.0 * gear_ratio_;
+        m1_value_ = invert_left_ ? -rpm_left : rpm_left;
+        m2_value_ = invert_right_ ? -rpm_right : rpm_right;
     }
 
-    void jointStateCallback_m1(const sensor_msgs::msg::JointState::SharedPtr msg)
-    {
-        m1_joint_state_ = *msg;
-        js_arrived_m1_ = true;
-    }
+    // void jointStateCallback_m1(const sensor_msgs::msg::JointState::SharedPtr msg)
+    // {
+    //     m1_joint_state_ = *msg;
+    //     js_arrived_m1_ = true;
+    // }
 
-    void jointStateCallback_m2(const sensor_msgs::msg::JointState::SharedPtr msg)
-    {
-        m2_joint_state_ = *msg;
-        js_arrived_m2_ = true;
-    }
+    // void jointStateCallback_m2(const sensor_msgs::msg::JointState::SharedPtr msg)
+    // {
+    //     m2_joint_state_ = *msg;
+    //     js_arrived_m2_ = true;
+    // }
 
     void trigger_callback(rclcpp::Client<std_srvs::srv::Trigger>::SharedFuture future)
     {
