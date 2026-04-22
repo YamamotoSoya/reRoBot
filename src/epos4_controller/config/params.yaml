@@ -2,3 +2,13 @@ epos4_controller_node:
   ros_parameters:
     tread_width: 0.41 #[m]
     tire_diam: 0.15   #[m]
+
+epos4_odometry_node:
+  ros_parameters:
+    tread_width: 0.41 #[m]
+    tire_diam: 0.15   #[m]
+    odom_frame_id: "odom"
+    base_frame_id: "base_link"
+    publish_tf: true
+    invert_left: false
+    invert_right: false

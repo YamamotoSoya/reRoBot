@@ -27,8 +27,8 @@ ament_target_dependencies(epos4_controller
   canopen_interfaces
 )
 
-add_executable(epos4_odmetry src/epos4_odmetry.cpp)
-ament_target_dependencies(epos4_odmetry
+add_executable(epos4_odometry src/epos4_odmetry.cpp)
+ament_target_dependencies(epos4_odometry
   rclcpp
   sensor_msgs
   geometry_msgs
@@ -39,8 +39,15 @@ ament_target_dependencies(epos4_odmetry
 
 install(TARGETS
   epos4_controller
-  epos4_odmetry
+  epos4_odometry
   DESTINATION lib/${PROJECT_NAME}
+)
+
+install(DIRECTORY
+  launch
+  config
+  urdf
+  DESTINATION share/${PROJECT_NAME}
 )
 
 if(BUILD_TESTING)
