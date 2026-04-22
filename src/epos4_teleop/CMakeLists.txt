@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.8)
-project(epos4_controller)
+project(epos4_teleop)
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
@@ -7,46 +7,23 @@ endif()
 
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
-find_package(std_msgs REQUIRED)
-find_package(std_srvs REQUIRED)
-find_package(sensor_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
-find_package(canopen_interfaces REQUIRED)
-find_package(nav_msgs REQUIRED)
-find_package(tf2 REQUIRED)
-find_package(tf2_ros REQUIRED)
+find_package(sensor_msgs REQUIRED)
 
-
-add_executable(epos4_controller src/epos4_controller.cpp)
-ament_target_dependencies(epos4_controller
+add_executable(teleop_keyboard src/teleop_keyboard.cpp)
+ament_target_dependencies(teleop_keyboard
   rclcpp
-  std_msgs
-  std_srvs
-  sensor_msgs
   geometry_msgs
-  canopen_interfaces
-)
-
-add_executable(epos4_odometry src/epos4_odometry.cpp)
-ament_target_dependencies(epos4_odometry
-  rclcpp
   sensor_msgs
-  geometry_msgs
-  nav_msgs
-  tf2
-  tf2_ros
 )
 
 install(TARGETS
-  epos4_controller
-  epos4_odometry
+  teleop_keyboard
   DESTINATION lib/${PROJECT_NAME}
 )
 
 install(DIRECTORY
-  launch
   config
-  urdf
   DESTINATION share/${PROJECT_NAME}
 )
 

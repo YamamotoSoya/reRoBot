@@ -1,0 +1,14 @@
+teleop_keyboard_node:
+  ros__parameters:
+    tire_diam: 0.15           # [m]
+    gear_ratio: 1.0           # motor_rev / wheel_rev
+    invert_left: false
+    invert_right: false
+    linear_step: 0.1          # [m/s]   per key press
+    angular_step: 0.3         # [rad/s] per key press
+    max_linear: 1.0           # [m/s]
+    max_angular: 2.0          # [rad/s]
+    cmd_topic: "/robot_speed_cmd"
+    m1_joint_topic: "/motor1/cia402_device_1/joint_states"
+    m2_joint_topic: "/motor2/cia402_device_2/joint_states"
+    publish_rate_hz: 20.0

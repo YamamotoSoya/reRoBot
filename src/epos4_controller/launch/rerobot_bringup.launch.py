@@ -2,7 +2,7 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import IncludeLaunchDescription
+from launch.actions import IncludeLaunchDescription, TimerAction
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions import Node
 
@@ -50,9 +50,17 @@ def generate_launch_description():
         output="screen",
     )
 
+    # Delay controller/odometry so the ros2_canopen device_manager has time to
+    # advertise /motor*/cia402_device_*/{init,enable,cyclic_velocity_mode}.
+    # Without this, the controller's constructor-time wait_for_service(1s) calls
+    # race the bus_config launch and silently fail, leaving the EPOS4s disabled.
+    delayed_nodes = TimerAction(
+        period=5.0,
+        actions=[epos4_controller_node, epos4_odometry_node],
+    )
+
     return LaunchDescription([
         bus_config,
-        epos4_controller_node,
-        epos4_odometry_node,
+        delayed_nodes,
         robot_state_publisher_node,
     ])
