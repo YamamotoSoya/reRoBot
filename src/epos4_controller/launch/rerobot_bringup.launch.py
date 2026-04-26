@@ -50,6 +50,19 @@ def generate_launch_description():
         output="screen",
     )
 
+    # claude: auto-start rviz2 with bundled preset (odom fixed frame,
+    # RobotModel / TF / Odometry displays). Not wrapped in TimerAction because
+    # rviz2 has no CANopen service dependency and its subscribers will pick up
+    # /odom and /tf as soon as the delayed nodes come online.
+    rviz_config = os.path.join(pkg_share, "rviz", "rerobot.rviz")  # claude
+    rviz_node = Node(                                              # claude
+        package="rviz2",                                           # claude
+        executable="rviz2",                                        # claude
+        name="rviz2",                                              # claude
+        arguments=["-d", rviz_config],                             # claude
+        output="screen",                                           # claude
+    )                                                              # claude
+
     # Delay controller/odometry so the ros2_canopen device_manager has time to
     # advertise /motor*/cia402_device_*/{init,enable,cyclic_velocity_mode}.
     # Without this, the controller's constructor-time wait_for_service(1s) calls
@@ -63,4 +76,5 @@ def generate_launch_description():
         bus_config,
         delayed_nodes,
         robot_state_publisher_node,
+        rviz_node,  # claude
     ])

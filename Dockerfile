@@ -15,6 +15,8 @@ RUN apt-get update && apt-get install -y \
     ros-jazzy-rviz2 \
     ros-jazzy-rqt \
     ros-jazzy-rqt-common-plugins \
+    ros-jazzy-rqt-tf-tree \
+    ros-jazzy-tf2-tools \
     # --- CANopen ---
     can-utils \
     ros-jazzy-canopen \

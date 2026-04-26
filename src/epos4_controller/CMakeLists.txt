@@ -47,6 +47,7 @@ install(DIRECTORY
   launch
   config
   urdf
+  rviz  # claude
   DESTINATION share/${PROJECT_NAME}
 )
 
