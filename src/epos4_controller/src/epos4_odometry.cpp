@@ -5,6 +5,10 @@
 #include "tf2/LinearMath/Quaternion.h"
 #include "tf2_ros/transform_broadcaster.h"
 
+#include "message_filters/subscriber.h"                       // claude_tire claude_odom claude_sync
+#include "message_filters/synchronizer.h"                     // claude_tire claude_odom claude_sync
+#include "message_filters/sync_policies/approximate_time.h"   // claude_tire claude_odom claude_sync
+
 #include <cmath>
 #include <memory>
 #include <string>
@@ -34,12 +38,23 @@ public:
         invert_left_ = get_parameter("invert_left").as_bool();
         invert_right_ = get_parameter("invert_right").as_bool();
 
-        encoder_subscription_ = create_subscription<sensor_msgs::msg::JointState>(
-            "/robot_encoder_states", 10,
-            std::bind(&Epos4OdometryNode::encoderCallback, this, std::placeholders::_1));
-
         odom_publisher_ = create_publisher<nav_msgs::msg::Odometry>("/odom", 10);
+        // claude_tire: /joint_states for robot_state_publisher (wheel-side angles)
+        joint_state_publisher_ =                                                                 // claude_tire
+            create_publisher<sensor_msgs::msg::JointState>("/joint_states", 10);                 // claude_tire
         tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
+
+        // claude_tire claude_odom claude_sync: subscribe both EPOS4 joint_states directly
+        // and pair them by stamp. PDO sync runs at 50 ms on both sides, so ApproximateTime
+        // collapses each pair into a single callback. Replaces the old single-topic
+        // /robot_encoder_states subscription.
+        m1_sub_.subscribe(this, "/motor1/cia402_device_1/joint_states");                         // claude_tire claude_odom claude_sync
+        m2_sub_.subscribe(this, "/motor2/cia402_device_2/joint_states");                         // claude_tire claude_odom claude_sync
+        sync_ = std::make_shared<Synchronizer>(SyncPolicy(10), m1_sub_, m2_sub_);                // claude_tire claude_odom claude_sync
+        sync_->setMaxIntervalDuration(rclcpp::Duration(0, 50 * 1000 * 1000));                    // claude_tire claude_odom claude_sync
+        sync_->registerCallback(                                                                 // claude_tire claude_odom claude_sync
+            std::bind(&Epos4OdometryNode::onJointStates, this,                                   // claude_tire claude_odom claude_sync
+                      std::placeholders::_1, std::placeholders::_2));                            // claude_tire claude_odom claude_sync
 
         RCLCPP_INFO(get_logger(),
             "EPOS4 odometry started (tread=%.3f m, wheel_radius=%.3f m)",
@@ -47,23 +62,34 @@ public:
     }
 
 private:
-    void encoderCallback(const sensor_msgs::msg::JointState::SharedPtr msg)
+    // claude_tire claude_odom claude_sync: type aliases for message_filters synchronizer
+    using JointStateMsg = sensor_msgs::msg::JointState;                                                  // claude_tire claude_odom claude_sync
+    using SyncPolicy = message_filters::sync_policies::ApproximateTime<JointStateMsg, JointStateMsg>;    // claude_tire claude_odom claude_sync
+    using Synchronizer = message_filters::Synchronizer<SyncPolicy>;                                      // claude_tire claude_odom claude_sync
+
+    // claude_tire claude_odom claude_sync: synchronizer callback. Receives a (left, right)
+    // pair already aligned by header.stamp from the two per-motor /motor*/cia402_device_*/joint_states.
+    void onJointStates(const JointStateMsg::ConstSharedPtr & left_msg,                                   // claude_tire claude_odom claude_sync
+                       const JointStateMsg::ConstSharedPtr & right_msg)                                  // claude_tire claude_odom claude_sync
     {
-        if (msg->position.size() < 2) {
+        if (left_msg->position.empty() || right_msg->position.empty()) {                                 // claude_tire claude_odom
             return;
         }
 
         // motor-side position -> wheel-side position via gear ratio
         const double inv_gear = (gear_ratio_ != 0.0) ? (1.0 / gear_ratio_) : 1.0;
-        double pos_left = msg->position[0] * inv_gear;
-        double pos_right = msg->position[1] * inv_gear;
+        double pos_left = left_msg->position[0] * inv_gear;                                              // claude_tire claude_odom
+        double pos_right = right_msg->position[0] * inv_gear;                                            // claude_tire claude_odom
         if (invert_left_)  pos_left  = -pos_left;
         if (invert_right_) pos_right = -pos_right;
 
-        rclcpp::Time stamp = msg->header.stamp;
+        rclcpp::Time stamp = left_msg->header.stamp;                                                     // claude_tire claude_odom
         if (stamp.nanoseconds() == 0) {
             stamp = this->now();
         }
+
+        // claude_tire: republish wheel-side /joint_states so robot_state_publisher can emit dynamic TF
+        publishWheelJointStates(stamp, pos_left, pos_right, left_msg, right_msg, inv_gear);              // claude_tire
 
         if (!initialized_) {
             prev_pos_left_ = pos_left;
@@ -96,9 +122,9 @@ private:
         // body-frame velocities
         double v_lin = 0.0;
         double v_ang = 0.0;
-        if (msg->velocity.size() >= 2) {
-            double w_left = msg->velocity[0] * inv_gear;
-            double w_right = msg->velocity[1] * inv_gear;
+        if (!left_msg->velocity.empty() && !right_msg->velocity.empty()) {                               // claude_odom
+            double w_left = left_msg->velocity[0] * inv_gear;                                            // claude_odom
+            double w_right = right_msg->velocity[0] * inv_gear;                                          // claude_odom
             if (invert_left_)  w_left  = -w_left;
             if (invert_right_) w_right = -w_right;
             double v_l = w_left * wheel_radius_;
@@ -148,8 +174,35 @@ private:
         last_stamp_ = stamp;
     }
 
-    rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr encoder_subscription_;
+    // claude_tire: emit JointState{m1_wheel, m2_wheel} on /joint_states so robot_state_publisher
+    // can produce dynamic TFs for the wheel links. Position is wheel-side angle (rad).
+    void publishWheelJointStates(const rclcpp::Time & stamp,                                             // claude_tire
+                                 double pos_left, double pos_right,                                      // claude_tire
+                                 const JointStateMsg::ConstSharedPtr & left_msg,                         // claude_tire
+                                 const JointStateMsg::ConstSharedPtr & right_msg,                        // claude_tire
+                                 double inv_gear)                                                        // claude_tire
+    {                                                                                                    // claude_tire
+        sensor_msgs::msg::JointState js;                                                                 // claude_tire
+        js.header.stamp = stamp;                                                                         // claude_tire
+        js.name = {"m1_wheel", "m2_wheel"};                                                              // claude_tire
+        js.position = {pos_left, pos_right};                                                             // claude_tire
+        if (!left_msg->velocity.empty() && !right_msg->velocity.empty()) {                               // claude_tire
+            double w_left = left_msg->velocity[0] * inv_gear;                                            // claude_tire
+            double w_right = right_msg->velocity[0] * inv_gear;                                          // claude_tire
+            if (invert_left_)  w_left  = -w_left;                                                        // claude_tire
+            if (invert_right_) w_right = -w_right;                                                       // claude_tire
+            js.velocity = {w_left, w_right};                                                             // claude_tire
+        }                                                                                                // claude_tire
+        joint_state_publisher_->publish(js);                                                             // claude_tire
+    }                                                                                                    // claude_tire
+
+    // claude_tire claude_odom claude_sync: replaces encoder_subscription_ with two
+    // message_filters subscribers + synchronizer (feeds both wheel-TF and odometry paths).
+    message_filters::Subscriber<JointStateMsg> m1_sub_;                                                  // claude_tire claude_odom claude_sync
+    message_filters::Subscriber<JointStateMsg> m2_sub_;                                                  // claude_tire claude_odom claude_sync
+    std::shared_ptr<Synchronizer> sync_;                                                                 // claude_tire claude_odom claude_sync
     rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_publisher_;
+    rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_state_publisher_;                   // claude_tire
     std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
 
     double tread_width_;

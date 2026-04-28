@@ -46,7 +46,8 @@ def generate_launch_description():
         executable="robot_state_publisher",
         name="robot_state_publisher",
         parameters=[{"robot_description": robot_description}],
-        remappings=[("/joint_states", "/robot_encoder_states")],
+        # claude_tire: removed remap to /robot_encoder_states; epos4_odometry now
+        # publishes /joint_states directly so RSP can emit dynamic wheel TFs.
         output="screen",
     )
 
@@ -55,13 +56,13 @@ def generate_launch_description():
     # rviz2 has no CANopen service dependency and its subscribers will pick up
     # /odom and /tf as soon as the delayed nodes come online.
     rviz_config = os.path.join(pkg_share, "rviz", "rerobot.rviz")  # claude
-    rviz_node = Node(                                              # claude
-        package="rviz2",                                           # claude
-        executable="rviz2",                                        # claude
-        name="rviz2",                                              # claude
-        arguments=["-d", rviz_config],                             # claude
-        output="screen",                                           # claude
-    )                                                              # claude
+    rviz_node = Node(                                              
+        package="rviz2",                                           
+        executable="rviz2",                                        
+        name="rviz2",                                              
+        arguments=["-d", rviz_config],                             
+        output="screen",                                           
+    )                                                              
 
     # Delay controller/odometry so the ros2_canopen device_manager has time to
     # advertise /motor*/cia402_device_*/{init,enable,cyclic_velocity_mode}.
@@ -76,5 +77,5 @@ def generate_launch_description():
         bus_config,
         delayed_nodes,
         robot_state_publisher_node,
-        rviz_node,  # claude
+        rviz_node,  
     ])
