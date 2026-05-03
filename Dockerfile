@@ -24,6 +24,10 @@ RUN apt-get update && apt-get install -y \
     ros-jazzy-canopen-proxy-driver \
     ros-jazzy-canopen-master-driver \
     ros-jazzy-canopen-402-driver \
+    # --- HOKUYO urg_node ---
+    ros-jazzy-urg-node \
+    # -- slam toolbox ---
+    ros-jazzy-slam-toolbox \
     # -----------------------------------
     && rm -rf /var/lib/apt/lists/*
 
