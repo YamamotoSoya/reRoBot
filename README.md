@@ -29,3 +29,20 @@ $ rosdep install --from-paths src --ignore-src --simulate # check dependencies
 $ colcon build --symlink-install --executor sequential
 $ source install/setup.bash
 ```
+### Hardwere setup
+* **ubuntu22.04にcanusbを認識させる手順**:
+1. can-utilsのインストール
+`sudo apt-get update`
+`sudo apt-get install can-utils`
+2. SLcanカーネルモジュールのロードの設定ファイル作成
+`sudo vim /etc/modules-load.d/can.conf`
+このファイルに以下を記述
+`can`
+`can_raw`
+`slcan`
+3. USB-CANアダプタの接続と初期確認
+`ls /dev/ttyACM*`または
+`ls /dev/ttyUSB*`
+4. CANインターフェースの作成と起動
+`sudo slcand -o -c -s8 /dev/tty<<hoge>> can0`
+`sudo ip link set can0 up`

@@ -3,8 +3,8 @@ epos4_controller_node:
     tread_width: 0.41 #[m]
     tire_diam: 0.15   #[m]
     gear_ratio: 0.2   #motor_rev / wheel_rev
-    invert_left: false
-    invert_right: false
+    invert_left: true
+    invert_right: true
 
 epos4_odometry_node:
   ros__parameters:
@@ -14,5 +14,5 @@ epos4_odometry_node:
     odom_frame_id: "odom"
     base_frame_id: "base_link"
     publish_tf: true
-    invert_left: false
-    invert_right: false
+    invert_left: true
+    invert_right: true

@@ -41,17 +41,18 @@ def generate_launch_description():
         output="screen",
     )
 
-    robot_state_publisher_node = Node(
-        package="robot_state_publisher",
-        executable="robot_state_publisher",
-        name="robot_state_publisher",
-        parameters=[{"robot_description": robot_description}],
-        # claude_tire: removed remap to /robot_encoder_states; epos4_odometry now
-        # publishes /joint_states directly so RSP can emit dynamic wheel TFs.
-        output="screen",
-    )
+    #   robot_state_publisher_node = Node(
+        #   package="robot_state_publisher",
+        #   executable="robot_state_publisher",
+        #   name="robot_state_publisher",
+        #   parameters=[{"robot_description": robot_description}],
+        #   # claude_tire: removed remap to /robot_encoder_states; epos4_odometry now
+        #   # publishes /joint_states directly so RSP can emit dynamic wheel TFs.
+        #   output="screen",
+    #   )
 
-    # claude: auto-start rviz2 with bundled preset (odom fixed frame,
+
+    # # claude: auto-start rviz2 with bundled preset (odom fixed frame,
     # RobotModel / TF / Odometry displays). Not wrapped in TimerAction because
     # rviz2 has no CANopen service dependency and its subscribers will pick up
     # /odom and /tf as soon as the delayed nodes come online.
@@ -76,6 +77,6 @@ def generate_launch_description():
     return LaunchDescription([
         bus_config,
         delayed_nodes,
-        robot_state_publisher_node,
+        # robot_state_publisher_node,
         rviz_node,  
     ])
