@@ -8,7 +8,7 @@ from launch_ros.actions import Node
 
 
 def generate_launch_description():
-    pkg_share = get_package_share_directory("epos4_controller")
+    pkg_share = get_package_share_directory("rerobot_bringup")  # claude
     params_file = os.path.join(pkg_share, "config", "params.yaml")
     urdf_file = os.path.join(pkg_share, "urdf", "rerobot.urdf")
 

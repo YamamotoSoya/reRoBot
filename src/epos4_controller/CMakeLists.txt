@@ -45,13 +45,7 @@ install(TARGETS
   DESTINATION lib/${PROJECT_NAME}
 )
 
-install(DIRECTORY
-  launch
-  config
-  urdf
-  rviz  # claude
-  DESTINATION share/${PROJECT_NAME}
-)
+# claude: launch/config/urdf/rviz are now provided by the rerobot_bringup package.
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
