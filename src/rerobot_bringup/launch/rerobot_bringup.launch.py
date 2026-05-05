@@ -41,16 +41,18 @@ def generate_launch_description():
         output="screen",
     )
 
-    #   robot_state_publisher_node = Node(
-        #   package="robot_state_publisher",
-        #   executable="robot_state_publisher",
-        #   name="robot_state_publisher",
-        #   parameters=[{"robot_description": robot_description}],
-        #   # claude_tire: removed remap to /robot_encoder_states; epos4_odometry now
-        #   # publishes /joint_states directly so RSP can emit dynamic wheel TFs.
-        #   output="screen",
-    #   )
-
+    # claude: re-enabled to publish base_link -> {m1_wheel_link, m2_wheel_link, laser} TFs.
+    # epos4_odometry already publishes /joint_states (m1_wheel, m2_wheel wheel-side angles),
+    # so no remap is needed. The fixed laser joint becomes a /tf_static entry.
+    
+    robot_state_publisher_node = Node(
+        package="robot_state_publisher",
+        executable="robot_state_publisher",
+        name="robot_state_publisher",
+        parameters=[{"robot_description": robot_description}],
+        output="screen",
+    )
+    
 
     # # claude: auto-start rviz2 with bundled preset (odom fixed frame,
     # RobotModel / TF / Odometry displays). Not wrapped in TimerAction because
@@ -77,6 +79,6 @@ def generate_launch_description():
     return LaunchDescription([
         bus_config,
         delayed_nodes,
-        # robot_state_publisher_node,
-        rviz_node,  
+        robot_state_publisher_node,  # claude
+        rviz_node,
     ])
