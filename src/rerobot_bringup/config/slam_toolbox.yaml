@@ -33,7 +33,15 @@ slam_toolbox:
     min_laser_range: 0.0
     max_laser_range: 30.0
     minimum_time_interval: 0.5
-    transform_timeout: 0.2
+    # claude: tf2_ros::MessageFilter のキュー長。slam_toolbox の素のデフォルトは 1 で、
+    # /scan 40Hz と /odom 20Hz (= odom→base_link TF が 50ms 周期) の組み合わせでは、
+    # 各 scan で「TF buffer 最新 < scan.stamp」が常に起き、次の odom TF を待つ間にすぐ
+    # キューが overflow して "queue is full" で全 scan が drop される。10 まで広げて
+    # 50ms 程度のラグを吸収できるようにする。
+    scan_queue_size: 10
+    # claude: scan stamp と TF stamp の余裕。0.2s でも理屈上は足りるが、起動直後の
+    # TF buffer ウォームアップやレート揺らぎを吸うため 0.5s に拡張。
+    transform_timeout: 0.5
     tf_buffer_duration: 30.0
     stack_size_to_use: 40000000
     enable_interactive_mode: true
