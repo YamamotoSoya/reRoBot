@@ -1,6 +1,7 @@
 #include "rclcpp/rclcpp.hpp"
 #include "geometry_msgs/msg/twist.hpp"
 #include "std_msgs/msg/float64.hpp"
+#include "std_msgs/msg/bool.hpp"   // claude: 脱力(フリー)モードのトグル受信用
 #include "std_srvs/srv/trigger.hpp"
 #include "sensor_msgs/msg/joint_state.hpp"
 #include "canopen_interfaces/srv/co_target_double.hpp"
@@ -62,6 +63,12 @@ public:
             "/robot_speed_cmd", 10,
             std::bind(&Epos4_Control2_Node::cmdSpeedCallback, this, std::placeholders::_1));
 
+        // claude: 脱力(フリー)モードのトグル受信。data=true で両モータを disable し
+        // 非励磁(手で車輪が回せる状態)に、false で enable+CSV を再投入して復帰する。
+        free_mode_subscription_ = this->create_subscription<std_msgs::msg::Bool>(
+            "/robot_free_mode", 10,
+            std::bind(&Epos4_Control2_Node::freeModeCallback, this, std::placeholders::_1));
+
         // encoder_publisher_ = this->create_publisher<sensor_msgs::msg::JointState>("/robot_encoder_states", 10);
 
         //YAMLparams
@@ -102,6 +109,9 @@ public:
         stop_init_.store(true);
         if (init_thread_.joinable()) {
             init_thread_.join();
+        }
+        if (reenable_thread_.joinable()) {
+            reenable_thread_.join();  // claude: 進行中の復帰シーケンスを回収してから終了
         }
         shutdown_node();
     }
@@ -148,6 +158,7 @@ private:
     // rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr m2_subscription_;
 
     rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_speed_subscription_;
+    rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr free_mode_subscription_;  // claude
     // rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr encoder_publisher_;
 
     // sensor_msgs::msg::JointState m2_joint_state_;
@@ -158,6 +169,14 @@ private:
     // claude: background driver-init sequence (sequential + verified + retried)
     std::thread init_thread_;
     std::atomic<bool> stop_init_{false};
+
+    // claude: 脱力(フリー)モード。true の間 cmdSpeedCallback が速度指令を無視する。
+    // 読み書きとも executor スレッド(コールバック)上なので plain bool で十分。
+    bool free_mode_ = false;
+    // claude: 復帰(enable→csv)を逐次化するための短命スレッド。並行に投げると
+    // mode 設定がレースして片輪が CSV に入りきらず遅れるため、別スレッドで
+    // call_trigger_sync を順番に効かせる(executor を塞がない/init_thread_ と同じ理由)。
+    std::thread reenable_thread_;
 
     //YAMLparameter
     double tread_width_;
@@ -214,6 +233,10 @@ private:
 
     void cmdSpeedCallback(const geometry_msgs::msg::Twist::SharedPtr msg)
     {
+        // claude: 脱力中は速度指令を一切反映しない(ターゲットは 0 のまま)。
+        if (free_mode_) {
+            return;
+        }
         double x = msg->linear.x;
         double yaw = msg->angular.z;
         //Write IK here!!
@@ -388,6 +411,48 @@ private:
         init_motor("motor2(right)", m2_client_driver_init_, m2_client_driver_enable_,
                    m2_client_driver_csv_mode_, m2_client_driver_recover_, m2_client_sdo_read_);
         RCLCPP_INFO(get_logger(), "EPOS4 auto-init complete.");
+    }
+
+    // claude: /robot_free_mode の受信ハンドラ。data=true で脱力 ON、false で復帰。
+    // 脱力 ON: disable を非同期で投げるだけ(励磁を切るだけなので順序不問)。
+    // 復帰   : enable→cyclic_velocity_mode は逐次に効かせないと mode 設定がレースして
+    //          片輪が CSV に入りきらず遅れる。短命スレッドで sync 呼び出しを順番に行う
+    //          (init=homing は呼ばない。再 init は復帰失敗の原因になるため)。
+    void freeModeCallback(const std_msgs::msg::Bool::SharedPtr msg)
+    {
+        free_mode_ = msg->data;
+        m1_value_ = 0.0;  // 脱力中も復帰直後も指令を 0 から始める
+        m2_value_ = 0.0;
+        if (free_mode_) {
+            RCLCPP_INFO(get_logger(), "脱力モード ON: disabling both motors (free wheel)");
+            call_trigger_service(m1_client_driver_disable_, "disable");
+            call_trigger_service(m2_client_driver_disable_, "disable");
+        } else {
+            RCLCPP_INFO(get_logger(), "脱力モード OFF: re-enabling both motors (enable + CSV)");
+            if (reenable_thread_.joinable()) {
+                reenable_thread_.join();  // 直前の復帰は完了済み、即座に返る
+            }
+            reenable_thread_ = std::thread([this] {
+                call_trigger_sync(m1_client_driver_enable_,   "motor1 enable");
+                call_trigger_sync(m1_client_driver_csv_mode_, "motor1 cyclic_velocity_mode");
+                call_trigger_sync(m2_client_driver_enable_,   "motor2 enable");
+                call_trigger_sync(m2_client_driver_csv_mode_, "motor2 cyclic_velocity_mode");
+                // 成否はサービス戻り値ではなく実ドライブ状態で判定する。enable/csv が
+                // no-op 遷移のときドライバが success=false を返すことがあり(偽陰性)、
+                // 戻り値だけ見ると正常復帰でも失敗扱いになるため。motor_ready は
+                // SDO で statusword(0x6041)/mode(0x6061)を読み、Operation Enabled & CSV を確認する。
+                std::this_thread::sleep_for(200ms);  // 読み戻し前にドライブを落ち着かせる
+                const bool m1 = motor_ready(m1_client_sdo_read_, "motor1(left)");
+                const bool m2 = motor_ready(m2_client_sdo_read_, "motor2(right)");
+                if (m1 && m2) {
+                    RCLCPP_INFO(get_logger(), "脱力モード OFF: both motors re-enabled (CSV)");
+                } else {
+                    RCLCPP_WARN(get_logger(),
+                                "脱力モード OFF: re-enable incomplete (m1_ready=%d m2_ready=%d); toggle f to retry",
+                                m1, m2);
+                }
+            });
+        }
     }
 
 };

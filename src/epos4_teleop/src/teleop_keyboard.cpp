@@ -1,6 +1,7 @@
 #include "rclcpp/rclcpp.hpp"
 #include "geometry_msgs/msg/twist.hpp"
 #include "sensor_msgs/msg/joint_state.hpp"
+#include "std_msgs/msg/bool.hpp"  // claude: 脱力(フリー)モードのトグル送信用
 
 #include <algorithm>
 #include <cmath>
@@ -54,12 +55,14 @@ public:
         max_angular_     = declare_parameter("max_angular", 2.0);
         double rate_hz   = declare_parameter("publish_rate_hz", 20.0);
         auto cmd_topic   = declare_parameter("cmd_topic", std::string("/robot_speed_cmd"));
+        auto free_topic  = declare_parameter("free_topic", std::string("/robot_free_mode"));
         auto m1_topic    = declare_parameter("m1_joint_topic",
                                              std::string("/motor1/cia402_device_1/joint_states"));
         auto m2_topic    = declare_parameter("m2_joint_topic",
                                              std::string("/motor2/cia402_device_2/joint_states"));
 
         cmd_publisher_ = create_publisher<geometry_msgs::msg::Twist>(cmd_topic, 10);
+        free_publisher_ = create_publisher<std_msgs::msg::Bool>(free_topic, 10);
 
         m1_subscription_ = create_subscription<sensor_msgs::msg::JointState>(
             m1_topic, 10,
@@ -96,6 +99,7 @@ private:
         std::printf("  space : stop\n");
         std::printf("  + / - : scale step size x1.1 / /1.1\n");
         std::printf("  r     : reset wheel distance counters\n");
+        std::printf("  f     : toggle 脱力(free) mode  [de-energize / re-enable motors]\n");
         std::printf("  q     : quit\n");
         std::printf("=========================================================\n\n");
         std::fflush(stdout);
@@ -144,6 +148,19 @@ private:
                     std::lock_guard<std::mutex> lk(dist_mutex_);
                     dist_left_ = 0.0;
                     dist_right_ = 0.0;
+                }
+                break;
+            case 'f':  // claude: 脱力(free)モードのトグル
+                {
+                    free_mode_ = !free_mode_;
+                    if (free_mode_) {
+                        // 脱力に入る前に指令をゼロへ。復帰時に古い指令で動き出さないように。
+                        linear_ = 0.0;
+                        angular_ = 0.0;
+                    }
+                    auto free_msg = std_msgs::msg::Bool();
+                    free_msg.data = free_mode_;
+                    free_publisher_->publish(free_msg);
                 }
                 break;
             case 'q':
@@ -199,8 +216,9 @@ private:
         }
         // \r overwrites current line; don't use \n so the status stays pinned.
         std::printf(
-            "\r[cmd v=%+6.2f m/s w=%+6.2f rad/s | step v=%.3f w=%.3f] "
+            "\r[%s][cmd v=%+6.2f m/s w=%+6.2f rad/s | step v=%.3f w=%.3f] "
             "left=%+8.3f m  right=%+8.3f m   ",
+            free_mode_ ? "FREE/脱力" : "  DRIVE  ",
             linear_, angular_, linear_step_, angular_step_, l_m, r_m);
         std::fflush(stdout);
     }
@@ -218,6 +236,7 @@ private:
     // command state
     double linear_  = 0.0;
     double angular_ = 0.0;
+    bool   free_mode_ = false;  // claude: 脱力(free)モードの現在状態
 
     // distance state
     std::mutex dist_mutex_;
@@ -229,6 +248,7 @@ private:
     double dist_right_ = 0.0;
 
     rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_publisher_;
+    rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr free_publisher_;  // claude
     rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr m1_subscription_;
     rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr m2_subscription_;
     rclcpp::TimerBase::SharedPtr timer_;
