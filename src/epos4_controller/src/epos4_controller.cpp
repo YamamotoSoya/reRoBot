@@ -248,8 +248,11 @@ private:
         // wheel rpm -> motor rpm via gear ratio (motor rpm = wheel rpm * gear_ratio)
         double rpm_left = (v_left / wheel_circumference) * 60.0 * gear_ratio_;
         double rpm_right = (v_right / wheel_circumference) * 60.0 * gear_ratio_;
-        m1_value_ = invert_left_ ? -rpm_left : rpm_left;
-        m2_value_ = invert_right_ ? -rpm_right : rpm_right;
+        // claude_swap: physical wiring is motor1 = RIGHT wheel, motor2 = LEFT wheel
+        // (turning was reversed before this swap; forward was unaffected because both
+        // wheels share the same rpm). invert_* stay per-motor polarity flags.
+        m1_value_ = invert_right_ ? -rpm_right : rpm_right;  // claude_swap: motor1 -> RIGHT wheel
+        m2_value_ = invert_left_  ? -rpm_left  : rpm_left;   // claude_swap: motor2 -> LEFT wheel
     }
 
     // void jointStateCallback_m1(const sensor_msgs::msg::JointState::SharedPtr msg)

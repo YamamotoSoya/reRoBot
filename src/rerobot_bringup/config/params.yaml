@@ -2,7 +2,7 @@ epos4_controller_node:
   ros__parameters:
     tread_width: 0.41 #[m]
     tire_diam: 0.15   #[m]
-    gear_ratio: 0.2   #motor_rev / wheel_rev
+    gear_ratio: 1.25  #measured: raw 78.55rad/10rev = 7.855rad/rev = 2.5pi; /2pi = 1.25 # claude
     invert_left: true
     invert_right: true
 
@@ -10,7 +10,7 @@ epos4_odometry_node:
   ros__parameters:
     tread_width: 0.41 #[m]
     tire_diam: 0.15   #[m]
-    gear_ratio: 0.2   #motor_rev / wheel_rev
+    gear_ratio: 1.25  #measured: raw 78.55rad/10rev = 7.855rad/rev = 2.5pi; /2pi = 1.25 # claude
     odom_frame_id: "odom"
     base_frame_id: "base_link"
     publish_tf: true

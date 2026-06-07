@@ -1,7 +1,7 @@
 teleop_keyboard_node:
   ros__parameters:
     tire_diam: 0.15           # [m]
-    gear_ratio: 1.0           # motor_rev / wheel_rev
+    gear_ratio: 1.25          # measured: raw 78.55rad/10rev = 7.855rad/rev = 2.5pi; /2pi = 1.25 # claude
     invert_left: false
     invert_right: false
     linear_step: 0.1          # [m/s]   per key press

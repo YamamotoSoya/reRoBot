@@ -50,7 +50,11 @@ public:
         // /robot_encoder_states subscription.
         m1_sub_.subscribe(this, "/motor1/cia402_device_1/joint_states");                         // claude_tire claude_odom claude_sync
         m2_sub_.subscribe(this, "/motor2/cia402_device_2/joint_states");                         // claude_tire claude_odom claude_sync
-        sync_ = std::make_shared<Synchronizer>(SyncPolicy(10), m1_sub_, m2_sub_);                // claude_tire claude_odom claude_sync
+        // claude_swap: physical wiring is motor1 = RIGHT wheel, motor2 = LEFT wheel.
+        // Feed motor2 (physical LEFT) into the callback's left_msg slot and motor1
+        // (physical RIGHT) into right_msg, so pos_left/pos_right, d_theta and the
+        // m1_wheel(+y)/m2_wheel(-y) URDF links all match the real robot.
+        sync_ = std::make_shared<Synchronizer>(SyncPolicy(10), m2_sub_, m1_sub_);                // claude_tire claude_odom claude_sync claude_swap
         sync_->setMaxIntervalDuration(rclcpp::Duration(0, 50 * 1000 * 1000));                    // claude_tire claude_odom claude_sync
         sync_->registerCallback(                                                                 // claude_tire claude_odom claude_sync
             std::bind(&Epos4OdometryNode::onJointStates, this,                                   // claude_tire claude_odom claude_sync

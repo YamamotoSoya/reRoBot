@@ -64,15 +64,18 @@ public:
         cmd_publisher_ = create_publisher<geometry_msgs::msg::Twist>(cmd_topic, 10);
         free_publisher_ = create_publisher<std_msgs::msg::Bool>(free_topic, 10);
 
+        // claude_swap: physical wiring is motor1 = RIGHT wheel, motor2 = LEFT wheel,
+        // so the printed left/right distance labels follow the physical side, not the
+        // motor index.
         m1_subscription_ = create_subscription<sensor_msgs::msg::JointState>(
             m1_topic, 10,
             [this](const sensor_msgs::msg::JointState::SharedPtr msg) {
-                updateDistance(msg, /*is_left=*/true);
+                updateDistance(msg, /*is_left=*/false);  // claude_swap: motor1 -> RIGHT
             });
         m2_subscription_ = create_subscription<sensor_msgs::msg::JointState>(
             m2_topic, 10,
             [this](const sensor_msgs::msg::JointState::SharedPtr msg) {
-                updateDistance(msg, /*is_left=*/false);
+                updateDistance(msg, /*is_left=*/true);   // claude_swap: motor2 -> LEFT
             });
 
         const auto period = std::chrono::milliseconds(
