@@ -26,8 +26,14 @@ RUN apt-get update && apt-get install -y \
     ros-jazzy-canopen-402-driver \
     # --- HOKUYO urg_node ---
     ros-jazzy-urg-node \
-    # -- slam toolbox ---
+    # --- slam toolbox ---
     ros-jazzy-slam-toolbox \
+    # --- navigation2 ---
+    ros-jazzy-navigation2 \
+    ros-jazzy-nav2-bringup \
+    ros-jazzy-nav2-minimal-tb* \
+    # --- sensor integration (EKF,UKF) ---
+    ros-jazzy-robot-localization \
     # -----------------------------------
     && rm -rf /var/lib/apt/lists/*
 

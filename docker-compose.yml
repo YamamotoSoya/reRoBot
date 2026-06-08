@@ -15,6 +15,7 @@ services:
       - QT_X11_NO_MITSHM=1
     volumes:
       - ./src:/workspace/src
+      - ./maps:/workspace/maps
       - ros_build:/workspace/build
       - ros_install:/workspace/install
       - ros_log:/workspace/log
