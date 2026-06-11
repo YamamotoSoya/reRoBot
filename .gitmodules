@@ -1,3 +1,6 @@
 [submodule "src/external/epos4compact50-5can"]
 	path = src/external/epos4compact50-5can
 	url = https://github.com/YamamotoSoya/maxon_epos4compact50-5can_ros2.git
+[submodule "src/external/StarROS2"]
+	path = src/external/StarROS2
+	url = https://github.com/YamamotoSoya/StarROS2.git

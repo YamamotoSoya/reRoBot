@@ -1,0 +1,240 @@
+# claude: Nav2 (Navigation2) 「保存済み地図を再生する」最小構成パラメータ。
+# slam_toolbox には依存せず、map_server が .pgm/.yaml を読み込み、amcl が
+# map->odom TF を供給する古典的なローカリゼーション + ナビ構成。
+#
+# 本機固有の前提:
+#   - URDF に base_footprint は無く base_link のみ → 全 robot_base_frame を base_link に統一。
+#   - 速度司令は epos4_controller が /robot_speed_cmd (素の geometry_msgs/Twist) で待ち受ける。
+#     → nav2.launch.py 側で cmd_vel->robot_speed_cmd へリマップし、stamped を無効化する。
+#   - LiDAR は /scan (HOKUYO UTM-30LX, frame_id=laser, FOV ±90deg)。
+#   - 地図は maps/my_map.{yaml,pgm} (コンテナ内 /workspace/maps/...)。
+
+# ============================================================================
+# map_server : 保存済みの占有格子地図 (.pgm + .yaml) を読み込み /map に配信する。
+#   yaml_filename は nav2.launch.py の `map` 引数で上書きされる (既定は下記)。
+# ============================================================================
+map_server:
+  ros__parameters:
+    yaml_filename: "/workspace/maps/my_map.yaml"  # 読み込む地図 yaml のパス
+
+# ============================================================================
+# amcl : Adaptive Monte Carlo Localization。/scan と /map を突き合わせて自己位置を
+#   推定し、map->odom TF を publish する (slam_toolbox の代替)。
+# ============================================================================
+amcl:
+  ros__parameters:
+    global_frame_id: map         # 推定結果を表現する地図フレーム
+    odom_frame_id: odom          # オドメトリフレーム
+    base_frame_id: base_link     # ロボット基準フレーム
+    scan_topic: scan             # 入力 LaserScan トピック
+    robot_model_type: nav2_amcl::DifferentialMotionModel  # 差動二輪の運動モデル
+
+    # ---- パーティクル数 ----
+    min_particles: 500           # 最小パーティクル数
+    max_particles: 2000          # 最大パーティクル数
+    update_min_d: 0.25           # この距離 [m] 動いたら更新
+    update_min_a: 0.2            # この角度 [rad] 回ったら更新
+    resample_interval: 1         # 何回更新ごとにリサンプリングするか
+    transform_tolerance: 1.0     # publish する TF の未来側有効時間 [s]
+
+    # ---- レーザ尤度モデル (likelihood_field) ----
+    laser_model_type: likelihood_field  # 尤度場モデル
+    laser_likelihood_max_dist: 2.0      # 尤度場で考慮する最大距離 [m]
+    laser_max_range: 30.0               # 採用する最大レーザ距離 [m]
+    laser_min_range: -1.0               # -1=デバイス既定の最小距離を使用
+    max_beams: 60                       # 1 スキャンで使うビーム本数
+    z_hit: 0.5                          # ヒット項の重み
+    z_rand: 0.5                         # ランダムノイズ項の重み
+    sigma_hit: 0.2                      # ヒット項のガウス標準偏差 [m]
+
+    # ---- 差動運動モデルのノイズ ----
+    alpha1: 0.2  # 回転に対する回転ノイズ
+    alpha2: 0.2  # 並進に対する回転ノイズ
+    alpha3: 0.2  # 並進に対する並進ノイズ
+    alpha4: 0.2  # 回転に対する並進ノイズ
+
+    # ---- 自己位置喪失からの復帰 ----
+    recovery_alpha_slow: 0.0     # 低速平均尤度 (0=無効)
+    recovery_alpha_fast: 0.0     # 高速平均尤度 (0=無効)
+    set_initial_pose: false      # 起動時に初期姿勢を固定値で与えるか
+    always_reset_initial_pose: false  # 再起動時に初期姿勢を毎回リセットするか
+
+# ============================================================================
+# bt_navigator : Behavior Tree で「目標への航行」全体を統括する司令塔ノード。
+# ============================================================================
+bt_navigator:
+  ros__parameters:
+    global_frame: map           # 目標位置を解釈する基準フレーム
+    robot_base_frame: base_link # ロボット基準フレーム
+    odom_topic: /odom           # オドメトリ入力トピック
+    bt_loop_duration: 10        # BT を回すループ周期 [ms]
+    default_server_timeout: 20  # 各アクションサーバ応答待ちタイムアウト [ms]
+    # 使用する BT ノード (プラグイン) 群。既定の航行ツリーを動かすのに必要な最小セット。
+    plugin_lib_names:
+      - nav2_compute_path_to_pose_action_bt_node   # 経路計算アクション
+      - nav2_follow_path_action_bt_node            # 経路追従アクション
+      - nav2_spin_action_bt_node                   # その場旋回 (復帰行動)
+      - nav2_back_up_action_bt_node                # 後退 (復帰行動)
+      - nav2_wait_action_bt_node                   # 待機 (復帰行動)
+      - nav2_clear_costmap_service_bt_node         # コストマップ消去サービス
+      - nav2_is_stuck_condition_bt_node            # スタック判定
+      - nav2_goal_reached_condition_bt_node        # 目標到達判定
+      - nav2_goal_updated_condition_bt_node        # 目標更新判定
+      - nav2_rate_controller_bt_node               # レート制御デコレータ
+      - nav2_recovery_node_bt_node                 # 復帰サブツリー制御
+      - nav2_pipeline_sequence_bt_node             # パイプライン逐次実行
+      - nav2_round_robin_node_bt_node              # ラウンドロビン (復帰選択)
+
+# ============================================================================
+# controller_server : 局所経路追従。経路に沿う速度司令 (cmd_vel) を生成する。
+#   差動二輪に素直な RegulatedPurePursuit を採用 (パラメータが少なく頑健)。
+# ============================================================================
+controller_server:
+  ros__parameters:
+    controller_frequency: 20.0       # 制御ループ周波数 [Hz]
+    min_x_velocity_threshold: 0.001  # この値未満の x 速度は 0 とみなす [m/s]
+    min_y_velocity_threshold: 0.5    # y 速度しきい値 [m/s] (差動二輪は y=0)
+    min_theta_velocity_threshold: 0.001  # 角速度しきい値 [rad/s]
+    enable_stamped_cmd_vel: false    # 出力を素の Twist にする (epos4_controller 用)
+
+    # 進捗チェッカ: 一定時間内に最小距離だけ進めなければ失敗扱いにする
+    progress_checker_plugin: progress_checker
+    progress_checker:
+      plugin: nav2_controller::SimpleProgressChecker
+      required_movement_radius: 0.5  # この距離 [m] 進めば前進中とみなす
+      movement_time_allowance: 10.0  # 進まないまま許容する時間 [s]
+
+    # 到達判定チェッカ: 目標近傍と判定する許容誤差
+    goal_checker_plugins: ["goal_checker"]
+    goal_checker:
+      plugin: nav2_controller::SimpleGoalChecker
+      xy_goal_tolerance: 0.25  # 目標位置許容誤差 [m]
+      yaw_goal_tolerance: 0.25 # 目標方位許容誤差 [rad]
+      stateful: true           # 位置到達後は方位合わせに専念
+
+    # 局所制御プラグイン: Regulated Pure Pursuit
+    controller_plugins: ["FollowPath"]
+    FollowPath:
+      plugin: nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController
+      desired_linear_vel: 0.4          # 目標前進速度 [m/s]
+      lookahead_dist: 0.6              # 先読み距離 [m]
+      min_lookahead_dist: 0.3         # 最小先読み距離 [m]
+      max_lookahead_dist: 0.9         # 最大先読み距離 [m]
+      use_velocity_scaled_lookahead_dist: true  # 速度に応じ先読み距離を可変
+      transform_tolerance: 0.2        # TF 許容ずれ [s]
+      use_regulated_linear_velocity_scaling: true  # 曲率に応じ減速
+      regulated_linear_scaling_min_radius: 0.9     # この曲率半径 [m] 未満で減速
+      max_angular_accel: 3.2          # 最大角加速度 [rad/s^2]
+      max_robot_pose_search_dist: 10.0  # 経路上の自己位置探索範囲 [m]
+      use_rotate_to_heading: true     # 経路始端で方位合わせの旋回を許可
+      rotate_to_heading_min_angle: 0.785  # この方位誤差 [rad] 以上でまず旋回
+      rotate_to_heading_angular_vel: 1.0  # 方位合わせ旋回速度 [rad/s]
+
+# ============================================================================
+# local_costmap : 障害物回避用の自機周辺ローリングコストマップ。
+# ============================================================================
+local_costmap:
+  local_costmap:
+    ros__parameters:
+      update_frequency: 5.0     # コスト更新周波数 [Hz]
+      publish_frequency: 2.0    # 可視化 publish 周波数 [Hz]
+      global_frame: odom        # ローカルマップ基準フレーム (オドメトリ系)
+      robot_base_frame: base_link  # ロボット基準フレーム
+      rolling_window: true      # 自機を中心に常時追従する窓にする
+      width: 4                  # マップ幅 [m]
+      height: 4                 # マップ高さ [m]
+      resolution: 0.05          # 解像度 [m/cell]
+      robot_radius: 0.35        # ロボット外接半径 [m] (本体 0.50x0.35 を内包)
+      plugins: ["obstacle_layer", "inflation_layer"]
+      obstacle_layer:           # /scan から障害物を書き込むレイヤ
+        plugin: nav2_costmap_2d::ObstacleLayer
+        enabled: true
+        observation_sources: scan
+        scan:
+          topic: /scan
+          max_obstacle_height: 2.0   # 採用する最大高さ [m]
+          clearing: true             # レイトレースで空き領域を消去
+          marking: true              # 障害物として書き込み
+          data_type: "LaserScan"
+          raytrace_max_range: 30.0   # 空き判定の最大レイトレース距離 [m]
+          obstacle_max_range: 25.0   # 障害物書き込みの最大距離 [m]
+      inflation_layer:          # 障害物周囲を膨張させ安全マージンを作るレイヤ
+        plugin: nav2_costmap_2d::InflationLayer
+        cost_scaling_factor: 3.0   # 膨張コストの減衰係数 (大きいほど急減衰)
+        inflation_radius: 0.55     # 膨張半径 [m]
+      always_send_full_costmap: true  # 毎回フルマップを送る (差分でなく)
+
+# ============================================================================
+# global_costmap : 経路計画用の地図全体コストマップ (map_server の /map ベース)。
+# ============================================================================
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      update_frequency: 1.0     # コスト更新周波数 [Hz]
+      publish_frequency: 1.0    # 可視化 publish 周波数 [Hz]
+      global_frame: map         # 地図フレーム
+      robot_base_frame: base_link  # ロボット基準フレーム
+      robot_radius: 0.35        # ロボット外接半径 [m]
+      resolution: 0.05          # 解像度 [m/cell]
+      track_unknown_space: true # 未知領域を未知として扱う
+      plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
+      static_layer:             # map_server の /map を静的レイヤとして取り込む
+        plugin: nav2_costmap_2d::StaticLayer
+        map_subscribe_transient_local: true  # latched な /map を購読
+      obstacle_layer:           # /scan によるリアルタイム障害物反映
+        plugin: nav2_costmap_2d::ObstacleLayer
+        enabled: true
+        observation_sources: scan
+        scan:
+          topic: /scan
+          max_obstacle_height: 2.0
+          clearing: true
+          marking: true
+          data_type: "LaserScan"
+          raytrace_max_range: 30.0
+          obstacle_max_range: 25.0
+      inflation_layer:
+        plugin: nav2_costmap_2d::InflationLayer
+        cost_scaling_factor: 3.0
+        inflation_radius: 0.55
+      always_send_full_costmap: true
+
+# ============================================================================
+# planner_server : 全体経路計画。NavFn (ダイクストラ/A*) で map 上の経路を生成。
+# ============================================================================
+planner_server:
+  ros__parameters:
+    expected_planner_frequency: 20.0  # 計画要求の想定周波数 [Hz]
+    planner_plugins: ["GridBased"]
+    GridBased:
+      plugin: nav2_navfn_planner::NavfnPlanner
+      tolerance: 0.5      # 目標に到達できない時の許容半径 [m]
+      use_astar: false    # false=ダイクストラ, true=A*
+      allow_unknown: true # 未知領域の通過を許可
+
+# ============================================================================
+# behavior_server : 復帰行動 (旋回・後退・待機) を提供するサーバ。
+# ============================================================================
+behavior_server:
+  ros__parameters:
+    local_costmap_topic: local_costmap/costmap_raw       # 衝突判定に使うローカルコスト
+    local_footprint_topic: local_costmap/published_footprint
+    global_costmap_topic: global_costmap/costmap_raw
+    global_footprint_topic: global_costmap/published_footprint
+    cycle_frequency: 10.0          # 行動実行ループ周波数 [Hz]
+    enable_stamped_cmd_vel: false  # 復帰行動の速度司令も素の Twist で出す
+    behavior_plugins: ["spin", "backup", "wait"]
+    spin:                          # その場旋回
+      plugin: nav2_behaviors::Spin
+    backup:                        # 後退
+      plugin: nav2_behaviors::BackUp
+    wait:                          # 待機
+      plugin: nav2_behaviors::Wait
+    local_frame: odom              # 局所行動の基準フレーム
+    global_frame: map              # 大域基準フレーム
+    robot_base_frame: base_link    # ロボット基準フレーム
+    transform_tolerance: 0.1       # TF 許容ずれ [s]
+    simulate_ahead_time: 2.0       # 衝突予測の先読み時間 [s]
+    max_rotational_vel: 1.0        # 最大旋回速度 [rad/s]
+    min_rotational_vel: 0.4        # 最小旋回速度 [rad/s]
+    rotational_acc_lim: 3.2        # 旋回加速度上限 [rad/s^2]

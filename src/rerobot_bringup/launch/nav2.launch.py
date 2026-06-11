@@ -1,0 +1,156 @@
+# claude: 保存済み地図 (.pgm/.yaml) を再生する Nav2 「最小構成」launch。
+# slam_toolbox には依存しない。map_server が地図を配信し、amcl が map->odom TF を
+# 供給する古典的なローカリゼーション + ナビ構成。
+#
+# 前提: rerobot_bringup.launch.py が先に上がっており、以下が流れていること。
+#   - /scan            (HOKUYO urg_node)
+#   - /odom + TF odom->base_link (epos4_odometry)
+#   - TF base_link->laser など (robot_state_publisher)
+# 本 launch が追加で供給するもの:
+#   - map_server       : /map (保存済み占有格子地図)
+#   - amcl             : map->odom TF (自己位置推定)
+#   - Nav2 サーバ群     : controller / planner / behavior / bt_navigator
+#
+# 速度司令の配線: Nav2 既定の /cmd_vel を本機の /robot_speed_cmd (素の Twist) へ
+# リマップする。Twist 化は params 側の enable_stamped_cmd_vel: false で行う。
+#
+# 起動後、RViz の "2D Pose Estimate" で初期姿勢を一度与えると amcl が収束する
+# (set_initial_pose を使わない場合)。その後 "Nav2 Goal" で目標を指定する。
+import os
+
+from ament_index_python.packages import get_package_share_directory
+from launch import LaunchDescription
+from launch.actions import DeclareLaunchArgument
+from launch.substitutions import LaunchConfiguration
+from launch_ros.actions import Node
+
+
+def generate_launch_description():
+    pkg_share = get_package_share_directory("rerobot_bringup")
+    default_params = os.path.join(pkg_share, "config", "nav2_params.yaml")
+
+    # ---- launch 引数 ----
+    use_sim_time = LaunchConfiguration("use_sim_time")
+    params_file = LaunchConfiguration("params_file")
+    map_yaml = LaunchConfiguration("map")
+
+    use_sim_time_arg = DeclareLaunchArgument(
+        "use_sim_time",
+        default_value="false",
+        description="シミュレーション時刻 (/clock) を使うか。実機は false。",
+    )
+    params_file_arg = DeclareLaunchArgument(
+        "params_file",
+        default_value=default_params,
+        description="Nav2 パラメータファイルへのパス。",
+    )
+    map_arg = DeclareLaunchArgument(
+        "map",
+        default_value="/workspace/maps/my_map.yaml",
+        description="再生する地図 yaml (.pgm への参照を含む) へのパス。",
+    )
+
+    # ---- 速度司令リマップ: Nav2 の /cmd_vel を本機の /robot_speed_cmd へ ----
+    cmd_vel_remap = ("/cmd_vel", "/robot_speed_cmd")
+
+    # ========================================================================
+    # ローカリゼーション: map_server (地図配信) + amcl (自己位置推定)。
+    #   lifecycle_manager_localization が autostart=true でまとめて起動する。
+    # ========================================================================
+    map_server = Node(
+        package="nav2_map_server",
+        executable="map_server",
+        name="map_server",
+        output="screen",
+        # launch の map 引数で yaml_filename を上書き (params 既定より優先)。
+        parameters=[params_file, {"use_sim_time": use_sim_time, "yaml_filename": map_yaml}],
+    )
+
+    amcl = Node(
+        package="nav2_amcl",
+        executable="amcl",
+        name="amcl",
+        output="screen",
+        parameters=[params_file, {"use_sim_time": use_sim_time}],
+    )
+
+    lifecycle_manager_localization = Node(
+        package="nav2_lifecycle_manager",
+        executable="lifecycle_manager",
+        name="lifecycle_manager_localization",
+        output="screen",
+        parameters=[{
+            "use_sim_time": use_sim_time,
+            "autostart": True,
+            "node_names": ["map_server", "amcl"],
+        }],
+    )
+
+    # ========================================================================
+    # Nav2 サーバ群 (走行に必要な最小セット)。
+    #   lifecycle_manager_navigation が autostart=true でまとめて起動する。
+    # ========================================================================
+    controller_server = Node(
+        package="nav2_controller",
+        executable="controller_server",
+        name="controller_server",
+        output="screen",
+        parameters=[params_file, {"use_sim_time": use_sim_time}],
+        remappings=[cmd_vel_remap],  # /cmd_vel -> /robot_speed_cmd
+    )
+
+    planner_server = Node(
+        package="nav2_planner",
+        executable="planner_server",
+        name="planner_server",
+        output="screen",
+        parameters=[params_file, {"use_sim_time": use_sim_time}],
+    )
+
+    behavior_server = Node(
+        package="nav2_behaviors",
+        executable="behavior_server",
+        name="behavior_server",
+        output="screen",
+        parameters=[params_file, {"use_sim_time": use_sim_time}],
+        remappings=[cmd_vel_remap],  # 復帰行動の速度司令も /robot_speed_cmd へ
+    )
+
+    bt_navigator = Node(
+        package="nav2_bt_navigator",
+        executable="bt_navigator",
+        name="bt_navigator",
+        output="screen",
+        parameters=[params_file, {"use_sim_time": use_sim_time}],
+    )
+
+    lifecycle_manager_navigation = Node(
+        package="nav2_lifecycle_manager",
+        executable="lifecycle_manager",
+        name="lifecycle_manager_navigation",
+        output="screen",
+        parameters=[{
+            "use_sim_time": use_sim_time,
+            "autostart": True,  # 起動時に自動で全ノードを activate
+            "node_names": [
+                "controller_server",
+                "planner_server",
+                "behavior_server",
+                "bt_navigator",
+            ],
+        }],
+    )
+
+    return LaunchDescription([
+        use_sim_time_arg,
+        params_file_arg,
+        map_arg,
+        map_server,
+        amcl,
+        lifecycle_manager_localization,
+        controller_server,
+        planner_server,
+        behavior_server,
+        bt_navigator,
+        lifecycle_manager_navigation,
+    ])
