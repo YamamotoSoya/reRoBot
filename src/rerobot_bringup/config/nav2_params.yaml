@@ -15,7 +15,32 @@
 # ============================================================================
 map_server:
   ros__parameters:
-    yaml_filename: "/workspace/maps/my_map.yaml"  # 読み込む地図 yaml のパス
+    # 読み込む地図 yaml のパス (nav2.launch.py の map 引数で上書きされる)
+    yaml_filename: "/workspace/maps/slam_toolbox/2026_6_9__22:00/nav2/my_map.yaml"
+
+# ============================================================================
+# filter_mask_server : keepout (進入禁止帯) のマスク画像を OccupancyGrid として
+#   配信する map_server インスタンス。本体地図とは別の .pgm/.yaml を読む。
+#   (nav2.launch.py の keepout_mask 引数で yaml_filename を上書き)
+# ============================================================================
+filter_mask_server:
+  ros__parameters:
+    # keepout マスク yaml のパス。黒 (occupied) セルが進入禁止帯になる。
+    yaml_filename: "/workspace/maps/slam_toolbox/2026_6_9__22:00/keep_out/keep_out.yaml"
+    topic_name: "/keepout_filter_mask"  # 本体地図(/map)と分離した配信トピック
+    frame_id: "map"                     # マスクを表現するフレーム
+
+# ============================================================================
+# costmap_filter_info_server : マスク値 → コスト値への変換則 (CostmapFilterInfo) を
+#   配信するサーバ。costmap 側の KeepoutFilter はこの情報を購読して動く。
+# ============================================================================
+costmap_filter_info_server:
+  ros__parameters:
+    type: 0                                  # 0=keepout/優先レーン フィルタ
+    filter_info_topic: "/costmap_filter_info"  # 変換則の配信トピック
+    mask_topic: "/keepout_filter_mask"         # filter_mask_server の出力に一致させる
+    base: 0.0        # マスク値 0 のときのコスト基準 (keepout は 0.0)
+    multiplier: 1.0  # マスク値→コストの傾き (keepout は 1.0)
 
 # ============================================================================
 # amcl : Adaptive Monte Carlo Localization。/scan と /map を突き合わせて自己位置を
@@ -69,21 +94,10 @@ bt_navigator:
     odom_topic: /odom           # オドメトリ入力トピック
     bt_loop_duration: 10        # BT を回すループ周期 [ms]
     default_server_timeout: 20  # 各アクションサーバ応答待ちタイムアウト [ms]
-    # 使用する BT ノード (プラグイン) 群。既定の航行ツリーを動かすのに必要な最小セット。
-    plugin_lib_names:
-      - nav2_compute_path_to_pose_action_bt_node   # 経路計算アクション
-      - nav2_follow_path_action_bt_node            # 経路追従アクション
-      - nav2_spin_action_bt_node                   # その場旋回 (復帰行動)
-      - nav2_back_up_action_bt_node                # 後退 (復帰行動)
-      - nav2_wait_action_bt_node                   # 待機 (復帰行動)
-      - nav2_clear_costmap_service_bt_node         # コストマップ消去サービス
-      - nav2_is_stuck_condition_bt_node            # スタック判定
-      - nav2_goal_reached_condition_bt_node        # 目標到達判定
-      - nav2_goal_updated_condition_bt_node        # 目標更新判定
-      - nav2_rate_controller_bt_node               # レート制御デコレータ
-      - nav2_recovery_node_bt_node                 # 復帰サブツリー制御
-      - nav2_pipeline_sequence_bt_node             # パイプライン逐次実行
-      - nav2_round_robin_node_bt_node              # ラウンドロビン (復帰選択)
+    # claude: plugin_lib_names は指定しない。Jazzy の bt_navigator は標準 BT ノード
+    # (ComputePathToPose 等) を内部デフォルトで自動登録するため、ここで列挙すると
+    # 二重登録となり "ID [...] already registered" で segfault する。独自 BT ノードを
+    # 足すとき「だけ」追加分を列挙する。
 
 # ============================================================================
 # controller_server : 局所経路追従。経路に沿う速度司令 (cmd_vel) を生成する。
@@ -146,6 +160,11 @@ local_costmap:
       resolution: 0.05          # 解像度 [m/cell]
       robot_radius: 0.35        # ロボット外接半径 [m] (本体 0.50x0.35 を内包)
       plugins: ["obstacle_layer", "inflation_layer"]
+      filters: ["keepout_filter"]  # 進入禁止帯フィルタ (plugins とは別系統)
+      keepout_filter:           # keepout マスクを購読しコストに反映
+        plugin: "nav2_costmap_2d::KeepoutFilter"
+        enabled: true
+        filter_info_topic: "/costmap_filter_info"  # costmap_filter_info_server に一致
       obstacle_layer:           # /scan から障害物を書き込むレイヤ
         plugin: nav2_costmap_2d::ObstacleLayer
         enabled: true
@@ -178,6 +197,11 @@ global_costmap:
       resolution: 0.05          # 解像度 [m/cell]
       track_unknown_space: true # 未知領域を未知として扱う
       plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
+      filters: ["keepout_filter"]  # 進入禁止帯フィルタ (plugins とは別系統)
+      keepout_filter:           # keepout マスクを購読しコストに反映
+        plugin: "nav2_costmap_2d::KeepoutFilter"
+        enabled: true
+        filter_info_topic: "/costmap_filter_info"  # costmap_filter_info_server に一致
       static_layer:             # map_server の /map を静的レイヤとして取り込む
         plugin: nav2_costmap_2d::StaticLayer
         map_subscribe_transient_local: true  # latched な /map を購読
