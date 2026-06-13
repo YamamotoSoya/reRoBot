@@ -34,6 +34,8 @@ RUN apt-get update && apt-get install -y \
     ros-jazzy-nav2-minimal-tb* \
     # --- sensor integration (EKF,UKF) ---
     ros-jazzy-robot-localization \
+    # --- LiDAR (Sure-Star RFans/CFans rfans_driver) ---
+    libpcap-dev \
     # -----------------------------------
     && rm -rf /var/lib/apt/lists/*
 
