@@ -1,0 +1,41 @@
+# ============================================================
+#  Xbox / joystick teleop 設定                         # claude
+#  joy_node + teleop_twist_joy_node 用の独立した設定ファイル。
+#
+#  ★ この機能をやめたいとき（完全撤去手順）:
+#     1. このファイル (config/joy_teleop.yaml) を削除
+#     2. launch/joy_teleop.launch.py を削除
+#     3. package.xml の joy / teleop_twist_joy の exec_depend 2行を削除
+#     → 既存の bringup / nav2 / slam launch は一切変更していないので
+#       これだけで元の状態に戻ります。
+# ============================================================
+
+joy_node:
+  ros__parameters:
+    device_id: 0           # /dev/input/js0 を使用（複数挿す場合は番号を変える）
+    deadzone: 0.05         # スティック中央の遊び（ドリフト対策）
+    autorepeat_rate: 20.0  # [Hz] 入力が変化しなくても再送。teleop 側の publish を切らさない
+
+teleop_twist_joy_node:
+  ros__parameters:
+    # --- 軸割り当て: Linux の Xbox コントローラ + joy ドライバ標準配置 ---
+    axis_linear:
+      x: 1                 # 左スティック 上下 → 前進 / 後退
+    axis_angular:
+      yaw: 3               # 右スティック 左右 → 旋回
+
+    # --- スケール (= 出力の最大値)。params.yaml 系の上限に合わせる ---
+    #     通常時は控えめ、turbo ボタン押下で max まで出す
+    scale_linear:
+      x: 0.5               # [m/s]  通常
+    scale_linear_turbo:
+      x: 1.0               # [m/s]  turbo  (max_linear = 1.0 相当)
+    scale_angular:
+      yaw: 1.0             # [rad/s] 通常
+    scale_angular_turbo:
+      yaw: 2.0             # [rad/s] turbo  (max_angular = 2.0 相当)
+
+    # --- deadman（安全装置）: ボタンを押している間だけ Twist を出す ---
+    enable_button: 4         # LB ボタン: これを押している間だけ走行
+    enable_turbo_button: 5   # RB ボタン: 押すと turbo スケールに切替
+    require_enable_button: true

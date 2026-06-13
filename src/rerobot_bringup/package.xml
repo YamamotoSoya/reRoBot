@@ -29,6 +29,11 @@
   <exec_depend>nav2_regulated_pure_pursuit_controller</exec_depend>
   <exec_depend>nav2_navfn_planner</exec_depend>
   <exec_depend>nav2_costmap_2d</exec_depend>
+  <!-- claude: Xbox / joystick teleop (joy_teleop.launch.py 用)。
+       やめるときは下の2行と launch/joy_teleop.launch.py,
+       config/joy_teleop.yaml を削除すれば完全に撤去できます。 -->
+  <exec_depend>joy</exec_depend>
+  <exec_depend>teleop_twist_joy</exec_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

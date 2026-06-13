@@ -26,6 +26,9 @@ RUN apt-get update && apt-get install -y \
     ros-jazzy-canopen-402-driver \
     # --- HOKUYO urg_node ---
     ros-jazzy-urg-node \
+    # --- Xbox / joystick teleop --- # claude
+    ros-jazzy-joy \
+    ros-jazzy-teleop-twist-joy \
     # --- slam toolbox ---
     ros-jazzy-slam-toolbox \
     # --- navigation2 ---
