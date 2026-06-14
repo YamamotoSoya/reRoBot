@@ -176,6 +176,16 @@ def generate_launch_description():
         }],
     )
 
+    # claude: Nav2 専用 RViz ビュー (Fixed Frame: map, Navigation 2 パネル,
+    # /map・keepout・costmap・plan 等)。nav2.launch.py 起動と同時に立ち上げる。
+    rviz_node = Node(
+        package="rviz2",
+        executable="rviz2",
+        name="rviz2",
+        arguments=["-d", os.path.join(pkg_share, "rviz", "nav2.rviz")],
+        output="screen",
+    )
+
     return LaunchDescription([
         use_sim_time_arg,
         params_file_arg,
@@ -190,4 +200,5 @@ def generate_launch_description():
         behavior_server,
         bt_navigator,
         lifecycle_manager_navigation,
+        rviz_node,  # claude
     ])

@@ -12,7 +12,7 @@ from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import EmitEvent, RegisterEventHandler   # life-cycle-Event_by_claude
 from launch.events import matches_action                     # life-cycle-Event_by_claude
-from launch_ros.actions import LifecycleNode                 # life-cycle-Event_by_claude
+from launch_ros.actions import LifecycleNode, Node           # life-cycle-Event_by_claude (Node: claude RViz 追加)
 from launch_ros.event_handlers import OnStateTransition      # life-cycle-Event_by_claude
 from launch_ros.events.lifecycle import ChangeState          # life-cycle-Event_by_claude
 from lifecycle_msgs.msg import Transition                    # life-cycle-Event_by_claude
@@ -60,8 +60,19 @@ def generate_launch_description():
         )
     )
 
+    # claude: SLAM 専用 RViz ビュー (Fixed Frame: map, 構築中の /map と /scan,
+    # RobotModel/TF/Odometry)。Nav2 固有表示は含まない。slam.launch.py と同時起動。
+    rviz_node = Node(
+        package="rviz2",
+        executable="rviz2",
+        name="rviz2",
+        arguments=["-d", os.path.join(pkg_share, "rviz", "slam.rviz")],
+        output="screen",
+    )
+
     return LaunchDescription([
         slam_toolbox_node,
         configure_event,                                     # life-cycle-Event_by_claude
         activate_event,                                      # life-cycle-Event_by_claude
+        rviz_node,                                           # claude
     ])

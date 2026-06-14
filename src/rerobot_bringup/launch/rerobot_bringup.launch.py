@@ -61,20 +61,10 @@ def generate_launch_description():
         parameters=[{"robot_description": robot_description}],
         output="screen",
     )
-    
 
-    # # claude: auto-start rviz2 with bundled preset (odom fixed frame,
-    # RobotModel / TF / Odometry displays). Not wrapped in TimerAction because
-    # rviz2 has no CANopen service dependency and its subscribers will pick up
-    # /odom and /tf as soon as the delayed nodes come online.
-    rviz_config = os.path.join(pkg_share, "rviz", "rerobot.rviz")  # claude
-    rviz_node = Node(
-        package="rviz2",
-        executable="rviz2",
-        name="rviz2",
-        arguments=["-d", rviz_config],
-        output="screen",
-    )
+
+    # claude: RViz の起動はここでは行わない。可視化は nav2.launch.py (nav2.rviz) /
+    # slam.launch.py (slam.rviz) 側に委譲し、bringup と重ねたときの窓の重複を避ける。
 
     # claude: HOKUYO laser driver. frame_id は URDF (rerobot.urdf) の laser link 名と一致。
     # urg_node の executable 名は ROS 2 Jazzy では `urg_node_driver`。
@@ -109,6 +99,5 @@ def generate_launch_description():
         bus_config,
         delayed_nodes,
         robot_state_publisher_node,  # claude
-        rviz_node,
         urg_node_node,  # claude
     ])
