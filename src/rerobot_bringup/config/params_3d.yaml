@@ -1,0 +1,66 @@
+# claude: 3D LiDAR (R-Fans) 構成用パラメータ。
+#   epos4_* セクションは params_2d.yaml と同値 (シャシは共通)。変更時は両方を同期。
+#   rfans_driver セクションは StarROS2 の rfans_driver.launch.py の inline param 相当を
+#   yaml 化したもの (yaml は型を保持するため ParameterValue ラップ不要)。
+epos4_controller_node:
+  ros__parameters:
+    tread_width: 0.41 #[m]
+    tire_diam: 0.15   #[m]
+    gear_ratio: 1.25  #measured: raw 78.55rad/10rev = 7.855rad/rev = 2.5pi; /2pi = 1.25 # claude
+    invert_left: true
+    invert_right: true
+
+epos4_odometry_node:
+  ros__parameters:
+    tread_width: 0.41 #[m]
+    tire_diam: 0.15   #[m]
+    gear_ratio: 1.25  #measured: raw 78.55rad/10rev = 7.855rad/rev = 2.5pi; /2pi = 1.25 # claude
+    odom_frame_id: "odom"
+    base_frame_id: "base_link"
+    publish_tf: true
+    invert_left: true
+    invert_right: true
+
+# claude: node 名 "rfans_driver" は rerobot_bringup_3d.launch.py の Node(name=...) と一致必須
+rfans_driver:
+  ros__parameters:
+    # デバイス機種。角度フィルタ選択と再生レート計算に使う。LED 数はパケットから自動検出
+    # 選択肢: R-Fans-32 / R-Fans-16 / R-Fans-V6K / C-Fans-128 / C-Fans-32
+    model: "R-Fans-16"
+    # LiDAR 実機の IP アドレス (UDP 受信先)。launch 引数 device_ip:= で上書き可
+    device_ip: "192.168.0.3"
+    # LiDAR データ受信 UDP ポート
+    device_port: 2014
+    # スキャン速度 [Hz / rps]。5 / 10 / 20 のいずれか。launch 引数 rps:= で上書き可
+    rps: 10
+    # 出力 PointCloud2 の header.frame_id。rerobot_3d.urdf の rfans link 名と一致
+    frame_id: "rfans"
+    # 生パケット用トピック名 (レガシー。現 publish 経路では未使用だが互換のため保持)
+    advertise_name: "rfans_packets"
+    # 制御サービス名の末尾。実サービスは /rfans_driver/rfans_control になる
+    control_name: "rfans_control"
+    # 再生ファイルのパス (.pcap / .isf)。空文字なら実機(UDP)モード
+    readfile_path: ""
+    # C-Fans 用の設定/補正 ini ファイルパス (空可。R-Fans では不要)
+    cfg_path: ""
+    # true で計算済み点群をファイルに書き出す (SDK の Export 経由)
+    save_xyz: false
+    # save_xyz=true のときの出力先ディレクトリ
+    OutExport_path: ""
+    # true でデュアルエコー (2 反射) データレベルを使う
+    use_double_echo: false
+    # true なら点群の timeflag に GPS 時刻、false なら UTC(内部)時刻を入れる
+    use_gps: false
+    # 再生レート計算に使う角度範囲 [deg]。rate は cut_angle_range/360 で按分
+    cut_angle_range: 360.0
+    # true で再生時のレート制限を無効化し、できるだけ速く読み込む
+    read_fast: false
+    # true で再生ファイルを 1 回だけ読む。false ならループ再生
+    read_once: false
+    # ループ再生時、ファイル末尾でループし直すまでの待機秒数
+    repeat_delay: 0.0
+    # claude: z=0 回避用 dataID remap(10進)。R-Fans-16 GM の 0x37(=55) を
+    #   GM-16 縦角表へ分岐する 0x57(=87) に書き換える。_to=0 で remap 無効。
+    #   詳細は memory reference_rfans16_dataid_0x37 参照。
+    theta_remap_from: 55   # 0x37
+    theta_remap_to: 87     # 0x57

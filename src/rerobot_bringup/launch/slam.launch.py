@@ -1,5 +1,5 @@
 # claude: async_slam_toolbox_node を本リポジトリ用 params で起動する単独 launch。
-# 前提として rerobot_bringup.launch.py が urg_node + robot_state_publisher + epos4_odometry
+# 前提として rerobot_bringup_2d.launch.py が urg_node + robot_state_publisher + epos4_odometry
 # を立ち上げ、/scan と TF (odom→base_link, base_link→laser) が流れていること。
 #
 # claude: async_slam_toolbox_node は managed (lifecycle) node で、起動直後は

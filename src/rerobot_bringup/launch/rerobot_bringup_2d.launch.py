@@ -10,8 +10,8 @@ from launch_ros.actions import Node
 
 def generate_launch_description():
     pkg_share = get_package_share_directory("rerobot_bringup")  # claude
-    params_file = os.path.join(pkg_share, "config", "params.yaml")
-    urdf_file = os.path.join(pkg_share, "urdf", "rerobot.urdf")
+    params_file = os.path.join(pkg_share, "config", "params_2d.yaml")  # claude: 2D 用
+    urdf_file = os.path.join(pkg_share, "urdf", "rerobot_2d.urdf")  # claude: 2D 用
 
     # claude: HOKUYO シリアルポート。udev rule 整備までは sudo ln -sf /dev/ttyUSB0
     # /dev/HOKUYO-LINK-SAMPLE で実体に紐付けるか、`serial_port:=/dev/ttyUSB0` で上書き。
@@ -66,7 +66,7 @@ def generate_launch_description():
     # claude: RViz の起動はここでは行わない。可視化は nav2.launch.py (nav2.rviz) /
     # slam.launch.py (slam.rviz) 側に委譲し、bringup と重ねたときの窓の重複を避ける。
 
-    # claude: HOKUYO laser driver. frame_id は URDF (rerobot.urdf) の laser link 名と一致。
+    # claude: HOKUYO laser driver. frame_id は URDF (rerobot_2d.urdf) の laser link 名と一致。
     # urg_node の executable 名は ROS 2 Jazzy では `urg_node_driver`。
     urg_node_node = Node(
         package="urg_node",

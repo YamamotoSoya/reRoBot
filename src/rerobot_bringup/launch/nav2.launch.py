@@ -2,7 +2,7 @@
 # slam_toolbox には依存しない。map_server が地図を配信し、amcl が map->odom TF を
 # 供給する古典的なローカリゼーション + ナビ構成 + keepout (進入禁止帯) フィルタ。
 #
-# 前提: rerobot_bringup.launch.py が先に上がっており、以下が流れていること。
+# 前提: rerobot_bringup_2d.launch.py が先に上がっており、以下が流れていること。
 #   - /scan            (HOKUYO urg_node)
 #   - /odom + TF odom->base_link (epos4_odometry)
 #   - TF base_link->laser など (robot_state_publisher)
