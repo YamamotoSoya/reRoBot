@@ -39,6 +39,25 @@ RUN apt-get update && apt-get install -y \
     ros-jazzy-robot-localization \
     # --- LiDAR (Sure-Star RFans/CFans rfans_driver) ---
     libpcap-dev \
+    # --- LIO-SAM (LiDAR odometry, src/external/LIO-SAM) --- # claude
+    # 公式 (TixiaoShan/LIO-SAM) の依存を ROS 2 Jazzy 用に読み替えたもの:
+    #   PCL / cv_bridge(OpenCV) / tf2 / Boost::timer + GTSAM。
+    #   navigation・robot_localization・robot_state_publisher は
+    #   上の navigation2 / sensor integration / ros-base で導入済み。
+    # ros-jazzy-pcl-ros \
+    # ros-jazzy-pcl-conversions \
+    # ros-jazzy-cv-bridge \
+    # ros-jazzy-tf2 \
+    # ros-jazzy-tf2-ros \
+    # ros-jazzy-tf2-eigen \
+    # ros-jazzy-tf2-sensor-msgs \
+    # ros-jazzy-tf2-geometry-msgs \
+    # libpcl-dev \
+    # libboost-timer-dev \
+    # 公式は ppa:borglab/gtsam-release-4.0 を使うが noble(24.04) 非対応のため
+    # universe の libgtsam-dev (GTSAM 4.x) を利用する。 # claude
+    # libgtsam-dev \
+    # libgtsam-unstable-dev \
     # -----------------------------------
     && rm -rf /var/lib/apt/lists/*
 
