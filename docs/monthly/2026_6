@@ -1,0 +1,202 @@
+# 6月進捗
+## 先月のやり残しTODOの修正（優先度順）
+1. TODO teleop_keyboardでwheel_rightしか動かない。
+2. TODO 脱力モードほしい。
+3. TODO slamのmap更新を何mごとにやるのか確認
+4. TODO lifecycleEventの理解 and slam_toolbox立ち上げにlifecycleEvent使用しない方向で修正
+5. TODO Lidarの範囲修正 （Lidarの範囲多分ミスってる)
+6. TODO launch立ち上げで場合によってlaser_scanがError　subscribing : Empty topic nameになる。
+7. TODO 原因特定(slam-toolbox.yaml内にautostart: trueを追加。通常はこれで自動activateされるはずだが、どういうわけかならなかった)
+
+## 今月の予定
+![山本蒼也_3月ゼミ_reRo_2026_true.pptx のコピー.pptx.jpg](/attachment/6a22759ea71c2bb0b8555fbe)![山本蒼也_1月ゼミ_reRo_2026.pptx.jpg](/attachment/6a2275a3a71c2bb0b8555ff2)
+
+* slam_toolboxで自己位置推定
+* Nav2でナビゲーション(最低限）
+* R-Fans16のpackage作成（途中まで)
+
+## epos4/odometry関連のバグ
+
+### TODO teleop_keyboardでwheel_rightしか動かない。
+
+*CAN_openの通信方式について
+| ROS2    | CANopen | 共通する性質                                      |
+| ------- | ------- | ------------------------------------------------- |
+| Service | SDO     | 1対1、リクエスト/レスポンス、確認応答あり、低頻度 |
+| Topic | PDO | publish型、ACKなし、高頻度、事前にデータ構造を決めておく |
+
+*epos4初期化Serviceを応答を待たずに連射したことによるモード司令命令の未到達
+
+資料↓
+[2026-06-04_epos4_controller_init_race_dead_wheel.pdf](/attachment/6a227d65a71c2bb0b8556136)
+
+### 脱力モードの追加
+* コードが複雑になったため、**TODO 要確認**
+
+
+### epos4が実機移行した際に動かない
+* 状況の整理
+* 本当に原因不明。動くか動かないかは確率。buildの際のバグかも？
+**TODO 修正**
+
+### 車輪回転数が現実とRvizで一致しない
+* 現実で一回転した際、Rviz上では5~6回転する。
+* gear_ratioを1.25にしたところ正しく一回転した。
+* gear_ratioは車輪歯数/モータ歯数。逆の取り扱いをしているプログラムは見られなかった。
+* 推測：epos studioでセッティングする際に誤ってギヤ比を4:1にしてしまった可能性。(本来は5:1)
+**TODO 原因の確定(排除) epos4studioの設定を見る**
+
+### モータのハンチング
+* epos studio設定側では電流制限、その他制限等は影響が出るほどかけていない。(ギヤ比は1:1だった)
+* maxon_epos4_ros2側で問題となりうる点を修正した。
+```
+9 sync_period: 50000   # unit is us ; we slow down for test to 50ms
+27   - {index: 0x60C2, sub_index: 1, value: 50} # Set interpolation time for cyclic modes to 50 ms
+vvvvvvv
+9 sync_period: 10000   # unit is us ; we slow down for test to 50ms
+27   - {index: 0x60C2, sub_index: 1, value: 10} # Set interpolation time for cyclic modes to 50 ms
+```
+結果：変化なし。
+```
+デフォルトがPVM(3)だが、あとでCSV(9)でハードコートしている（epos4_controller）
+32   - {index: 0x6060, sub_index: 0, value: 3}  # profile velocity mode
+```
+影響なさそう
+
+* タイヤを浮かせた状態だとバチ止め。タイヤを浮かせてシステム同定しているのがいけないのかも。
+
+## slam関連のバグ
+
+### laiser scan が実機と逆に傾く
+* -->タイヤの左右逆(修正)
+
+* slamはできたが絶妙にずれる。
+->>ホイールオドメトリだけでは不十分か
+
+* map保存のためnav2を入れる
+->以下を追加
+```
+# --- navigation2 ---
+ros-jazzy-navigation2 \
+ros-jazzy-nav2-bringup \
+ros-jazzy-nav2-minimal-tb* \
+# --- sensor integration (EKF,UKF) ---
+os-jazzy-robot-localization \
+```
+* そのまま保存するとdockerコンテナ内に保存されてホストからアクセスできない&消えるのでmapディレクトリをマウントしておく。
+->``- ./maps:/workspace/maps``をvolumes:に追加
+![Screenshot from 2026-06-07 20-57-50.png](/attachment/6a255d58a71c2bb0b855a9c9)
+↑９号館のmap　存在しない空間を作ってる
+
+## nav2関連
+
+* keepout_mapを追加した。
+* gimpでmy_map.pgmのコピーを開いて編集して作成した。壁の黒は白に置換して、立ち入ってほしくないところを黒にした。
+
+* nav2_params.yamlとnav2.launch.pyを追加した。claude任せであまり理解できていないので理解してからデバッグに移るべし。
+* nav2_params.yamlにbt_navigatorを明記していたが、内部デフォルト値の二重登録になり〜〜〜したので削除した。
+* mapをわかりやすいファイル構造に修正した。
+* Nav2のRviz設定をrerobot.rvizに追加した。
+* TF, Local Costmapがwarning, RobotModelがerrorを吐いていたが、原因は初期位置を指定していないからamclにデータが渡されていないだけだった(life cycle管理。　先に初期位置を指定しないと起動しないことを知らなかっただけ。)
+* 2D Pose Estimateを指定したら普通に全node揃った。Nav2 Goalを指定したら正しく自律移動した。
+![Screenshot from 2026-06-12 19-53-09.png](/attachment/6a2bf3f5a71c2bb0b85663a8)
+![Screenshot from 2026-06-12 20-24-10.png](/attachment/6a2bf4f1a71c2bb0b8566403)
+
+* **改善点**　遅い、低速域での動作が安定しないため、もっと減速比を上げるべき。オドメトリ弱い。精度向上
+
+nav2参考
+https://docs.nav2.org/configuration/index.html
+https://qiita.com/kccs_mitsuhiro-teraoka/items/7861b938df96b2b599a3
+https://sites.google.com/site/robotlabo/ros-2関連/nav2を使った地図生成と自己位置推定
+https://qiita.com/porizou1/items/45cc0f9d4999139a7406
+https://github.com/ros-navigation/navigation2/blob/main/nav2_bringup/params/nav2_params.yaml
+
+https://remix-yh.net/2520/
+
+## R-Fans-16関連
+公式リポジトリをもとに改造したパッケージ
+https://github.com/YamamotoSoya/StarROS2.git
+
+参考：https://sgrsn1711.hatenablog.com/entry/2022/06/09/163730
+
+* RFans16にDC12Vを入力。Erthanetを接続する。
+* ホストPCにIPアドレスを振る。（Lidar間の通信で自分のIPアドレスを設定する必要がある。豆知識：普通のwifiなんかのネットワークはDHCPサーバが自動でIPアドレスを割り振ってくれる。）
+``sudo ip addr add 192.168.0.100/24 dev enxcce1d5021885``
+```
+27: enxcce1d5021885: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+    link/ether cc:e1:d5:02:18:85 brd ff:ff:ff:ff:ff:ff
+
+vvvvvvv ip addr set (check by "ip addr show")vvvvvvv
+
+27: enxcce1d5021885: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+    link/ether cc:e1:d5:02:18:85 brd ff:ff:ff:ff:ff:ff
+    inet 192.168.0.100/24 scope global enxcce1d5021885
+       valid_lft forever preferred_lft forever
+
+vvvvvvv pass ping (check by "ping 192.168.0.3")vvvvvvv
+
+PING 192.168.0.3 (192.168.0.3) 56(84) bytes of data.
+64 bytes from 192.168.0.3: icmp_seq=1 ttl=128 time=0.619 ms
+64 bytes from 192.168.0.3: icmp_seq=2 ttl=128 time=0.129 ms
+64 bytes from 192.168.0.3: icmp_seq=3 ttl=128 time=0.144 ms
+64 bytes from 192.168.0.3: icmp_seq=4 ttl=128 time=0.273 ms
+64 bytes from 192.168.0.3: icmp_seq=5 ttl=128 time=0.154 ms
+^C
+--- 192.168.0.3 ping statistics ---
+5 packets transmitted, 5 received, 0% packet loss, time 4135ms
+rtt min/avg/max/mdev = 0.129/0.263/0.619/0.184 ms
+
+```
+* Docker composeで --network=host　に設定しているためそのままDocker内で使用可
+* rviz2で立ち上げFixed Frame id を world にしてPointCloud topicを表示
+``ros2 launch rfans_driver rfans_driver.launch.py``
+``rviz2 #Rviz起動``
+
+
+ただし、再起動で消えてしまうため、NetWorkManagerで固定プロファイルを作るべし。
+
+* なぜかすべての点群がz=0に表示されてしまう。
+![Screenshot from 2026-06-13 13-52-38.png](/attachment/6a2d3834a71c2bb0b8568b20)
+Color Transformer = AxisColor,  Axis = Z　にすると単色(=すべての点群がz=0である)
+![Screenshot from 2026-06-13 13-59-04.png](/attachment/6a2d3843a71c2bb0b8568b4b)
+
+* Lidarモデルの動的判定が合致せず、LED_num = 32 (R-Fans=-16なので16のはず)にっていたので修正。しかし治らず
+* 16用の設定が読み込まれてなかったみたい。詳しくはdocs確認
+* 更新速度が遅い問題も解決した。(1Hz -> 20Hz)詳しくはdocs確認
+![Screenshot from 2026-06-13 19-05-34.png](/attachment/6a2d38f5a71c2bb0b8568b8d)
+
+* tfの確認はOK、Rviz似表示できない(設定わからない)
+![Screenshot from 2026-06-16 21-42-55.png](/attachment/6a3147afa71c2bb0b856c880)
+
+## LIO-SAM関連
+* external下にLIO-SAM追加（バイナリはなしソースビルド必須）
+* 依存関係をDockerFileに追加
+## JoyController関連
+* Dockerfileにjoycon用のパッケージを追加
+
+```
+#--- Xbox / joystick teleop --- # claude
+    ros-jazzy-joy \
+    ros-jazzy-teleop-twist-joy \
+```
+src/rerobot_bringup/launch/joy_teleop.launch.pyを追加 /cmd_vel -> /robot_speed_cmdへのリマップがメインの役割。
+
+
+## その他
+* epos4の設定見直す。モータの電流制限等。
+
+## メモ
+
+*　clang-formatを適用した。
+*　src/rerobot_bringup/launch/rerobot_bringup.launch.py -> 共通rviz設定読み込みだとslamとnav2で設定を使い分けられなかったので、以下のように変更
+rerobot_bringup.launch.py　-> Rviz起動なし
+slam.launch.py -> slam.rviz
+nav2.launch.py -> nav2.rviz
+
+
+###ファイル構造
+
+サブモジュール作成
+``git submodule add http://github.com/hogehoge ``
+シンボリックリンク作成
+``ln -s external/hogehoge(相対リンク) hogehoge(カレントディレクトリ下)``
