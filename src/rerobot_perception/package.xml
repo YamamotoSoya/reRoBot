@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<!-- claude: 3D 自律移動用の知覚ユーティリティパッケージ。
+     - rfans_ring_converter: R-Fans 点群を LIO-SAM 互換 (ring/time 付き) に変換
+     - pcd_to_gridmap:       LIO-SAM の PCD 地図を Nav2 用 2D 占有格子へ投影 -->
+<package format="3">
+  <name>rerobot_perception</name>
+  <version>0.1.0</version>
+  <description>Perception utilities for reRoBot 3D navigation (R-Fans to LIO-SAM cloud converter, PCD to 2D gridmap projector)</description>
+  <maintainer email="analiveys326@gmail.com">YamamotoSoya</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>sensor_msgs</depend>
+  <depend>libpcl-all-dev</depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
