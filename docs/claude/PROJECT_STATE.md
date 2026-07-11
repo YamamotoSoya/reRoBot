@@ -59,7 +59,11 @@ EPOS4 ×2                     │
 - R-Fans-16: 20 Hz で点群取得 (z=0 問題・低 fps 問題は解決済み — docs/report/2026-06-13 ×2)。
 
 **構成はあるが未完/未接続**:
-- 3D 構成 (`rerobot_bringup_3d.launch.py`): 点群は出るが **/scan が無いので SLAM/Nav2 に繋がらない** (設計判断待ち)。
+- **3D 自律移動 (feat/claude-optimize で実装済み・実機未検証)**: mapping=LIO-SAM
+  (slam_3d.launch.py, rfans_ring_converter で ring/time 付与)、localization=
+  lidar_localization_ros2 (NDT, map→odom)、planning=Nav2 (pcd_to_gridmap の投影地図
+  + pointcloud_to_laserscan の /scan)。設計は docs/features/2026-07-12_3d_autonomous_navigation.md。
+  旧記述「/scan が無いので SLAM/Nav2 に繋がらない」は解消 (bringup_3d が /scan を出す)。
 - LIO-SAM: monthly には「追加した」とあるが**リポジトリに存在しない** (コミット漏れ疑い — triage T13)。
 - RViz での R-Fans 点群表示手順が未確立 (triage T12 に手順記載)。
 - **feat/claude-optimize ブランチ (worktree ~/reRoBot-optimize) の全変更**: controller リファクタ
@@ -103,6 +107,7 @@ EPOS4 ×2                     │
 | 06 末 | 2D/3D bringup 分離 (params_2d/3d, urdf 2d/3d)。RViz を nav2.rviz/slam.rviz に分割。joy teleop 追加 |
 | 07-07 | Claude によるリポジトリ全体監査 (25 issue) + monthly TODO トリアージ。docs/issue/ 運用開始 |
 | 07-12 | feat/claude-optimize (worktree) で全体リファクタ 4 コミット + 堅牢性一式 (378f674)。コンテナ検証のみ |
+| 07-12 | 同ブランチで 3D 自律移動を実装 (LIO-SAM mapping + lidar_localization_ros2 NDT + Nav2)。コンテナ検証のみ |
 
 ## 7. コードを触るときに知らないと踏む罠 (経緯由来の知識)
 
@@ -147,3 +152,10 @@ B1 エンコーダ根本修正 (⚠️3 点同時変更) → B2 ハンチング 
 2. Ctrl-C / SIGTERM での pre_shutdown disable が実 EPOS4 に届くか (励磁が切れるか)
 3. teleop 切断 (q ではなく強制 kill) でデッドマンが 0.5 s で効くか
 4. EPOS4 FAULT 誘発 (非常停止等) で statusword 監視の ERROR ログが出るか
+
+**3D 自律移動の実機検証手順** (feat/claude-optimize, 上記とは別セッションで可):
+1. submodule 追加後 (lidar_localization_ros2 + ndt_omp_ros2) の Jazzy ビルド確認
+2. LIO-SAM の IMU extrinsics (lio_sam_params.yaml の仮値恒等行列) — 実取付姿勢を測って更新。違うと即発散
+3. 実 R-Fans 点群での rfans_ring_converter 出力 (Horizon_SCAN 2000 の妥当性含む)
+4. mapping 走行 (bringup_3d odom_tf:=false + slam_3d) → save_map → pcd_to_gridmap の z 帯調整
+5. nav2_3d で NDT 初期収束 (/initialpose) → 自律走行
