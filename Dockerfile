@@ -54,10 +54,14 @@ RUN apt-get update && apt-get install -y \
     ros-jazzy-tf2-geometry-msgs \
     libpcl-dev \
     libboost-timer-dev \
-    # 公式は ppa:borglab/gtsam-release-4.0 を使うが noble(24.04) 非対応のため
-    # universe の libgtsam-dev (GTSAM 4.x) を利用する。 # claude
-    libgtsam-dev \
-    libgtsam-unstable-dev \
+    # 公式は ppa:borglab/gtsam-release-4.0 を使うが noble(24.04) 非対応。
+    # universe の libgtsam-dev は gtsam_unstable ヘッダ
+    # (imuPreintegration.cpp が include する IncrementalFixedLagSmoother.h)
+    # を含まず、libgtsam-unstable-dev は noble に存在しない。
+    # → gtsam_unstable 同梱の ros-jazzy-gtsam (GTSAM 4.2.0) を使う。 # claude
+    ros-jazzy-gtsam \
+    # 6軸IMU(RealSense) → orientation付与 (LIO-SAM入力用) # claude
+    ros-jazzy-imu-filter-madgwick \
     # -----------------------------------
     && rm -rf /var/lib/apt/lists/*
 
