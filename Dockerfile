@@ -44,25 +44,30 @@ RUN apt-get update && apt-get install -y \
     #   PCL / cv_bridge(OpenCV) / tf2 / Boost::timer + GTSAM。
     #   navigation・robot_localization・robot_state_publisher は
     #   上の navigation2 / sensor integration / ros-base で導入済み。
-    # ros-jazzy-pcl-ros \
-    # ros-jazzy-pcl-conversions \
-    # ros-jazzy-cv-bridge \
-    # ros-jazzy-tf2 \
-    # ros-jazzy-tf2-ros \
-    # ros-jazzy-tf2-eigen \
-    # ros-jazzy-tf2-sensor-msgs \
-    # ros-jazzy-tf2-geometry-msgs \
-    # libpcl-dev \
-    # libboost-timer-dev \
+    ros-jazzy-pcl-ros \
+    ros-jazzy-pcl-conversions \
+    ros-jazzy-cv-bridge \
+    ros-jazzy-tf2 \
+    ros-jazzy-tf2-ros \
+    ros-jazzy-tf2-eigen \
+    ros-jazzy-tf2-sensor-msgs \
+    ros-jazzy-tf2-geometry-msgs \
+    libpcl-dev \
+    libboost-timer-dev \
     # 公式は ppa:borglab/gtsam-release-4.0 を使うが noble(24.04) 非対応のため
     # universe の libgtsam-dev (GTSAM 4.x) を利用する。 # claude
-    # libgtsam-dev \
-    # libgtsam-unstable-dev \
+    libgtsam-dev \
+    libgtsam-unstable-dev \
     # -----------------------------------
     && rm -rf /var/lib/apt/lists/*
 
 # Create can group and add root user to it
 RUN groupadd -f can && usermod -a -G can root
+
+# --- librealsense (Intel RealSense SDK) ---
+RUN apt-get update && apt-get install -y \
+    ros-${ROS_DISTRO}-librealsense2* \
+     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /workspace
 
