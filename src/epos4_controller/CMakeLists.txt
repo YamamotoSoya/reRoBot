@@ -19,11 +19,12 @@ find_package(message_filters REQUIRED)  # claude_tire claude_odom claude_sync
 
 
 add_executable(epos4_controller src/epos4_controller.cpp)
+# claude_opt: sensor_msgs は controller の死んだコード(/robot_encoder_states fan-in)
+# 削除に伴い不要化。odometry ターゲットは引き続き使用する。
 ament_target_dependencies(epos4_controller
   rclcpp
   std_msgs
   std_srvs
-  sensor_msgs
   geometry_msgs
   canopen_interfaces
 )
