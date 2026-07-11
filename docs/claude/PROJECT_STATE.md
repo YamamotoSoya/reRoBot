@@ -3,7 +3,7 @@
      読み順: CLAUDE.md (規約・ビルド) → 本ファイル (現在地) → docs/issue/ (問題詳細)。 -->
 # reRoBot プロジェクト状態メモ (Claude 用)
 
-- **最終更新: 2026-07-07** (リポジトリ全体監査 + monthly/2026_6 トリアージを実施した時点)
+- **最終更新: 2026-07-12** (feat/claude-optimize ブランチで全体リファクタ + 堅牢性改善を実装した時点)
 - 書き手: Claude Code (Fable 5)。次の Claude はまずこれを読めば現在地が分かるようにしてある。
 
 ---
@@ -62,6 +62,11 @@ EPOS4 ×2                     │
 - 3D 構成 (`rerobot_bringup_3d.launch.py`): 点群は出るが **/scan が無いので SLAM/Nav2 に繋がらない** (設計判断待ち)。
 - LIO-SAM: monthly には「追加した」とあるが**リポジトリに存在しない** (コミット漏れ疑い — triage T13)。
 - RViz での R-Fans 点群表示手順が未確立 (triage T12 に手順記載)。
+- **feat/claude-optimize ブランチ (worktree ~/reRoBot-optimize) の全変更**: controller リファクタ
+  (MotorInterface 化)・終了時 disable 修正 (pre_shutdown)・params `/**` 一本化・launch 共通化
+  + TimerAction 撤去・堅牢性一式 (デッドマン/statusword 監視/ジャンプガード/無音監視/respawn —
+  docs/features/2026-07-12)。**コンテナビルド+スモークまで。実機 CAN 未検証** — 特に
+  TimerAction 撤去後の起動シーケンスと pre_shutdown disable は実機確認がマージ前提。
 
 **品質面の課題**: SLAM が「絶妙にずれる」、低速でハンチング、Nav2 走行が遅い — いずれも
 オドメトリ/エンコーダ問題 (§5) が根っこにある可能性が高い。
@@ -79,7 +84,8 @@ EPOS4 ×2                     │
 
 **優先度の要約**:
 1. 🔴 **安全系 (監査 Issue 1〜3)**: /robot_speed_cmd ウォッチドッグなし・Ctrl-C で disable 不達・速度平滑化なし。
-   monthly の TODO には無いが**本番前必須**。
+   monthly の TODO には無いが**本番前必須**。→ **ウォッチドッグ (デッドマン) と Ctrl-C disable は
+   feat/claude-optimize で実装済み (実機未検証)**。速度平滑化のみ未着手。
 2. 🔴 **エンコーダ 4 倍ズレの根本修正** (B1): ハンチング (T10) と SLAM ずれ (T11) の根っこの疑いも濃い。
 3. 🟡 LiDAR FOV ±90°→±135° (A1)、slam_toolbox lifecycle 整理 (A2)、脱力モードの競合修正 (A4)。
 4. 🟡 ROS_DOMAIN_ID=150 → 101 以下へ (discovery が散発的に失敗しうる)。
@@ -96,6 +102,7 @@ EPOS4 ×2                     │
 | 06-13 | R-Fans-16 の z=0 問題 (dataID 0x37 remap) と低 fps 問題を解決 (report ×2)。StarROS2 を ROS2 移植 (features) |
 | 06 末 | 2D/3D bringup 分離 (params_2d/3d, urdf 2d/3d)。RViz を nav2.rviz/slam.rviz に分割。joy teleop 追加 |
 | 07-07 | Claude によるリポジトリ全体監査 (25 issue) + monthly TODO トリアージ。docs/issue/ 運用開始 |
+| 07-12 | feat/claude-optimize (worktree) で全体リファクタ 4 コミット + 堅牢性一式 (378f674)。コンテナ検証のみ |
 
 ## 7. コードを触るときに知らないと踏む罠 (経緯由来の知識)
 
@@ -134,3 +141,9 @@ EPOS4 ×2                     │
 要約: A1 LiDAR FOV → A2 slam lifecycle → A3 rviz エラー確認 → A4 脱力モード修正 →
 B1 エンコーダ根本修正 (⚠️3 点同時変更) → B2 ハンチング → B3 オドメトリ/SLAM 精度 → B4 R-Fans RViz → B5 LIO-SAM 回収。
 加えて監査 Issue 1〜3 (安全系) を本番前に必ず。ros2_control 移行 (C1 案 3) はユーザ合意が出たら本命。
+
+**feat/claude-optimize のマージ前チェックリスト** (実機 CAN 接続時):
+1. TimerAction 無しでの bringup 起動シーケンス (init 20 s 待ちで足りるか)
+2. Ctrl-C / SIGTERM での pre_shutdown disable が実 EPOS4 に届くか (励磁が切れるか)
+3. teleop 切断 (q ではなく強制 kill) でデッドマンが 0.5 s で効くか
+4. EPOS4 FAULT 誘発 (非常停止等) で statusword 監視の ERROR ログが出るか
