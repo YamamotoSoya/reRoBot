@@ -41,14 +41,14 @@ The CANopen device container must be launched first; only then do the applicatio
 # 1. Bring up CAN interface (host or container, requires privileged)
 sudo ip link set can0 up type can bitrate 1000000
 
-# 2. One-shot: bus_config → (5s delay) → epos4_controller + epos4_odometry + robot_state_publisher
+# 2. One-shot: bus_config + epos4_controller + epos4_odometry + robot_state_publisher + LiDAR
 #    2D LiDAR (HOKUYO urg_node) 構成:
 ros2 launch rerobot_bringup rerobot_bringup_2d.launch.py
 #    3D LiDAR (R-Fans rfans_driver) 構成:
 ros2 launch rerobot_bringup rerobot_bringup_3d.launch.py
 ```
 
-The 5-second `TimerAction` in `rerobot_bringup_2d.launch.py` / `rerobot_bringup_3d.launch.py` exists because the cia402 `init/enable/cyclic_velocity_mode` services are not advertised until `ros2_canopen`'s device_manager has finished booting both drivers (~3-4 s in practice). Without the delay, `epos4_controller`'s constructor-time `wait_for_service(1s)` calls race the bus_config and silently fail, leaving the EPOS4s disabled.
+Startup ordering against `ros2_canopen`'s device_manager (which advertises the cia402 `init/enable/cyclic_velocity_mode` services only after booting both drivers, ~3-4 s) is handled **inside `epos4_controller`**, not in launch: its background init thread waits up to 20 s for the `init` service to appear, then drives init → enable → cyclic_velocity_mode sequentially and verifies the result over SDO (statusword 0x6041 / mode 0x6061), retrying with `recover` on failure. The 5-second `TimerAction` that older launch revisions used for this is gone.
 
 If you prefer to bring the stack up piece by piece (useful for debugging):
 ```bash
@@ -89,36 +89,42 @@ The robot's control plane is a layered pipeline; each layer is a separate ROS 2 
 [epos4_odometry] / [epos4_teleop]  ── consume per-motor joint_states directly
 ```
 
-Note: `epos4_controller`'s in-code fan-in of both motors into a single
-`/robot_encoder_states` topic is currently commented out. Consumers
-(`epos4_odometry`, `epos4_teleop`) subscribe to the two per-motor
-`joint_states` topics directly. `rerobot_bringup_2d.launch.py` /
-`rerobot_bringup_3d.launch.py` remap
-`robot_state_publisher`'s `/joint_states` input onto `/robot_encoder_states`,
-so publishing that aggregate topic again is the intended future fix.
+Note: `epos4_odometry` pairs the two per-motor `joint_states` topics by
+header stamp (message_filters `ApproximateTime`; PDO sync is 50 ms on both
+motors, so each pair collapses into one callback) and republishes wheel-side
+angles as `/joint_states` (`m1_wheel`, `m2_wheel`), which
+`robot_state_publisher` consumes for the dynamic wheel TFs. The old
+`/robot_encoder_states` fan-in concept is dead and its remnants have been
+removed from `epos4_controller`.
+
+`epos4_controller` also subscribes to `/robot_free_mode` (`std_msgs/Bool`):
+`true` disables both drives (脱力/free-wheel, velocity commands ignored),
+`false` re-enables them (enable → CSV, sequenced and SDO-verified). Keyboard
+teleop toggles this with the `f` key.
 
 ### Packages
 
 - **`src/epos4_controller`** — application layer (executables only). Both nodes consume parameters from `src/rerobot_bringup/config/params_2d.yaml` (3D 構成では `params_3d.yaml`; epos4 セクションは同値) (`tread_width`, `tire_diam`, `gear_ratio`, `invert_left/right`):
-  - `epos4_controller` — owns the EPOS4 lifecycle (auto-calls init → enable → cyclic_velocity_mode in its constructor), converts `/robot_speed_cmd` into per-wheel target velocities (rpm), and fans them out to both motors via the canopen TPDO topic at 100 Hz. The `init` service reliably emits `Homing failed` because CSV mode doesn't require homing — this is expected and the subsequent `enable` / `cyclic_velocity_mode` service calls succeed and leave the motors ready.
-  - `epos4_odometry` — subscribes to `/robot_encoder_states` (currently unpopulated; see architecture note). Computes 2D pose with mid-step heading integration; publishes `/odom` and broadcasts TF. Parameters for frame names, TF on/off, gear ratio, and per-wheel inversion (`invert_left/right`).
+  - `epos4_controller` — owns the EPOS4 lifecycle. A background init thread waits (≤20 s) for the cia402 services, then runs init → enable → cyclic_velocity_mode per motor sequentially, verifies over SDO, and retries with `recover` (the `init` step reliably logs `Homing failed` because CSV doesn't require homing — expected). Converts `/robot_speed_cmd` into per-wheel target velocities (rpm) and fans them out via the canopen TPDO topics at 100 Hz. Handles `/robot_free_mode` (disable / re-enable both drives) and sends `disable` to both drives from a `pre_shutdown` callback on exit. Per-motor plumbing lives in the `MotorInterface` struct — extend that (not copy-pasted members) for new per-motor I/O.
+  - `epos4_odometry` — syncs the two per-motor `joint_states` topics (message_filters `ApproximateTime`), computes 2D pose with mid-step heading integration, publishes `/odom` + TF, and republishes wheel-side `/joint_states` for `robot_state_publisher`. Parameters for frame names, TF on/off, gear ratio, and per-wheel inversion (`invert_left/right`).
 - **`src/rerobot_bringup`** — system bringup assets (no C++ code). Owns:
-  - `launch/rerobot_bringup_2d.launch.py` — **2D LiDAR** composite bringup (bus_config + 5 s TimerAction + controller + odometry + robot_state_publisher + `urg_node`, frame_id `laser`). Does **not** launch RViz; visualization is owned by `nav2.launch.py` / `slam.launch.py` so the two don't open duplicate windows.
-  - `launch/rerobot_bringup_3d.launch.py` — **3D LiDAR** composite bringup. `rerobot_bringup_2d.launch.py` と同構成で `urg_node` を `rfans_driver` (R-Fans, `src/external/StarROS2`) に差し替えたもの。frame_id `rfans`、出力 PointCloud2 `/sdk_could`。`device_ip` / `rps` / `model` を launch 引数で上書き可。`/scan` は出さない (LaserScan 変換は含まない)。
-  - `config/params_2d.yaml` — chassis parameters consumed by `epos4_controller` / `epos4_odometry` (2D 構成)。
-  - `config/params_3d.yaml` — 同 chassis parameters (2D と同値) + `rfans_driver` セクション (機種/接続/frame_id `rfans`/theta remap)。
+  - `launch/rerobot_bringup_common.launch.py` — 2D/3D 共通部 (bus_config + controller + odometry + robot_state_publisher)。`params_file` / `urdf_file` を launch 引数で受け取り、URDF は `cat` の Command substitution で読み込む。単体起動は想定せず、下の 2 ラッパーから include される。
+  - `launch/rerobot_bringup_2d.launch.py` — **2D LiDAR** bringup wrapper: common + `urg_node` (frame_id `laser`, `serial_port` 引数)。Does **not** launch RViz; visualization is owned by `nav2.launch.py` / `slam.launch.py` so the two don't open duplicate windows.
+  - `launch/rerobot_bringup_3d.launch.py` — **3D LiDAR** bringup wrapper: common + `rfans_driver` (R-Fans, `src/external/StarROS2`)。frame_id `rfans`、出力 PointCloud2 `/sdk_could`。`device_ip` / `rps` / `model` を launch 引数で上書き可。`/scan` は出さない (LaserScan 変換は含まない)。
+  - `config/params_2d.yaml` — chassis parameters (2D 構成)。車体パラメータは `/**:` セクション (このファイルを読む全ノード共通) に一本化されている。rcl の yaml パーサは YAML アンカーを解釈しないため、共通化には必ず `/**` を使うこと。
+  - `config/params_3d.yaml` — 同 chassis parameters (`/**`、2D と同値) + `rfans_driver` セクション (機種/接続/frame_id `rfans`/theta remap)。
   - `urdf/rerobot_2d.urdf` — robot description (2D, LiDAR link `laser` @ xyz `0 0 0.714`).
   - `urdf/rerobot_3d.urdf` — robot description (3D, LiDAR link `rfans` を 2D と同位置 xyz `0 0 0.714` に配置)。
   - `rviz/nav2.rviz` — Nav2 view (Fixed Frame: `map`, Navigation 2 panel, `/map` + keepout mask + costmaps + global/local plan + amcl particles + footprint). Launched by `nav2.launch.py`.
   - `rviz/slam.rviz` — SLAM view (Fixed Frame: `map`, RobotModel/TF/Odometry + the in-progress `/map` + `/scan`; no Nav2-specific displays). Launched by `slam.launch.py`.
-- **`src/epos4_teleop`** — keyboard teleop. Publishes `geometry_msgs/Twist` on `/robot_speed_cmd` and subscribes directly to `/motor{1,2}/cia402_device_{1,2}/joint_states` to print cumulative left/right wheel distance. Keys: `w/s` (linear ±), `a/d` (angular ±), `space`/`x` (stop), `+/-` (scale step), `r` (reset distance), `q` (quit with zero Twist).
+- **`src/epos4_teleop`** — keyboard teleop. Publishes `geometry_msgs/Twist` on `/robot_speed_cmd` and subscribes directly to `/motor{1,2}/cia402_device_{1,2}/joint_states` to print cumulative left/right wheel distance. Keys: `w/s` (linear ±), `a/d` (angular ±), `space`/`x` (stop), `+/-` (scale step), `r` (reset distance), `f` (toggle 脱力/free mode via `/robot_free_mode`), `q` (quit with zero Twist).
 - **`src/epos4_vel_ros2`** — standalone single-motor (and 2-motor) test programs. Useful for bench-bringing-up an EPOS4 without the full control stack.
 - **`src/external/epos4compact50-5can`** — git submodule; vendors the `maxon_epos4_ros2` package. Its launch file (`bus_config_cia402_epos4_vel.launch.py`) is what wires `cia402_device_1` (node_id 1, namespace `/motor1`) and `cia402_device_2` (node_id 2, namespace `/motor2`) onto `can0`.
 
 ### Key conventions
 
-- The two motors are addressed via the namespaces `/motor1/cia402_device_1` and `/motor2/cia402_device_2` (defined in `external/.../bus.yml`). Any new node that talks to a motor must follow this namespace pattern. In `epos4_controller`'s kinematics, `motor1 = left wheel` and `motor2 = right wheel`.
+- The two motors are addressed via the namespaces `/motor1/cia402_device_1` and `/motor2/cia402_device_2` (defined in `external/.../bus.yml`). Any new node that talks to a motor must follow this namespace pattern. **Physical wiring is `motor1 = RIGHT wheel`, `motor2 = LEFT wheel`** (`claude_swap` markers in the code) — `epos4_controller`, `epos4_odometry`, and `epos4_teleop` all follow this mapping; do not assume motor index = left/right order.
 - `epos4_controller` drives the EPOS4 in **cyclic synchronous velocity mode** by writing target velocity (object 0x60FF, sub 0x00) into `COData` messages on the per-motor `tpdo` topic. The controller's own publish timer runs at 100 Hz; the PDO sync period is 50 ms (set in `bus.yml`).
 - Joint position/velocity from the canopen driver are **SI-scaled by the driver itself** via `bus.yml`'s `scale_pos_from_dev = 0.0015339 (≈ 2π/4096)` and `scale_vel_from_dev = 0.10472 (= 2π/60)`. So `joint_states.position` is **motor-shaft angle in radians** and `joint_states.velocity` is **rad/s** — not raw qc/rpm. Any consumer computing wheel distance should do `distance_m = (Δposition / gear_ratio) × (tire_diam / 2)`. Outgoing commands go the other way: controller publishes **rpm** on the TPDO, which the driver scales to device units via `scale_vel_to_dev = 9.5493`.
 - ROS 2 params files **must** use the key `ros__parameters` (two underscores). A single-underscore typo (`ros_parameters`) will crash the node on startup with `RCLInvalidROSArgsError: Cannot have a value before ros__parameters`, and it is not obvious from the symptom (nodes exit before publishing anything).
-- `tread_width`, `tire_diam`, `gear_ratio`, and `invert_left/right` are duplicated as ROS parameters in each consumer, sourced from `src/rerobot_bringup/config/params_2d.yaml` and `params_3d.yaml` (whose epos4 sections must match) (and a parallel copy in `src/epos4_teleop/config/params.yaml`). Keep them in sync if you change the chassis.
+- `tread_width`, `tire_diam`, `gear_ratio`, and `invert_left/right` live in the `/**:` section of `src/rerobot_bringup/config/params_2d.yaml` and `params_3d.yaml` (one copy per file; the two files must match) plus a parallel copy in `src/epos4_teleop/config/params.yaml` (whose `invert_*` intentionally differ — teleop counts raw travel). Keep 2D/3D/teleop in sync if you change the chassis; the `/params-sync` skill checks this.
