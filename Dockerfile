@@ -37,6 +37,8 @@ RUN apt-get update && apt-get install -y \
     ros-jazzy-navigation2 \
     ros-jazzy-nav2-bringup \
     ros-jazzy-nav2-minimal-tb* \
+    # --- 3D LiDAR → /scan 変換 (3D 構成の SLAM/Nav2 入力) --- # claude
+    ros-jazzy-pointcloud-to-laserscan \
     # --- sensor integration (EKF,UKF) ---
     ros-jazzy-robot-localization \
     # --- LiDAR (Sure-Star RFans/CFans rfans_driver) ---

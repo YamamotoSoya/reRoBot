@@ -28,6 +28,30 @@ epos4_odometry_node:
     # claude_robust: 1 更新あたりの車輪移動がこれ [m] を超えたら積分せず基準取り直し。0 で無効
     pose_jump_threshold: 0.5
 
+# claude: /sdk_could (PointCloud2) → /scan (LaserScan) 変換。
+#   slam_toolbox / Nav2 costmap の障害物入力用。node 名は
+#   rerobot_bringup_3d.launch.py の Node(name=...) と一致必須。
+pointcloud_to_laserscan:
+  ros__parameters:
+    # 変換先フレーム。base_link に変換してから z でスライスする
+    # (rfans は z=0.714 に取り付くため、センサフレームのままだと高さ指定が
+    #  直感に反する。base_link 基準なら「車軸中心からの高さ」で書ける)
+    target_frame: "base_link"
+    transform_tolerance: 0.1
+    # 高さスライス [m] (base_link 基準。地面は約 -0.075)。
+    # 0.1〜1.0 = 地面ノイズと頭上の枝葉を除いた胴体高の障害物帯
+    min_height: 0.1
+    max_height: 1.0
+    # 水平 360° を使う (HOKUYO ±90° と違い後方も見える)
+    angle_min: -3.14159265
+    angle_max: 3.14159265
+    # 0.25° 刻み ≒ R-Fans-16 @10rps の水平分解能相当
+    angle_increment: 0.00436332
+    scan_time: 0.1          # 1/rps
+    range_min: 0.5          # 車体・マスト反射の除去
+    range_max: 40.0         # slam_toolbox の実用域に合わせる
+    use_inf: true
+
 # claude: node 名 "rfans_driver" は rerobot_bringup_3d.launch.py の Node(name=...) と一致必須
 rfans_driver:
   ros__parameters:

@@ -1,0 +1,106 @@
+# claude: reRoBot (R-Fans-16 + RealSense IMU) 用の LIO-SAM パラメータ。
+#   ベースは src/LIO-SAM/config/params.yaml (ros2 branch)。変更点に # claude を付す。
+#   ⚠ IMU ノイズ・extrinsics は実機キャリブレーション未実施の仮値。
+#     実機マッピング前に必ず見直すこと (docs/features/ の 3D 自律移動文書参照)。
+/**:
+  ros__parameters:
+
+    # Topics
+    # claude: rfans_ring_converter の出力 (ring/time 付き)。生の /sdk_could ではない
+    pointCloudTopic: "/points"
+    # claude: realsense_imu.launch.py (madgwick) の出力
+    imuTopic: "/imu/data"
+    odomTopic: "odometry/imu"
+    gpsTopic: "odometry/gpsz"
+
+    # Frames
+    lidarFrame: "rfans"          # claude: rerobot_3d.urdf の LiDAR link 名
+    baselinkFrame: "base_link"
+    odometryFrame: "odom"
+    mapFrame: "map"
+
+    # GPS Settings (GPS 無し構成なのですべて既定のまま)
+    useImuHeadingInitialization: false
+    useGpsElevation: false
+    gpsCovThreshold: 2.0
+    poseCovThreshold: 25.0
+
+    # Export settings
+    # claude: 保存は /lio_sam/save_map サービスで行う (savePCD 常時保存は使わない)
+    savePCD: false
+    savePCDDirectory: "/Downloads/LOAM/"
+
+    # Sensor Settings
+    # claude: velodyne = 「ring(uint16) + time(float32, 相対秒)」形式。
+    #   rfans_ring_converter がこの形式で /points を出す。ring フィールドが
+    #   あるため LIO-SAM の角度逆算 (等間隔仮定, R-Fans-16 GM に不適) は通らない
+    sensor: velodyne
+    N_SCAN: 16                   # claude: R-Fans-16
+    # claude: 10 rps 時の 1 周あたり水平点数の概算値。実点群で要確認 (未実測)
+    Horizon_SCAN: 2000
+    downsampleRate: 1
+    lidarMinRange: 1.0
+    lidarMaxRange: 1000.0
+
+    # IMU Settings
+    # claude: RealSense D435i の代表値としてよく使われる値をそのまま流用 (仮)。
+    #   allan variance 計測に基づく実機値に置き換えるのが望ましい
+    imuAccNoise: 3.9939570888238808e-03
+    imuGyrNoise: 1.5636343949698187e-03
+    imuAccBiasN: 6.4356659353532566e-05
+    imuGyrBiasN: 3.5640318696367613e-05
+
+    imuGravity: 9.80511
+    imuRPYWeight: 0.01
+
+    # claude: ⚠ IMU→LiDAR extrinsics の仮値 (恒等 = 軸が揃った取付を仮定)。
+    #   RealSense と R-Fans の実取付姿勢を測って必ず更新すること。
+    #   ここが違うと LIO-SAM は即発散する (最初に疑う場所)
+    extrinsicTrans: [0.0, 0.0, 0.0]
+    extrinsicRot: [1.0, 0.0, 0.0,
+                   0.0, 1.0, 0.0,
+                   0.0, 0.0, 1.0]
+    extrinsicRPY: [1.0, 0.0, 0.0,
+                   0.0, 1.0, 0.0,
+                   0.0, 0.0, 1.0]
+
+    # LOAM feature threshold (既定)
+    edgeThreshold: 1.0
+    surfThreshold: 0.1
+    edgeFeatureMinValidNum: 10
+    surfFeatureMinValidNum: 100
+
+    # voxel filter params (屋外既定)
+    odometrySurfLeafSize: 0.4
+    mappingCornerLeafSize: 0.2
+    mappingSurfLeafSize: 0.4
+
+    # robot motion constraint
+    # claude: 差動二輪の平面走行なので z とロール/ピッチの発散を抑える。
+    #   既定 1000.0 (無制限) → つくばの緩い起伏は許しつつ発散だけ弾く値
+    z_tollerance: 5.0
+    rotation_tollerance: 1.0
+
+    # CPU Params
+    numberOfCores: 4
+    mappingProcessInterval: 0.15
+
+    # Surrounding map (既定)
+    surroundingkeyframeAddingDistThreshold: 1.0
+    surroundingkeyframeAddingAngleThreshold: 0.2
+    surroundingKeyframeDensity: 2.0
+    surroundingKeyframeSearchRadius: 50.0
+
+    # Loop closure (既定)
+    loopClosureEnableFlag: true
+    loopClosureFrequency: 1.0
+    surroundingKeyframeSize: 50
+    historyKeyframeSearchRadius: 15.0
+    historyKeyframeSearchTimeDiff: 30.0
+    historyKeyframeSearchNum: 25
+    historyKeyframeFitnessScore: 0.3
+
+    # Visualization (既定)
+    globalMapVisualizationSearchRadius: 1000.0
+    globalMapVisualizationPoseDensity: 10.0
+    globalMapVisualizationLeafSize: 1.0

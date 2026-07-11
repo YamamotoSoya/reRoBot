@@ -34,6 +34,14 @@ def generate_launch_description():
         "urdf_file",
         description="robot_state_publisher に渡す URDF の絶対パス",
     )
+    # claude: LIO-SAM で 3D mapping する間は epos4_odometry の odom->base_link TF を
+    # 止める必要がある (LIO-SAM imuPreintegration が同 TF を出すため競合する)。
+    # mapping 時のみ `odom_tf:=false` で起動する。/odom トピック自体は出続ける。
+    odom_tf_arg = DeclareLaunchArgument(
+        "odom_tf",
+        default_value="true",
+        description="epos4_odometry が odom->base_link TF を出すか (LIO-SAM mapping 中は false)",
+    )
 
     bus_config = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -57,7 +65,12 @@ def generate_launch_description():
         package="epos4_controller",
         executable="epos4_odometry",
         name="epos4_odometry_node",
-        parameters=[params_file],
+        # claude: publish_tf は launch 引数 odom_tf で上書き (後勝ち)。
+        # launch 引数は文字列なので bool へは ParameterValue で変換する
+        parameters=[
+            params_file,
+            {"publish_tf": ParameterValue(LaunchConfiguration("odom_tf"), value_type=bool)},
+        ],
         output="screen",
     )
 
@@ -81,6 +94,7 @@ def generate_launch_description():
     return LaunchDescription([
         params_file_arg,
         urdf_file_arg,
+        odom_tf_arg,  # claude
         bus_config,
         epos4_controller_node,
         epos4_odometry_node,

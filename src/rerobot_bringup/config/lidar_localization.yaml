@@ -1,0 +1,52 @@
+# claude: lidar_localization_ros2 (NDT スキャンマッチング自己位置推定) の
+#   reRoBot 用パラメータ。ベースは同梱 param/nav2_ndt_urban.yaml。
+#   map_path と enable_map_odom_tf は nav2_3d.launch.py 側で上書き注入する
+#   (map_dir 引数から組み立てるため yaml には書かない)。
+#   ⚠ NDT 解像度・score 閾値は屋外都市部向けの初期値。実地図での収束具合を
+#     見て要調整 (未実機検証)。
+/**:
+  ros__parameters:
+    # ---- スキャンマッチング方式 ----
+    registration_method: "NDT_OMP"   # NDT_OMP / GICP 等。NDT_OMP が屋外の定番
+    score_threshold: 6.0             # これ超のフィットネスは推定棄却
+    ndt_resolution: 1.0              # [m] ボクセル解像度。屋外 1.0 / 屋内 0.5 目安
+    ndt_step_size: 0.1
+    ndt_num_threads: 4
+    ndt_max_iterations: 35
+    transform_epsilon: 0.01
+
+    # ---- 入力点群の前処理 ----
+    voxel_leaf_size: 0.2             # [m] 入力ダウンサンプル
+    scan_max_range: 100.0            # [m] R-Fans-16 の実用レンジ内
+    scan_min_range: 1.0              # [m] 車体・マスト反射の除去
+    scan_period: 0.1                 # [s] 10 rps
+
+    # ---- 地図 ----
+    use_pcd_map: true
+    # map_path は launch から注入 (LIO-SAM save_map の GlobalMap.pcd)
+    enable_local_map_crop: true      # 大きい地図でも近傍だけでマッチング
+    local_map_radius: 150.0
+    local_map_min_points: 100
+
+    # ---- 初期位置 ----
+    # RViz の "2D Pose Estimate" (/initialpose) で与える運用 (amcl と同じ UX)
+    set_initial_pose: false
+
+    # ---- 予測 (スキャン間の姿勢外挿) ----
+    # claude: 車輪オドメトリ /odom は TF (odom→base_link) 経由で
+    #   enable_map_odom_tf モードの補正に使われる。twist 予測は無効化し
+    #   TF ベースの単純構成から始める (安定してから有効化を検討)
+    use_odom: false
+    use_twist_prediction: false
+    use_imu: false
+    use_imu_preintegration: false
+    predict_pose_from_previous_delta: true
+
+    # ---- フレーム ----
+    global_frame_id: "map"
+    odom_frame_id: "odom"
+    base_frame_id: "base_link"
+
+    # ---- 出力 ----
+    enable_timer_publishing: false
+    pose_publish_frequency: 30.0
