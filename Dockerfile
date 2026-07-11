@@ -19,6 +19,8 @@ RUN apt-get update && apt-get install -y \
     ros-jazzy-tf2-tools \
     # --- CANopen ---
     can-utils \
+    iproute2 \
+    # ↑ ip link で can0/vcan0 をコンテナ内から操作するため (verify スキルの vcan モードが使用) # claude
     ros-jazzy-canopen \
     ros-jazzy-canopen-fake-slaves \
     ros-jazzy-canopen-proxy-driver \
