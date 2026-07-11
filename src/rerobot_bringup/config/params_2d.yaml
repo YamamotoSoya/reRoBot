@@ -1,4 +1,8 @@
-epos4_controller_node:
+# claude_opt: 車体パラメータは /** (このファイルを読む全ノード共通) に一本化。
+#   旧構成は epos4_controller_node / epos4_odometry_node に同じ値が二重に書かれており、
+#   変更時の同期漏れの温床だった。ノード固有パラメータのみ各ノードのセクションに残す。
+#   注意: rcl の yaml パーサは YAML アンカー(&/*)を解釈しないため、共通化は /** で行うこと。
+/**:
   ros__parameters:
     tread_width: 0.41 #[m]
     tire_diam: 0.15   #[m]
@@ -8,11 +12,6 @@ epos4_controller_node:
 
 epos4_odometry_node:
   ros__parameters:
-    tread_width: 0.41 #[m]
-    tire_diam: 0.15   #[m]
-    gear_ratio: 1.25  #measured: raw 78.55rad/10rev = 7.855rad/rev = 2.5pi; /2pi = 1.25 # claude
     odom_frame_id: "odom"
     base_frame_id: "base_link"
     publish_tf: true
-    invert_left: true
-    invert_right: true

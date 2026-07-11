@@ -1,8 +1,11 @@
 # claude: 3D LiDAR (R-Fans) 構成用パラメータ。
-#   epos4_* セクションは params_2d.yaml と同値 (シャシは共通)。変更時は両方を同期。
+#   車体 (/** セクション) は params_2d.yaml と同値 (シャシは共通)。変更時は両方を同期。
 #   rfans_driver セクションは StarROS2 の rfans_driver.launch.py の inline param 相当を
 #   yaml 化したもの (yaml は型を保持するため ParameterValue ラップ不要)。
-epos4_controller_node:
+# claude_opt: 車体パラメータは /** に一本化 (params_2d.yaml と同じ構造)。
+#   rfans_driver は全パラメータを自前で declare するため、/** から流れる車体
+#   パラメータは宣言外として無視される (実害なし)。
+/**:
   ros__parameters:
     tread_width: 0.41 #[m]
     tire_diam: 0.15   #[m]
@@ -12,14 +15,9 @@ epos4_controller_node:
 
 epos4_odometry_node:
   ros__parameters:
-    tread_width: 0.41 #[m]
-    tire_diam: 0.15   #[m]
-    gear_ratio: 1.25  #measured: raw 78.55rad/10rev = 7.855rad/rev = 2.5pi; /2pi = 1.25 # claude
     odom_frame_id: "odom"
     base_frame_id: "base_link"
     publish_tf: true
-    invert_left: true
-    invert_right: true
 
 # claude: node 名 "rfans_driver" は rerobot_bringup_3d.launch.py の Node(name=...) と一致必須
 rfans_driver:
