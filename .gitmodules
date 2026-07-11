@@ -10,3 +10,5 @@
 [submodule "src/external/realsense-ros"]
 	path = src/external/realsense-ros
 	url = https://github.com/realsenseai/realsense-ros.git
+[submodule "src/external/LIO-SAM/"]
+	branch = ros2
