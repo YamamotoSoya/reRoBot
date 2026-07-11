@@ -1,17 +1,19 @@
+# claude_opt: 2D LiDAR (HOKUYO urg_node) 構成の bringup。
+#   共通部 (bus_config + epos4_controller + epos4_odometry + robot_state_publisher) は
+#   rerobot_bringup_common.launch.py に抽出済みで、ここでは params/urdf の 2D 用
+#   ファイル指定と urg_node の追加のみを行う。
 import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, TimerAction  # claude
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration  # claude
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 
 def generate_launch_description():
-    pkg_share = get_package_share_directory("rerobot_bringup")  # claude
-    params_file = os.path.join(pkg_share, "config", "params_2d.yaml")  # claude: 2D 用
-    urdf_file = os.path.join(pkg_share, "urdf", "rerobot_2d.urdf")  # claude: 2D 用
+    pkg_share = get_package_share_directory("rerobot_bringup")
 
     # claude: HOKUYO シリアルポート。udev rule 整備までは sudo ln -sf /dev/ttyUSB0
     # /dev/HOKUYO-LINK-SAMPLE で実体に紐付けるか、`serial_port:=/dev/ttyUSB0` で上書き。
@@ -21,50 +23,15 @@ def generate_launch_description():
         description="HOKUYO LiDAR serial device path",
     )
 
-    with open(urdf_file, "r") as f:
-        robot_description = f.read()
-
-    bus_config = IncludeLaunchDescription(
+    common = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            os.path.join(
-                get_package_share_directory("maxon_epos4_ros2"),
-                "launch",
-                "bus_config_cia402_epos4_vel.launch.py",
-            )
-        )
+            os.path.join(pkg_share, "launch", "rerobot_bringup_common.launch.py")
+        ),
+        launch_arguments={
+            "params_file": os.path.join(pkg_share, "config", "params_2d.yaml"),
+            "urdf_file": os.path.join(pkg_share, "urdf", "rerobot_2d.urdf"),
+        }.items(),
     )
-
-    epos4_controller_node = Node(
-        package="epos4_controller",
-        executable="epos4_controller",
-        name="epos4_controller_node",
-        parameters=[params_file],
-        output="screen",
-    )
-
-    epos4_odometry_node = Node(
-        package="epos4_controller",
-        executable="epos4_odometry",
-        name="epos4_odometry_node",
-        parameters=[params_file],
-        output="screen",
-    )
-
-    # claude: re-enabled to publish base_link -> {m1_wheel_link, m2_wheel_link, laser} TFs.
-    # epos4_odometry already publishes /joint_states (m1_wheel, m2_wheel wheel-side angles),
-    # so no remap is needed. The fixed laser joint becomes a /tf_static entry.
-    
-    robot_state_publisher_node = Node(
-        package="robot_state_publisher",
-        executable="robot_state_publisher",
-        name="robot_state_publisher",
-        parameters=[{"robot_description": robot_description}],
-        output="screen",
-    )
-
-
-    # claude: RViz の起動はここでは行わない。可視化は nav2.launch.py (nav2.rviz) /
-    # slam.launch.py (slam.rviz) 側に委譲し、bringup と重ねたときの窓の重複を避ける。
 
     # claude: HOKUYO laser driver. frame_id は URDF (rerobot_2d.urdf) の laser link 名と一致。
     # urg_node の executable 名は ROS 2 Jazzy では `urg_node_driver`。
@@ -85,19 +52,8 @@ def generate_launch_description():
         output="screen",
     )
 
-    # Delay controller/odometry so the ros2_canopen device_manager has time to
-    # advertise /motor*/cia402_device_*/{init,enable,cyclic_velocity_mode}.
-    # Without this, the controller's constructor-time wait_for_service(1s) calls
-    # race the bus_config launch and silently fail, leaving the EPOS4s disabled.
-    delayed_nodes = TimerAction(
-        period=5.0,
-        actions=[epos4_controller_node, epos4_odometry_node],
-    )
-
     return LaunchDescription([
-        serial_port_arg,  # claude
-        bus_config,
-        delayed_nodes,
-        robot_state_publisher_node,  # claude
-        urg_node_node,  # claude
+        serial_port_arg,
+        common,
+        urg_node_node,
     ])
