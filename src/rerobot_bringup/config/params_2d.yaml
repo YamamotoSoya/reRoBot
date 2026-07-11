@@ -10,8 +10,17 @@
     invert_left: true
     invert_right: true
 
+epos4_controller_node:
+  ros__parameters:
+    # claude_robust: /robot_speed_cmd がこの秒数途絶えたら速度 0 (デッドマン)。0 で無効
+    cmd_timeout_sec: 0.5
+    # claude_robust: statusword(0x6041) 監視周期 [s]。FAULT/励磁喪失を変化時ログ。0 で無効
+    motor_status_period_sec: 2.0
+
 epos4_odometry_node:
   ros__parameters:
     odom_frame_id: "odom"
     base_frame_id: "base_link"
     publish_tf: true
+    # claude_robust: 1 更新あたりの車輪移動がこれ [m] を超えたら積分せず基準取り直し。0 で無効
+    pose_jump_threshold: 0.5

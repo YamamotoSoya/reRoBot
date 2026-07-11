@@ -50,6 +50,10 @@ def generate_launch_description():
             "angle_max": 1.5708,
         }],
         output="screen",
+        # claude_robust: シリアル断・USB 抜き差しでプロセスが死んだら自動再起動する。
+        # LiDAR が止まると SLAM/Nav2 が静かに固まるため、落ちたら露骨に再起動ログを残す。
+        respawn=True,
+        respawn_delay=2.0,
     )
 
     return LaunchDescription([

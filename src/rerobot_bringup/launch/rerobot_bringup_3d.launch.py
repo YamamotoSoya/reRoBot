@@ -63,6 +63,10 @@ def generate_launch_description():
             },
         ],
         output="screen",
+        # claude_robust: UDP 受信スレッドの異常等でプロセスが死んだら自動再起動する
+        # (urg_node 側と同じ方針)。
+        respawn=True,
+        respawn_delay=2.0,
     )
 
     return LaunchDescription([

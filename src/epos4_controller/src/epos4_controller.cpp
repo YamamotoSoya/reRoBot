@@ -14,6 +14,7 @@
 #include <future>
 #include <memory>
 #include <optional>
+#include <stdexcept>  // claude_robust: 車体パラメータ検証の fail-fast 用
 #include <string>
 #include <thread>
 
@@ -44,6 +45,9 @@ struct MotorInterface
   // timer_callback が 0x60FF に書く目標速度 [rpm]。cmdSpeedCallback と同一
   // executor スレッドで読み書きされるため排他は不要。
   double target_rpm = 0.0;
+  // claude_robust: statusword 監視の前回状態 ("FAULT"/"OP_ENABLED"/"NOT_ENABLED")。
+  // 変化時のみログするための記憶。executor スレッドからのみ触る。
+  std::string last_status_state;
 };
 
 class Epos4ControllerNode : public rclcpp::Node
@@ -75,8 +79,39 @@ public:
     invert_left_ = get_parameter("invert_left").as_bool();
     invert_right_ = get_parameter("invert_right").as_bool();
 
+    // claude_robust: cmd_timeout_sec = /robot_speed_cmd のデッドマン監視 (0 で無効)。
+    // motor_status_period_sec = statusword 監視周期 (0 で無効)。
+    declare_parameter("cmd_timeout_sec", 0.5);
+    declare_parameter("motor_status_period_sec", 2.0);
+    cmd_timeout_sec_ = get_parameter("cmd_timeout_sec").as_double();
+    const double status_period = get_parameter("motor_status_period_sec").as_double();
+
+    // claude_robust: 車体パラメータの妥当性チェック。ゼロ/負値は IK の除算・符号を
+    // 静かに壊す(症状は「変な速度で走る」)ので、起動時に落として原因を明示する。
+    if (tread_width_ <= 0.0 || tire_diam_ <= 0.0 || gear_ratio_ <= 0.0) {
+      RCLCPP_FATAL(
+        get_logger(), "invalid chassis params: tread_width=%.3f tire_diam=%.3f gear_ratio=%.3f",
+        tread_width_, tire_diam_, gear_ratio_);
+      throw std::invalid_argument("epos4_controller: chassis parameters must be > 0");
+    }
+    // claude_robust: どの yaml が効いたかを起動ログで確認できるようにする
+    RCLCPP_INFO(
+      get_logger(),
+      "chassis: tread=%.3f m tire_diam=%.3f m gear=%.2f invert L/R=%d/%d cmd_timeout=%.2fs",
+      tread_width_, tire_diam_, gear_ratio_, invert_left_, invert_right_, cmd_timeout_sec_);
+
     topic_timer_ =
       create_wall_timer(10ms, std::bind(&Epos4ControllerNode::timer_callback, this));
+
+    // claude_robust: statusword 監視。init 完了後、SDO で 0x6041 を定期読みして
+    // FAULT / Operation-Enabled 喪失を「状態変化時に」ログする。過去に多発した
+    // 「片輪が静かに死んでいて走り出すまで気付かない」を走行前に検出するのが目的。
+    // 脱力中と復帰シーケンス中は disabled が正常なのでスキップ。
+    if (status_period > 0.0) {
+      status_timer_ = create_wall_timer(
+        std::chrono::duration<double>(status_period),
+        std::bind(&Epos4ControllerNode::statusMonitorCallback, this));
+    }
 
     // claude: init は spin 開始後に動くワーカースレッドで実行する。コンストラクタは
     // rclcpp::spin() より前に走るため、ここで async_send_request しても応答
@@ -134,6 +169,22 @@ private:
 
   void timer_callback()
   {
+    // claude_robust: デッドマン監視。/robot_speed_cmd が cmd_timeout_sec 途絶えたら
+    // ターゲットを 0 に落とす。teleop / Nav2 が落ちたとき「最後に受けた速度で
+    // 走り続ける」暴走モードを防ぐ。teleop は停止中も 20 Hz で 0 を出し続ける
+    // 設計なので、正常運転中にこれが発火することはない。
+    if (
+      cmd_timeout_sec_ > 0.0 && have_cmd_ &&
+      (now() - last_cmd_time_).seconds() > cmd_timeout_sec_) {
+      if (motor1_.target_rpm != 0.0 || motor2_.target_rpm != 0.0) {
+        RCLCPP_WARN(
+          get_logger(), "/robot_speed_cmd silent for %.2fs — zeroing targets (dead-man stop)",
+          cmd_timeout_sec_);
+        motor1_.target_rpm = 0.0;
+        motor2_.target_rpm = 0.0;
+      }
+    }
+
     for (MotorInterface * m : {&motor1_, &motor2_}) {  // claude_opt
       auto msg = canopen_interfaces::msg::COData();
       msg.index = 0x60ff;   // target velocity (CSV)
@@ -145,6 +196,8 @@ private:
 
   void cmdSpeedCallback(const geometry_msgs::msg::Twist::SharedPtr msg)
   {
+    last_cmd_time_ = now();  // claude_robust: デッドマン監視の生存シグナル
+    have_cmd_ = true;        // claude_robust
     // claude: 脱力中は速度指令を一切反映しない(ターゲットは 0 のまま)。
     if (free_mode_) {
       return;
@@ -269,6 +322,64 @@ private:
     return op_enabled && csv_mode;
   }
 
+  // claude_robust: statusword(0x6041) を可読状態へ分類する。
+  //   FAULT       — bit3 (fault) が立っている
+  //   OP_ENABLED  — (sw & 0x6F) == 0x27 (CiA402 Operation Enabled)
+  //   NOT_ENABLED — それ以外 (Switch-On-Disabled 等。車輪は動かない)
+  static const char * classify_status(uint16_t sw)
+  {
+    if (sw & 0x0008) {
+      return "FAULT";
+    }
+    if ((sw & 0x6F) == 0x27) {
+      return "OP_ENABLED";
+    }
+    return "NOT_ENABLED";
+  }
+
+  // claude_robust: 定期 statusword 監視 (executor スレッド、非ブロッキング)。
+  // init 前・脱力中・復帰中は期待状態が Operation Enabled ではないためスキップ。
+  // 応答はコールバックで受け、状態が「変化したときだけ」ログする。
+  void statusMonitorCallback()
+  {
+    if (!init_done_.load() || free_mode_ || reenable_active_.load()) {
+      return;
+    }
+    for (MotorInterface * m : {&motor1_, &motor2_}) {
+      if (!m->sdo_read->service_is_ready()) {
+        continue;
+      }
+      auto req = std::make_shared<CORead::Request>();
+      req->index = 0x6041;
+      req->subindex = 0;
+      m->sdo_read->async_send_request(
+        req, [this, m](rclcpp::Client<CORead>::SharedFuture future) {
+          auto response = future.get();
+          if (!response->success) {
+            return;
+          }
+          const uint16_t sw = static_cast<uint16_t>(response->data);
+          const std::string state = classify_status(sw);
+          if (state == m->last_status_state) {
+            return;  // 変化時のみログ
+          }
+          if (state == "FAULT") {
+            RCLCPP_ERROR(
+              get_logger(), "%s: DRIVE FAULT (statusword=0x%04X) — check EPOS4 / CAN wiring",
+              m->label.c_str(), sw);
+          } else if (state == "OP_ENABLED") {
+            RCLCPP_INFO(
+              get_logger(), "%s: Operation Enabled (statusword=0x%04X)", m->label.c_str(), sw);
+          } else {
+            RCLCPP_WARN(
+              get_logger(), "%s: NOT enabled (statusword=0x%04X) — wheel will not move",
+              m->label.c_str(), sw);
+          }
+          m->last_status_state = state;
+        });
+    }
+  }
+
   // claude: bring a single drive to CSV / Operation-Enabled, verifying via SDO and
   // retrying (with a recover in between) on failure. This is the actual fix for the
   // intermittent dead wheel.
@@ -317,6 +428,7 @@ private:
     init_motor(motor1_);
     init_motor(motor2_);
     RCLCPP_INFO(get_logger(), "EPOS4 auto-init complete.");
+    init_done_.store(true);  // claude_robust: ここから statusword 監視が有効になる
   }
 
   // claude: /robot_free_mode の受信ハンドラ。data=true で脱力 ON、false で復帰。
@@ -338,6 +450,7 @@ private:
       if (reenable_thread_.joinable()) {
         reenable_thread_.join();  // 直前の復帰は完了済み、即座に返る
       }
+      reenable_active_.store(true);  // claude_robust: 復帰中は statusword 監視を止める
       reenable_thread_ = std::thread([this] {
         call_trigger_sync(motor1_.enable, "motor1 enable");
         call_trigger_sync(motor1_.csv_mode, "motor1 cyclic_velocity_mode");
@@ -358,6 +471,7 @@ private:
             "脱力モード OFF: re-enable incomplete (m1_ready=%d m2_ready=%d); toggle f to retry",
             m1, m2);
         }
+        reenable_active_.store(false);  // claude_robust: 監視再開
       });
     }
   }
@@ -368,6 +482,18 @@ private:
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_speed_subscription_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr free_mode_subscription_;  // claude
   rclcpp::TimerBase::SharedPtr topic_timer_;
+  rclcpp::TimerBase::SharedPtr status_timer_;  // claude_robust: statusword 監視
+
+  // claude_robust: デッドマン監視。last_cmd_time_/have_cmd_ は executor スレッド
+  // (cmdSpeedCallback と timer_callback) からのみ触るため排他不要。
+  double cmd_timeout_sec_ = 0.5;
+  rclcpp::Time last_cmd_time_;
+  bool have_cmd_ = false;
+
+  // claude_robust: statusword 監視のゲート。init_done_ は init スレッドが、
+  // reenable_active_ は復帰スレッドが書くため atomic。
+  std::atomic<bool> init_done_{false};
+  std::atomic<bool> reenable_active_{false};
 
   // claude: background driver-init sequence (sequential + verified + retried)
   std::thread init_thread_;

@@ -1,5 +1,6 @@
 #include <cmath>
 #include <memory>
+#include <stdexcept>  // claude_robust
 #include <string>
 
 #include "geometry_msgs/msg/transform_stamped.hpp"
@@ -27,6 +28,11 @@ public:
     declare_parameter("publish_tf", true);
     declare_parameter("invert_left", false);
     declare_parameter("invert_right", false);
+    // claude_robust: 1 更新 (PDO sync 50ms) あたりの車輪移動量 [m] がこれを超えたら
+    // 「エンコーダ値の飛び」とみなして積分しない (0 で無効)。既定 0.5 m/50 ms = 10 m/s
+    // 相当で、実車では絶対に出ない値。典型原因は canopen ドライバの再起動で
+    // position が 0 に戻るケースで、旧実装では /odom がその瞬間ワープした。
+    declare_parameter("pose_jump_threshold", 0.5);
 
     tread_width_ = get_parameter("tread_width").as_double();
     wheel_radius_ = get_parameter("tire_diam").as_double() * 0.5;
@@ -36,6 +42,15 @@ public:
     publish_tf_ = get_parameter("publish_tf").as_bool();
     invert_left_ = get_parameter("invert_left").as_bool();
     invert_right_ = get_parameter("invert_right").as_bool();
+    pose_jump_threshold_ = get_parameter("pose_jump_threshold").as_double();  // claude_robust
+
+    // claude_robust: 車体パラメータの fail-fast (controller と同じ理由)
+    if (tread_width_ <= 0.0 || wheel_radius_ <= 0.0 || gear_ratio_ <= 0.0) {
+      RCLCPP_FATAL(
+        get_logger(), "invalid chassis params: tread_width=%.3f tire_diam=%.3f gear_ratio=%.3f",
+        tread_width_, wheel_radius_ * 2.0, gear_ratio_);
+      throw std::invalid_argument("epos4_odometry: chassis parameters must be > 0");
+    }
 
     odom_publisher_ = create_publisher<nav_msgs::msg::Odometry>("/odom", 10);
     // claude_tire: /joint_states for robot_state_publisher (wheel-side angles)
@@ -64,9 +79,22 @@ public:
         &Epos4OdometryNode::onJointStates, this,         // claude_tire claude_odom claude_sync
         std::placeholders::_1, std::placeholders::_2));  // claude_tire claude_odom claude_sync
 
+    // claude_robust: 入力監視用のトピック別カウンタ。ApproximateTime は「片方でも
+    // 止まると何も出さなくなる」ため、無音時にどちらが原因か(あるいは両方流れて
+    // いるのに stamp が噛み合っていないのか)を切り分けられるようにする。
+    m1_sub_.registerCallback(
+      [this](const JointStateMsg::ConstSharedPtr &) { ++m1_msg_count_; });  // claude_robust
+    m2_sub_.registerCallback(
+      [this](const JointStateMsg::ConstSharedPtr &) { ++m2_msg_count_; });  // claude_robust
+
+    // claude_robust: 5 秒ごとの無音監視。同期ペアが 1 つも来ていなければ、
+    // トピック別カウンタから原因を推定して警告する。
+    watchdog_timer_ = create_wall_timer(5s, [this] { checkInputHealth(); });
+
     RCLCPP_INFO(
-      get_logger(), "EPOS4 odometry started (tread=%.3f m, wheel_radius=%.3f m)", tread_width_,
-      wheel_radius_);
+      get_logger(),
+      "EPOS4 odometry started (tread=%.3f m, wheel_radius=%.3f m, gear=%.2f, invert L/R=%d/%d)",
+      tread_width_, wheel_radius_, gear_ratio_, invert_left_, invert_right_);
   }
 
 private:
@@ -86,6 +114,7 @@ private:
     if (left_msg->position.empty() || right_msg->position.empty()) {  // claude_tire claude_odom
       return;
     }
+    ++pair_count_;  // claude_robust: 無音監視用
 
     // motor-side position -> wheel-side position via gear ratio
     const double inv_gear = (gear_ratio_ != 0.0) ? (1.0 / gear_ratio_) : 1.0;
@@ -119,6 +148,22 @@ private:
     // wheel travel since last update [m]
     double d_left = (pos_left - prev_pos_left_) * wheel_radius_;
     double d_right = (pos_right - prev_pos_right_) * wheel_radius_;
+
+    // claude_robust: エンコーダ値の飛び (典型: canopen ドライバ再起動で position が
+    // 0 に戻る) を検出したら、その 1 回は積分せず基準を取り直す。pose は保持される
+    // (ワープしない) が、飛びの間の実移動は失われるため WARN を残す。
+    if (
+      pose_jump_threshold_ > 0.0 &&
+      (std::abs(d_left) > pose_jump_threshold_ || std::abs(d_right) > pose_jump_threshold_)) {
+      RCLCPP_WARN(
+        get_logger(),
+        "wheel position jump detected (L=%.3f m, R=%.3f m in one update) — re-seeding, pose held",
+        d_left, d_right);
+      prev_pos_left_ = pos_left;
+      prev_pos_right_ = pos_right;
+      last_stamp_ = stamp;
+      return;
+    }
 
     double d_s = 0.5 * (d_left + d_right);
     double d_theta = (d_right - d_left) / tread_width_;
@@ -209,6 +254,44 @@ private:
     joint_state_publisher_->publish(js);                                // claude_tire
   }                                                                     // claude_tire
 
+  // claude_robust: 5 秒ごとの入力健全性チェック。前回チェックからの増分で判定し、
+  // 無音の原因 (どちらのドライバが止まったか / stamp 同期の失敗か) を切り分ける。
+  void checkInputHealth()
+  {
+    const int d_m1 = m1_msg_count_ - last_m1_count_;
+    const int d_m2 = m2_msg_count_ - last_m2_count_;
+    const int d_pair = pair_count_ - last_pair_count_;
+    last_m1_count_ = m1_msg_count_;
+    last_m2_count_ = m2_msg_count_;
+    last_pair_count_ = pair_count_;
+
+    if (d_pair > 0) {
+      if (input_was_silent_) {
+        RCLCPP_INFO(get_logger(), "joint_states input recovered (%d pairs in last 5s)", d_pair);
+        input_was_silent_ = false;
+      }
+      return;
+    }
+    input_was_silent_ = true;
+    if (d_m1 == 0 && d_m2 == 0) {
+      RCLCPP_WARN(
+        get_logger(),
+        "no joint_states from either motor in last 5s — is bus_config / device_manager up?");
+    } else if (d_m1 == 0 || d_m2 == 0) {
+      RCLCPP_WARN(
+        get_logger(),
+        "%s joint_states silent (m1=%d, m2=%d msgs in 5s) — that cia402 driver is down; /odom "
+        "is frozen",
+        (d_m1 == 0) ? "motor1" : "motor2", d_m1, d_m2);
+    } else {
+      RCLCPP_WARN(
+        get_logger(),
+        "both joint_states flowing (m1=%d, m2=%d in 5s) but no stamp-synced pairs — check "
+        "header.stamp / PDO sync",
+        d_m1, d_m2);
+    }
+  }
+
   // claude_tire claude_odom claude_sync: replaces encoder_subscription_ with two
   // message_filters subscribers + synchronizer (feeds both wheel-TF and odometry paths).
   message_filters::Subscriber<JointStateMsg> m1_sub_;  // claude_tire claude_odom claude_sync
@@ -231,6 +314,17 @@ private:
   double prev_pos_left_ = 0.0;
   double prev_pos_right_ = 0.0;
   rclcpp::Time last_stamp_;
+
+  // claude_robust: 入力監視。カウンタはすべて executor スレッドからのみ触る。
+  rclcpp::TimerBase::SharedPtr watchdog_timer_;
+  double pose_jump_threshold_ = 0.5;
+  int m1_msg_count_ = 0;
+  int m2_msg_count_ = 0;
+  int pair_count_ = 0;
+  int last_m1_count_ = 0;
+  int last_m2_count_ = 0;
+  int last_pair_count_ = 0;
+  bool input_was_silent_ = false;
 
   double x_ = 0.0;
   double y_ = 0.0;
