@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/check-project-state.sh\"",
+            "timeout": 15,
+            "statusMessage": "PROJECT_STATE.md の鮮度を確認中..."
+          }
+        ]
+      }
+    ]
+  }
+}

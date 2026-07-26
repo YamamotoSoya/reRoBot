@@ -3,7 +3,7 @@
      読み順: CLAUDE.md (規約・ビルド) → 本ファイル (現在地) → docs/issue/ (問題詳細)。 -->
 # reRoBot プロジェクト状態メモ (Claude 用)
 
-- **最終更新: 2026-07-07** (リポジトリ全体監査 + monthly/2026_6 トリアージを実施した時点)
+- **最終更新: 2026-07-26** (CLAUDE.md 全面更新、.gitmodules の LIO-SAM branch 設定修正、PROJECT_STATE 更新リマインダの Stop hook 導入まで反映)
 - 書き手: Claude Code (Fable 5)。次の Claude はまずこれを読めば現在地が分かるようにしてある。
 
 ---
@@ -26,7 +26,7 @@
 | 減速比 | **物理は 5:1** だが params は `gear_ratio: 1.25` | エンコーダ分解能 4 倍ズレの対症療法 (下記 §5 の最重要問題) |
 | 2D LiDAR | HOKUYO UTM-30LX (USB, urg_node) | frame `laser`, base_link から z+0.714 |
 | 3D LiDAR | Sure-Star R-Fans-16 (Ethernet 192.168.0.3, rfans_driver) | frame `rfans`, PointCloud2 `/sdk_could` (typo だが仕様) |
-| IMU | **未搭載・未融合** | robot_localization は Docker に入っているだけ |
+| IMU | RealSense (D435i) を 6 軸 IMU として使用予定 | `realsense_imu.launch.py` → madgwick → `/imu/data` (LIO-SAM 入力用)。オドメトリ融合はまだ |
 | ゲームパッド | Xbox (joy + teleop_twist_joy, LB=deadman, RB=turbo) | |
 
 ## 3. ソフトウェア全体像
@@ -47,7 +47,7 @@ EPOS4 ×2                     │
 - パッケージ: `epos4_controller` (controller+odometry), `epos4_teleop`, `epos4_vel_ros2` (ベンチ用),
   `rerobot_bringup` (launch/config/urdf/rviz), `external/epos4compact50-5can` + `external/StarROS2` (submodule)。
 - 詳細な規約 (トピック名・スケーリング・ros__parameters の罠) は CLAUDE.md 参照。
-  ただし CLAUDE.md は一部古い (監査 Issue 16, 17: motor1=left 記述と /robot_encoder_states 記述)。
+  (監査 Issue 16, 17 の古い記述は 2026-07-26 の CLAUDE.md 更新で解消済み。)
 
 ## 4. 何がどこまで動いているか (到達点)
 
@@ -60,7 +60,8 @@ EPOS4 ×2                     │
 
 **構成はあるが未完/未接続**:
 - 3D 構成 (`rerobot_bringup_3d.launch.py`): 点群は出るが **/scan が無いので SLAM/Nav2 に繋がらない** (設計判断待ち)。
-- LIO-SAM: monthly には「追加した」とあるが**リポジトリに存在しない** (コミット漏れ疑い — triage T13)。
+- LIO-SAM: submodule として回収済み (07-11, ros2 branch, T13 解決)。Dockerfile に `ros-jazzy-gtsam` 追加でビルドは通る。
+  入力側は `realsense_imu.launch.py` (RealSense IMU → madgwick → `/imu/data`) まで用意済みだが、**実走での動作確認と bringup 統合はまだ**。
 - RViz での R-Fans 点群表示手順が未確立 (triage T12 に手順記載)。
 
 **品質面の課題**: SLAM が「絶妙にずれる」、低速でハンチング、Nav2 走行が遅い — いずれも
@@ -96,6 +97,8 @@ EPOS4 ×2                     │
 | 06-13 | R-Fans-16 の z=0 問題 (dataID 0x37 remap) と低 fps 問題を解決 (report ×2)。StarROS2 を ROS2 移植 (features) |
 | 06 末 | 2D/3D bringup 分離 (params_2d/3d, urdf 2d/3d)。RViz を nav2.rviz/slam.rviz に分割。joy teleop 追加 |
 | 07-07 | Claude によるリポジトリ全体監査 (25 issue) + monthly TODO トリアージ。docs/issue/ 運用開始 |
+| 07-11〜12 | LIO-SAM (ros2) + realsense-ros を submodule 追加、`realsense_imu.launch.py` 作成 (T13 回収)。project skills (.claude/skills) と .mcp.json 導入 |
+| 07-26 | CLAUDE.md 全面更新 (Issue 16/17 の古い記述修正、LIO-SAM/RealSense/skills/docs 運用を反映)。.gitmodules の LIO-SAM branch 設定を修正 (末尾スラッシュ付き孤立セクションに `branch = ros2` が置かれ `update --remote` が master を取る状態だった)。コード変更後に本ファイルの更新を促す Stop hook (.claude/hooks/check-project-state.sh) を導入 |
 
 ## 7. コードを触るときに知らないと踏む罠 (経緯由来の知識)
 
