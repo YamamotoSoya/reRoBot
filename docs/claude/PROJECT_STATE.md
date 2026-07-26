@@ -3,7 +3,7 @@
      読み順: CLAUDE.md (規約・ビルド) → 本ファイル (現在地) → docs/issue/ (問題詳細)。 -->
 # reRoBot プロジェクト状態メモ (Claude 用)
 
-- **最終更新: 2026-07-26** (CLAUDE.md 全面更新、.gitmodules の LIO-SAM branch 設定修正、PROJECT_STATE 更新リマインダの Stop hook 導入まで反映)
+- **最終更新: 2026-07-26** (CLAUDE.md 全面更新、.gitmodules の LIO-SAM branch 設定修正、PROJECT_STATE 更新リマインダの Stop hook 導入、annotate/user-level スキル追加まで反映)
 - 書き手: Claude Code (Fable 5)。次の Claude はまずこれを読めば現在地が分かるようにしてある。
 
 ---
@@ -98,7 +98,7 @@ EPOS4 ×2                     │
 | 06 末 | 2D/3D bringup 分離 (params_2d/3d, urdf 2d/3d)。RViz を nav2.rviz/slam.rviz に分割。joy teleop 追加 |
 | 07-07 | Claude によるリポジトリ全体監査 (25 issue) + monthly TODO トリアージ。docs/issue/ 運用開始 |
 | 07-11〜12 | LIO-SAM (ros2) + realsense-ros を submodule 追加、`realsense_imu.launch.py` 作成 (T13 回収)。project skills (.claude/skills) と .mcp.json 導入 |
-| 07-26 | CLAUDE.md 全面更新 (Issue 16/17 の古い記述修正、LIO-SAM/RealSense/skills/docs 運用を反映)。.gitmodules の LIO-SAM branch 設定を修正 (末尾スラッシュ付き孤立セクションに `branch = ros2` が置かれ `update --remote` が master を取る状態だった)。コード変更後に本ファイルの更新を促す Stop hook (.claude/hooks/check-project-state.sh) を導入 |
+| 07-26 | CLAUDE.md 全面更新 (Issue 16/17 の古い記述修正、LIO-SAM/RealSense/skills/docs 運用を反映)。.gitmodules の LIO-SAM branch 設定を修正 (末尾スラッシュ付き孤立セクションに `branch = ros2` が置かれ `update --remote` が master を取る状態だった)。コード変更後に本ファイルの更新を促す Stop hook (.claude/hooks/check-project-state.sh) を導入。`annotate` スキル追加 (返信中の発展用語に ※n + 📘 注釈ブロック、既知用語リストで自己調整)。`user-level` スキル + `docs/claude/USER_LEVEL.md` (git 管理外) 導入 — monthly/knowledge/既知リストからユーザ知識レベルを推定し annotate・knowledge-check の較正元にする |
 
 ## 7. コードを触るときに知らないと踏む罠 (経緯由来の知識)
 
@@ -117,6 +117,7 @@ EPOS4 ×2                     │
 | 場所 | 役割 | 編集ルール |
 |------|------|-----------|
 | `docs/claude/` | 本ファイル (Claude 用の状態メモ) | 状態が変わったら更新 |
+| `docs/claude/USER_LEVEL.md` | ユーザ知識レベルプロファイル (annotate/knowledge-check の較正元) | ⚠️ 個人情報のため **git 管理外・コミット禁止**。更新は `/user-level` skill |
 | `docs/issue/` | 未解決問題の調査記録 + 作業指示書 | 1 issue = 1 ファイル。解決したらステータス更新 |
 | `docs/report/` | 解決済みバグの事後報告 (debug-report スキルのテンプレ準拠) | 大きなデバッグ完了時に追加 |
 | `docs/features/` | 追加機能の設計文書 | 機能追加時に追加。※free_mode の §8 に古い記述あり (§9-11 が最終形) |
@@ -128,8 +129,10 @@ EPOS4 ×2                     │
 - clang-format 適用済みのコードベース。フォーマットを合わせる。
 - タスクごとにブランチ (`fix/...`)。main 直コミットしない。モータが動く検証は「浮かせて確認 → 接地」の順。
 - ユーザは日本語話者。ドキュメント・応答は日本語。
-- ユーザの技術レベル感: ROS 2 は実践で習得中 (lifecycle や Nav2 内部は「理解してから触りたい」段階)。
+- ユーザの技術レベル感: 詳細は `docs/claude/USER_LEVEL.md` (git 管理外の分野別プロファイル) を参照。
   説明は「なぜそうなるか」まで書くと喜ばれる。丸投げ実装より、経緯と理由を残すことが重視される。
+- 返信中の発展的コマンド・専門用語には注釈を付ける (`annotate` スキル — 基準と既知用語リストは
+  `.claude/skills/annotate/SKILL.md`。「知ってる」と言われた語はリストに追記)。
 
 ## 10. 次にやることになっている作業
 

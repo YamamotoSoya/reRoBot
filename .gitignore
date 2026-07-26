@@ -1,1 +1,4 @@
 maps/
+
+# ユーザ個人データ (知識レベルプロファイル) — GitHub に上げない
+docs/claude/USER_LEVEL.md

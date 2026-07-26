@@ -140,17 +140,18 @@ is involved (the old `/robot_encoder_states` fan-in design is gone).
 
 ## Documentation & Claude Workflow
 
-新しいセッションの読み順: **CLAUDE.md (規約・ビルド) → `docs/claude/PROJECT_STATE.md` (現在地・既知の問題・タイムライン) → `docs/issue/` (問題詳細)**。
+新しいセッションの読み順: **CLAUDE.md (規約・ビルド) → `docs/claude/PROJECT_STATE.md` (現在地・既知の問題・タイムライン) → `docs/claude/USER_LEVEL.md` (ユーザ知識レベル — 注釈・解説の較正) → `docs/issue/` (問題詳細)**。
 
 | 場所 | 役割 | 編集ルール |
 |------|------|-----------|
 | `docs/claude/PROJECT_STATE.md` | Claude 用の状態メモ | 大きな状態変化 (機能追加・重要バグ解決・方針変更) があったら必ず更新 (`/project-state` skill) |
+| `docs/claude/USER_LEVEL.md` | ユーザ知識レベルプロファイル (annotate/knowledge-check の較正元) | ⚠️ **個人情報のため git 管理外 (.gitignore 済み)・コミット禁止**。更新は `/user-level` skill |
 | `docs/issue/` | 未解決問題の調査記録 | 1 issue = 1 ファイル、冒頭にステータス。解決したらステータスを更新 |
 | `docs/report/` | 解決済みバグの事後報告 | 大きなデバッグ完了時に `/debug-report` skill で追加 |
 | `docs/features/` | 追加機能の設計文書 | 機能追加時に `/feature-doc` skill で追加 |
 | `docs/monthly/` | ユーザの月次ゼミ報告 | **Claude は編集禁止** (読み取り専用の入力) |
 
-Project skills (`.claude/skills/`): `verify` (コンテナ `rerobot_env` 内でビルド+起動検証; 実機 can0 が無ければ vcan0 + fake-slaves), `stack-health` (稼働スタックの読み取り専用診断), `params-sync` (車体パラメータ 3 ファイルの整合検査), `debug-report` / `feature-doc` / `project-state` (docs 更新), `knowledge-check` (実装の理解確認 → `docs/claude/knowledge/`)。
+Project skills (`.claude/skills/`): `verify` (コンテナ `rerobot_env` 内でビルド+起動検証; 実機 can0 が無ければ vcan0 + fake-slaves), `stack-health` (稼働スタックの読み取り専用診断), `params-sync` (車体パラメータ 3 ファイルの整合検査), `debug-report` / `feature-doc` / `project-state` (docs 更新), `knowledge-check` (実装の理解確認 → `docs/claude/knowledge/`), `annotate` (返信中の用語注釈の基準・書式), `user-level` (知識レベルプロファイル `docs/claude/USER_LEVEL.md` の再推定)。
 
 MCP servers (`.mcp.json`): `context7` (ライブラリ最新ドキュメント), `playwright`, `memory` (`~/.claude/rerobot-mcp-memory.json`)。
 
@@ -159,3 +160,4 @@ MCP servers (`.mcp.json`): `context7` (ライブラリ最新ドキュメント),
 - タスクごとにブランチ (`fix/...`, `feat/...`)。main 直コミットしない。
 - モータを動かす検証は「浮かせて確認 → 接地」の順。ただしハンチング等の挙動評価は接地状態でのみ有効。
 - ドキュメント・ユーザへの応答は日本語。説明は「なぜそうなるか」まで書く。
+- 返信中の発展的コマンド・専門用語には `※n` マーカー + 返信末尾の `📘 注釈` ブロックで注釈を付ける (1 返信最大 3 個)。レベル基準・書式・既知用語リストは `.claude/skills/annotate/SKILL.md` — 「それは知ってる」と言われた語は同ファイルの既知リストに追記し、以後注釈しない。
