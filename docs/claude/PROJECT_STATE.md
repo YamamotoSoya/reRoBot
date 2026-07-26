@@ -3,7 +3,7 @@
      読み順: CLAUDE.md (規約・ビルド) → 本ファイル (現在地) → docs/issue/ (問題詳細)。 -->
 # reRoBot プロジェクト状態メモ (Claude 用)
 
-- **最終更新: 2026-07-26** (CLAUDE.md 全面更新、.gitmodules の LIO-SAM branch 設定修正、PROJECT_STATE 更新リマインダの Stop hook 導入、annotate/user-level スキル追加まで反映)
+- **最終更新: 2026-07-26** (GLIM 採用方針の決定 + リポジトリ再編 `feat/workspace-split` 進行中まで反映。ros2_ws_main/src の app/bringup/drivers グループ化まで完了。⚠️ 再編完了まで docker compose は起動不可の過渡状態)
 - 書き手: Claude Code (Fable 5)。次の Claude はまずこれを読めば現在地が分かるようにしてある。
 
 ---
@@ -26,7 +26,7 @@
 | 減速比 | **物理は 5:1** だが params は `gear_ratio: 1.25` | エンコーダ分解能 4 倍ズレの対症療法 (下記 §5 の最重要問題) |
 | 2D LiDAR | HOKUYO UTM-30LX (USB, urg_node) | frame `laser`, base_link から z+0.714 |
 | 3D LiDAR | Sure-Star R-Fans-16 (Ethernet 192.168.0.3, rfans_driver) | frame `rfans`, PointCloud2 `/sdk_could` (typo だが仕様) |
-| IMU | RealSense (D435i) を 6 軸 IMU として使用予定 | `realsense_imu.launch.py` → madgwick → `/imu/data` (LIO-SAM 入力用)。オドメトリ融合はまだ |
+| IMU | RealSense (D435i) を 6 軸 IMU として使用予定 | ⚠️ **07-26 時点で IMU 実機が入手不可** → LiDAR-only の GLIM を先行導入する方針。`realsense_imu.launch.py` → madgwick → `/imu/data` は IMU 再入手後の LIO 系入力用に温存 |
 | ゲームパッド | Xbox (joy + teleop_twist_joy, LB=deadman, RB=turbo) | |
 
 ## 3. ソフトウェア全体像
@@ -59,9 +59,20 @@ EPOS4 ×2                     │
 - R-Fans-16: 20 Hz で点群取得 (z=0 問題・低 fps 問題は解決済み — docs/report/2026-06-13 ×2)。
 
 **構成はあるが未完/未接続**:
-- 3D 構成 (`rerobot_bringup_3d.launch.py`): 点群は出るが **/scan が無いので SLAM/Nav2 に繋がらない** (設計判断待ち)。
-- LIO-SAM: submodule として回収済み (07-11, ros2 branch, T13 解決)。Dockerfile に `ros-jazzy-gtsam` 追加でビルドは通る。
-  入力側は `realsense_imu.launch.py` (RealSense IMU → madgwick → `/imu/data`) まで用意済みだが、**実走での動作確認と bringup 統合はまだ**。
+- **リポジトリ再編が進行中** (`feat/workspace-split`, 07-26〜): 機能別 workspace 分割
+  (`ros2_ws_main` / `ros2_ws_slamtoolbox` / `ros2_ws_nav2` / `ros2_ws_glim` / `ros2_ws_liosam`)。
+  `src/` からの移動は完了 (submodule は各 ws の src/ 直下に直接配置、symlink 撤廃)。
+  **rerobot_bringup の slam/nav2 分離・Dockerfile 分割・compose 書き換えが未了 → この間 docker compose は起動不可**。
+  旧構成は `archive/monolithic` ブランチ + タグ `v1-monolithic` (= 2686cd9) に恒久保存済み。
+  計画詳細: `~/.claude-school/plans/imu-glim-swift-hartmanis.md` (ユーザがディレクトリ再編を自分で実施中、
+  Docker 再編以降は Claude が引き継ぐ)。`feat/claude-optimize` (3D 自律移動 bringup 9 コミット) は**破棄決定** (ユーザ判断)。
+- **3D SLAM は GLIM (koide3) を採用する方針** (07-26 決定、IMU 入手不可のため)。要件調査済み:
+  IMU レスは `odometry_estimation_ct` (CT-ICP) で公式サポート、`koide3/glim_ros2:jazzy` 公式イメージあり (CUDA 不要)。
+  ⚠️ R-Fans 点群の `timeflag` フィールドは GLIM 非認識 (認識名は `t`/`time`/`time_stamp`/`timestamp`) →
+  擬似タイムスタンプにフォールバックし deskew 劣化。GLIM は GTSAM 4.3a0 要求で `ros-jazzy-gtsam` 4.2.0 と競合 → 別コンテナ運用。
+- 3D 構成 (`rerobot_bringup_3d.launch.py`): 点群は出るが **/scan が無いので SLAM/Nav2 に繋がらない** (GLIM 導入で解消予定)。
+- LIO-SAM: submodule として回収済み (07-11, ros2 branch, T13 解決)。ビルドは通るが **IMU 入手不可のため当面凍結**。
+  `realsense_imu.launch.py` は IMU 再入手後の GLIM CPU (LIO) モード格上げ用に温存。
 - RViz での R-Fans 点群表示手順が未確立 (triage T12 に手順記載)。
 
 **品質面の課題**: SLAM が「絶妙にずれる」、低速でハンチング、Nav2 走行が遅い — いずれも
@@ -99,6 +110,7 @@ EPOS4 ×2                     │
 | 07-07 | Claude によるリポジトリ全体監査 (25 issue) + monthly TODO トリアージ。docs/issue/ 運用開始 |
 | 07-11〜12 | LIO-SAM (ros2) + realsense-ros を submodule 追加、`realsense_imu.launch.py` 作成 (T13 回収)。project skills (.claude/skills) と .mcp.json 導入 |
 | 07-26 | CLAUDE.md 全面更新 (Issue 16/17 の古い記述修正、LIO-SAM/RealSense/skills/docs 運用を反映)。.gitmodules の LIO-SAM branch 設定を修正 (末尾スラッシュ付き孤立セクションに `branch = ros2` が置かれ `update --remote` が master を取る状態だった)。コード変更後に本ファイルの更新を促す Stop hook (.claude/hooks/check-project-state.sh) を導入。`annotate` スキル追加 (返信中の発展用語に ※n + 📘 注釈ブロック、既知用語リストで自己調整)。`user-level` スキル + `docs/claude/USER_LEVEL.md` (git 管理外) 導入 — monthly/knowledge/既知リストからユーザ知識レベルを推定し annotate・knowledge-check の較正元にする。git 運用を **main 直コミット**に方針変更 (ユーザ指示) |
+| 07-26 (2) | IMU 入手不可が判明 → **3D SLAM に GLIM 採用を決定** (要件調査で IMU レス CT-ICP を確認)。機能別 workspace + コンテナ分割の再編開始 (`feat/workspace-split`)。旧構成を `archive/monolithic` + タグ `v1-monolithic` にアーカイブ (ユーザ自身が git 操作を実施)。`feat/claude-optimize` は破棄決定 |
 
 ## 7. コードを触るときに知らないと踏む罠 (経緯由来の知識)
 
@@ -136,7 +148,14 @@ EPOS4 ×2                     │
 
 ## 10. 次にやることになっている作業
 
-`docs/issue/2026-07-07_monthly_2026_6_todo_triage.prompt.md` が実行可能な指示書 (優先順・完了条件つき)。
+**最優先: リポジトリ再編の完遂** (計画: `~/.claude-school/plans/imu-glim-swift-hartmanis.md`):
+1. ros2_ws_main/src の app/bringup/drivers グループ化 + rerobot_bringup から slam/nav2 パッケージ分離 (ユーザ実施中)
+2. Dockerfile 4 分割 + docker-compose 書き換え (profiles + `ipc: host`) + scripts/ 作成 (Claude 担当)
+3. CLAUDE.md・.claude/skills のパス参照を新構成に全面更新
+4. GLIM 導入: `ros2_ws_glim/config/` (CT-ICP, `enable_imu: false` ×2) → bag 録画 → `glim_rosbag` オフライン評価
+   → 必要なら StarROS2 に per-point `time` フィールド追加
+
+従来のトリアージ指示書 `docs/issue/2026-07-07_monthly_2026_6_todo_triage.prompt.md` は再編完了後に再開 (優先順・完了条件つき)。
 要約: A1 LiDAR FOV → A2 slam lifecycle → A3 rviz エラー確認 → A4 脱力モード修正 →
 B1 エンコーダ根本修正 (⚠️3 点同時変更) → B2 ハンチング → B3 オドメトリ/SLAM 精度 → B4 R-Fans RViz → B5 LIO-SAM 回収。
 加えて監査 Issue 1〜3 (安全系) を本番前に必ず。ros2_control 移行 (C1 案 3) はユーザ合意が出たら本命。
