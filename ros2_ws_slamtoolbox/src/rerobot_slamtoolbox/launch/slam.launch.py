@@ -1,6 +1,8 @@
 # claude: async_slam_toolbox_node を本リポジトリ用 params で起動する単独 launch。
-# 前提として rerobot_bringup_2d.launch.py が urg_node + robot_state_publisher + epos4_odometry
-# を立ち上げ、/scan と TF (odom→base_link, base_link→laser) が流れていること。
+# 前提として main コンテナ側で rerobot_bringup_2d.launch.py が urg_node +
+# robot_state_publisher + epos4_odometry を立ち上げ、/scan と TF (odom→base_link,
+# base_link→laser) が流れていること。本 launch は slamtoolbox コンテナで動き、
+# main とは DDS (network/ipc: host + 同一 ROS_DOMAIN_ID) で疎通する。
 #
 # claude: async_slam_toolbox_node は managed (lifecycle) node で、起動直後は
 # `unconfigured` 状態のまま待機する。`autostart: true` パラメータは Jazzy 配布版の
@@ -19,7 +21,7 @@ from lifecycle_msgs.msg import Transition                    # life-cycle-Event_
 
 
 def generate_launch_description():
-    pkg_share = get_package_share_directory("rerobot_bringup")
+    pkg_share = get_package_share_directory("rerobot_slamtoolbox")  # claude: rerobot_bringup から分離
     slam_params = os.path.join(pkg_share, "config", "slam_toolbox.yaml")
 
     # life-cycle-Event_by_claude: 通常の Node ではなく LifecycleNode を使うことで

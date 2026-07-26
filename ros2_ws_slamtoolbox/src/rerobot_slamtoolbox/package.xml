@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>rerobot_slamtoolbox</name>
+  <version>1.0.0</version>
+  <!-- claude: rerobot_bringup から slam_toolbox 系資産 (launch/config/rviz) を分離したパッケージ。
+       slamtoolbox コンテナ専用。/scan と TF は main コンテナ (rerobot_bringup_2d) から DDS 経由で受ける。 -->
+  <description>slam_toolbox mapping launch / config / RViz assets for the reRoBot platform (slamtoolbox container).</description>
+  <maintainer email="analiveys326@gmail.com">YamamotoSoya</maintainer>
+  <license>BSD</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <exec_depend>ros2launch</exec_depend>
+  <exec_depend>slam_toolbox</exec_depend>
+  <exec_depend>rviz2</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

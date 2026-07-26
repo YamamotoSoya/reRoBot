@@ -18,8 +18,7 @@
   <exec_depend>urg_node</exec_depend>
   <!-- claude: 3D LiDAR (rerobot_bringup_3d.launch.py, src/external/StarROS2) -->
   <exec_depend>rfans_driver</exec_depend>
-  <!-- claude -->
-  <exec_depend>slam_toolbox</exec_depend>
+  <!-- claude: slam_toolbox 系は rerobot_slamtoolbox (ros2_ws_slamtoolbox) に分離済み -->
   <!-- claude: Nav2 最小構成 (nav2.launch.py) で起動するサーバ群 -->
   <exec_depend>nav2_map_server</exec_depend>
   <exec_depend>nav2_amcl</exec_depend>

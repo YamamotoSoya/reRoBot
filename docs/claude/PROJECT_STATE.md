@@ -44,8 +44,10 @@ EPOS4 ×2                     │
         slam_toolbox (mapping) / map_server+amcl+Nav2 (走行)
 ```
 
-- パッケージ: `epos4_controller` (controller+odometry), `epos4_teleop`, `epos4_vel_ros2` (ベンチ用),
-  `rerobot_bringup` (launch/config/urdf/rviz), `external/epos4compact50-5can` + `external/StarROS2` (submodule)。
+- パッケージ (再編後の ros2_ws_main/src/): `app/epos4_controller` (controller+odometry), `app/epos4_teleop`,
+  `bringup/rerobot_bringup` (launch/config/urdf/rviz), `bringup/realsense2_camera_launch`,
+  `drivers/` = epos4compact50-5can + StarROS2 + realsense-ros (すべて submodule 直置き)。
+  ※ `epos4_vel_ros2` (ベンチ用単体テスト) は 07-26 に**削除済み** — 必要なら `v1-monolithic` タグから復元可。
 - 詳細な規約 (トピック名・スケーリング・ros__parameters の罠) は CLAUDE.md 参照。
   (監査 Issue 16, 17 の古い記述は 2026-07-26 の CLAUDE.md 更新で解消済み。)
 
@@ -111,6 +113,7 @@ EPOS4 ×2                     │
 | 07-11〜12 | LIO-SAM (ros2) + realsense-ros を submodule 追加、`realsense_imu.launch.py` 作成 (T13 回収)。project skills (.claude/skills) と .mcp.json 導入 |
 | 07-26 | CLAUDE.md 全面更新 (Issue 16/17 の古い記述修正、LIO-SAM/RealSense/skills/docs 運用を反映)。.gitmodules の LIO-SAM branch 設定を修正 (末尾スラッシュ付き孤立セクションに `branch = ros2` が置かれ `update --remote` が master を取る状態だった)。コード変更後に本ファイルの更新を促す Stop hook (.claude/hooks/check-project-state.sh) を導入。`annotate` スキル追加 (返信中の発展用語に ※n + 📘 注釈ブロック、既知用語リストで自己調整)。`user-level` スキル + `docs/claude/USER_LEVEL.md` (git 管理外) 導入 — monthly/knowledge/既知リストからユーザ知識レベルを推定し annotate・knowledge-check の較正元にする。git 運用を **main 直コミット**に方針変更 (ユーザ指示) |
 | 07-26 (2) | IMU 入手不可が判明 → **3D SLAM に GLIM 採用を決定** (要件調査で IMU レス CT-ICP を確認)。機能別 workspace + コンテナ分割の再編開始 (`feat/workspace-split`)。旧構成を `archive/monolithic` + タグ `v1-monolithic` にアーカイブ (ユーザ自身が git 操作を実施)。`feat/claude-optimize` は破棄決定 |
+| 07-26 (3) | 再編の ws 分割 + app/bringup/drivers グループ化をコミット (1e7f11c)。`epos4_vel_ros2` を削除 (553068d, 役割は epos4_controller に置換済み)。`epos4_teleop` は脱力モード入口 + 距離計測ツールとして存続と判断 |
 
 ## 7. コードを触るときに知らないと踏む罠 (経緯由来の知識)
 
@@ -149,7 +152,7 @@ EPOS4 ×2                     │
 ## 10. 次にやることになっている作業
 
 **最優先: リポジトリ再編の完遂** (計画: `~/.claude-school/plans/imu-glim-swift-hartmanis.md`):
-1. ros2_ws_main/src の app/bringup/drivers グループ化 + rerobot_bringup から slam/nav2 パッケージ分離 (ユーザ実施中)
+1. ~~ros2_ws_main/src の app/bringup/drivers グループ化~~ (✅ 07-26 完了) + rerobot_bringup から slam/nav2 パッケージ分離 (未了、ユーザ実施中)
 2. Dockerfile 4 分割 + docker-compose 書き換え (profiles + `ipc: host`) + scripts/ 作成 (Claude 担当)
 3. CLAUDE.md・.claude/skills のパス参照を新構成に全面更新
 4. GLIM 導入: `ros2_ws_glim/config/` (CT-ICP, `enable_imu: false` ×2) → bag 録画 → `glim_rosbag` オフライン評価
