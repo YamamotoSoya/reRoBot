@@ -1,4 +1,11 @@
 maps/
+bags/
+
+# claude: colcon 成果物 — 万一ホストで colcon を実行しても git に載せない保険
+# (正規のビルドはコンテナ内 named volume で、そもそもホスト側に現れない)
+build/
+install/
+log/
 
 # ユーザ個人データ (知識レベルプロファイル) — GitHub に上げない
 docs/claude/USER_LEVEL.md

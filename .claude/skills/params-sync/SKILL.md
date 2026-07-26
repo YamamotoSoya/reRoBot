@@ -22,9 +22,9 @@ description: params_2d.yaml / params_3d.yaml / epos4_teleop の 3 ファイル�
 
 | ファイル | セクション |
 |----------|-----------|
-| `src/rerobot_bringup/config/params_2d.yaml` | `epos4_controller_node`, `epos4_odometry_node` |
-| `src/rerobot_bringup/config/params_3d.yaml` | `epos4_controller_node`, `epos4_odometry_node` |
-| `src/epos4_teleop/config/params.yaml` | teleop ノードのセクション (ファイル内で確認) |
+| `ros2_ws_main/src/bringup/rerobot_bringup/config/params_2d.yaml` | `epos4_controller_node`, `epos4_odometry_node` |
+| `ros2_ws_main/src/bringup/rerobot_bringup/config/params_3d.yaml` | `epos4_controller_node`, `epos4_odometry_node` |
+| `ros2_ws_main/src/app/epos4_teleop/config/params.yaml` | teleop ノードのセクション (ファイル内で確認) |
 
 比較キー: `tread_width`, `tire_diam`, `gear_ratio`, `invert_left`, `invert_right`
 (セクションにより一部キーが無いのは正常。**存在するキー同士**を比較する)

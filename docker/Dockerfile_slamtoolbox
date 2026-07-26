@@ -1,0 +1,19 @@
+# claude: slamtoolbox コンテナ (2026-07-26 再編で main から分離)。
+# 役割: slam_toolbox (2D mapping) + slam 用 RViz のみ。
+# ビルド対象は ros2_ws_slamtoolbox/src/rerobot_slamtoolbox (launch/config/rviz 資産だけの軽量パッケージ)。
+# /scan・TF は main コンテナから DDS (network/ipc: host + ROS_DOMAIN_ID=150) 経由で受ける。
+FROM ros:jazzy-ros-base
+
+RUN apt-get update && apt-get install -y \
+    python3-colcon-common-extensions \
+    ros-jazzy-slam-toolbox \
+    ros-jazzy-rviz2 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /workspace
+
+# claude: 対話シェル用 (スクリプト経由の実行では compose の environment が正)
+RUN echo "source /opt/ros/jazzy/setup.bash" >> ~/.bashrc && \
+    echo "export ROS_DOMAIN_ID=150" >> ~/.bashrc
+
+CMD ["bash"]

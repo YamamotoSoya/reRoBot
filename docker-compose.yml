@@ -1,29 +1,113 @@
-version: '3.8'
-
+# claude: 機能別コンテナ構成 (2026-07-26 再編)。分割基準は「依存の壁」:
+#   main        — CAN モータ制御 + センサドライバ + odometry + Nav2 + teleop (常用、profile なし)
+#   slamtoolbox — slam_toolbox 2D mapping (profile: slamtoolbox)
+#   glim        — 3D SLAM GLIM。GTSAM 4.3a0 を含む公式イメージ (profile: glim)
+#   liosam      — LIO-SAM。GTSAM 4.2.0 (ros-jazzy-gtsam)。IMU 再入手まで凍結 (profile: liosam)
+# 全サービス共通:
+#   network_mode: host + ipc: host + ROS_DOMAIN_ID=150 → コンテナ間は DDS で疎通。
+#   ipc: host は FastDDS の共有メモリ転送に必須 (無いと topic list に見えるのに echo できない事故になる)。
+#   コンテナは bash 常駐。起動は scripts/*.sh が docker exec で launch を投入する方式。
 services:
-  rerobot:
+  main:
     container_name: rerobot_env
     network_mode: host
+    ipc: host
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ./docker
+      dockerfile: Dockerfile_main
     tty: true
     stdin_open: true
-    privileged: true
+    privileged: true # claude: /dev の CAN・USB(LiDAR/RealSense/pad) アクセスに必要
     environment:
       - DISPLAY=${DISPLAY}
       - QT_X11_NO_MITSHM=1
+      - ROS_DOMAIN_ID=150 # claude: docker exec bash -c は .bashrc を読まないためここが正
     volumes:
-      - ./src:/workspace/src
+      - ./ros2_ws_main/src:/workspace/src
       - ./maps:/workspace/maps
-      - ros_build:/workspace/build
-      - ros_install:/workspace/install
-      - ros_log:/workspace/log
+      - ./bags:/workspace/bags
+      - main_build:/workspace/build
+      - main_install:/workspace/install
+      - main_log:/workspace/log
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - /dev:/dev
     command: bash
 
+  slamtoolbox:
+    container_name: slamtoolbox_env
+    profiles: [slamtoolbox]
+    network_mode: host
+    ipc: host
+    build:
+      context: ./docker
+      dockerfile: Dockerfile_slamtoolbox
+    tty: true
+    stdin_open: true
+    environment:
+      - DISPLAY=${DISPLAY}
+      - QT_X11_NO_MITSHM=1
+      - ROS_DOMAIN_ID=150
+    volumes:
+      - ./ros2_ws_slamtoolbox/src:/workspace/src
+      - ./maps:/workspace/maps # claude: slam_toolbox の地図保存先
+      - slamtoolbox_build:/workspace/build
+      - slamtoolbox_install:/workspace/install
+      - slamtoolbox_log:/workspace/log
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    command: bash
+
+  glim:
+    container_name: glim_env
+    profiles: [glim]
+    network_mode: host
+    ipc: host
+    # claude: ビルドなし — koide3 公式イメージをそのまま使う (GTSAM 4.3a0 同梱)。
+    # 設定は ./ros2_ws_glim/config を bind mount し、glim_rosnode に config_path で渡す。
+    image: koide3/glim_ros2:jazzy
+    tty: true
+    stdin_open: true
+    environment:
+      - DISPLAY=${DISPLAY}
+      - QT_X11_NO_MITSHM=1
+      - ROS_DOMAIN_ID=150
+    volumes:
+      - ./ros2_ws_glim/config:/glim_config
+      - ./maps:/maps
+      - ./bags:/bags # claude: glim_rosbag でのオフライン評価用
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    command: bash
+
+  liosam:
+    container_name: liosam_env
+    profiles: [liosam]
+    network_mode: host
+    ipc: host
+    build:
+      context: ./docker
+      dockerfile: Dockerfile_liosam
+    tty: true
+    stdin_open: true
+    environment:
+      - DISPLAY=${DISPLAY}
+      - QT_X11_NO_MITSHM=1
+      - ROS_DOMAIN_ID=150
+    volumes:
+      - ./ros2_ws_liosam/src:/workspace/src
+      - ./maps:/workspace/maps
+      - ./bags:/workspace/bags
+      - liosam_build:/workspace/build
+      - liosam_install:/workspace/install
+      - liosam_log:/workspace/log
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    command: bash
+
 volumes:
-  ros_build:
-  ros_install:
-  ros_log:
+  main_build:
+  main_install:
+  main_log:
+  slamtoolbox_build:
+  slamtoolbox_install:
+  slamtoolbox_log:
+  liosam_build:
+  liosam_install:
+  liosam_log:

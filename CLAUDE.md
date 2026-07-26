@@ -8,75 +8,89 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Environment & Build
 
-The expected workflow runs inside the provided Docker container (ROS 2 Jazzy + `ros2_canopen` + `can-utils`). Running on the host directly is not the supported path.
+The workflow runs across **function-specific Docker containers** (2026-07-26 再編)。分割基準は「依存の壁」— apt で衝突しないものは main に同居させる (Nav2 は main 統合)。Running on the host directly is not the supported path.
+
+| コンテナ | イメージ | workspace | 役割 |
+|----------|---------|-----------|------|
+| `rerobot_env` (main) | `docker/Dockerfile_main` | `ros2_ws_main/` | CAN モータ制御 + LiDAR/RealSense ドライバ + odometry + **Nav2** + teleop。常用 (profile なし) |
+| `slamtoolbox_env` | `docker/Dockerfile_slamtoolbox` | `ros2_ws_slamtoolbox/` | slam_toolbox 2D mapping (profile: `slamtoolbox`) |
+| `glim_env` | `koide3/glim_ros2:jazzy` (公式、ビルド不要) | `ros2_ws_glim/` (config JSON のみ) | 3D SLAM GLIM。GTSAM 4.3a0 同梱 (profile: `glim`) |
+| `liosam_env` | `docker/Dockerfile_liosam` | `ros2_ws_liosam/` | LIO-SAM。GTSAM 4.2.0。**IMU 再入手まで凍結** (profile: `liosam`) |
+
+全コンテナ共通: `network_mode: host` + `ipc: host` + `ROS_DOMAIN_ID=150` でコンテナ間は DDS 疎通 (`ipc: host` が無いと FastDDS の共有メモリ転送が繋がらず「topic list に見えるのに echo できない」症状になる)。コンテナは bash 常駐で、起動は `scripts/*.sh` が `docker exec` で launch を投入する方式。
 
 ```bash
 # Host: clone with submodules
 git clone --recursive https://github.com/YamamotoSoya/reRoBot.git
 
-# Host: bring up the container (binds /dev for CAN, X11 for RViz)
+# Host: コンテナ起動 (main のみ。他 profile は用途時に)
 xhost +local:docker
-docker compose up --build
-docker exec -it rerobot_env bash
+docker compose up -d main
 
-# Inside container (WORKDIR=/workspace, src is bind-mounted from host)
-rosdep update
-rosdep install --from-paths src --ignore-src --simulate
-colcon build --symlink-install --executor sequential
-source install/setup.bash
+# ビルド (main は --executor sequential 必須 — canopen の並列ビルドが壊れる既知問題)
+./scripts/build.sh main
+./scripts/build.sh slamtoolbox   # slam_toolbox 用 ws (軽量)
+./scripts/build.sh images        # Docker イメージ再ビルド (1 本ずつ直列)
 ```
 
-Note: `--executor sequential` is intentional — parallel builds have known issues with the canopen stack on this setup.
+⚠️ **ビルドの鉄則** (2026-07-26 ユーザ指示):
+- `colcon build` は**必ずコンテナ内** (= `scripts/build.sh` 経由)。ホストで実行しない (ホストは Humble で API 不一致、成果物 build/install/log が git を汚す)。
+- **並列度は控えめに** — このマシンは重いビルドで落ちる。make は `BUILD_JOBS` (既定 2)、colcon は 1 パッケージずつ、イメージビルドは 1 サービスずつ。`docker compose build` を引数なしで直接叩かない (3 イメージ並列になる)。
 
-`src/external/` holds all git submodules and carries a `COLCON_IGNORE`; buildable packages are exposed to colcon via **symlinks in `src/`**:
-`maxon_epos4_ros2 → external/epos4compact50-5can/maxon_epos4_ros2/`, `StarROS2 → external/StarROS2`, `LIO-SAM → external/LIO-SAM`, `realsense-ros → external/realsense-ros`. If a symlink breaks after clone, recreate it, e.g.:
-```bash
-cd src && ln -s external/epos4compact50-5can/maxon_epos4_ros2 .
-```
+git submodule は**各 workspace の src/ 直下に直接配置** (旧 symlink 方式は 2026-07-26 に撤廃):
+`ros2_ws_main/src/drivers/{epos4compact50-5can, StarROS2, realsense-ros}`, `ros2_ws_liosam/src/LIO-SAM`。
+`ros2_ws_main/src/` は `app/` (自作 C++) / `bringup/` (launch 資産) / `drivers/` (submodule) の 3 グループ構成 (colcon は src を再帰探索するので階層はビルドに無影響)。
+旧モノリシック構成は `archive/monolithic` ブランチ + タグ `v1-monolithic` に恒久保存されている (参照専用 — 触るなら `git worktree` で別ツリーへ)。
 
 ## Running the Stack
 
-The CANopen device container must be launched first; only then do the application nodes have something to talk to. The recommended path is the one-shot bringup launch, which wires bus_config + controller + odometry + robot_state_publisher together:
+推奨は `scripts/` の用途別スクリプト (ホストで実行)。コンテナ確保 → `docker exec` での launch 投入までを一括で行う:
 
 ```bash
-# 1. Bring up CAN interface (host or container, requires privileged)
-sudo ip link set can0 up type can bitrate 1000000
+./scripts/can_up.sh      # can0 up (要 sudo)。bringup 前に 1 回
+./scripts/bringup2d.sh   # 2D bringup (main, バックグラウンド。ログ: /workspace/log/bringup2d.log)
+./scripts/nav2d.sh       # 自律走行一発 = bringup2d + Nav2 + RViz (main 内)
+./scripts/slam2d.sh      # 地図作成 = bringup2d + slam_toolbox + RViz (slamtoolbox コンテナ)
+./scripts/bringup3d.sh   # 3D bringup (R-Fans。/scan は出ない)
+./scripts/glim3d.sh      # 3D SLAM 評価 = bringup3d + GLIM (glim コンテナ)
+./scripts/teleop.sh      # キーボード teleop (対話)
+./scripts/stop.sh        # 全コンテナの ROS プロセスに SIGINT (コンテナは残る)
+```
 
-# 2. One-shot: bus_config → (5s delay) → epos4_controller + epos4_odometry + robot_state_publisher
-#    2D LiDAR (HOKUYO urg_node) 構成:
+中身は「CANopen device container が先、アプリノードは後」という従来の順序をそのまま自動化したもの。手動で 1 コンテナ内を触る場合:
+
+```bash
+# main コンテナ内 (docker exec -it rerobot_env bash):
+#   2D LiDAR (HOKUYO urg_node) 構成:
 ros2 launch rerobot_bringup rerobot_bringup_2d.launch.py
-#    3D LiDAR (R-Fans rfans_driver) 構成:
+#   3D LiDAR (R-Fans rfans_driver) 構成:
 ros2 launch rerobot_bringup rerobot_bringup_3d.launch.py
 ```
 
 The 5-second `TimerAction` in `rerobot_bringup_2d.launch.py` / `rerobot_bringup_3d.launch.py` exists because the cia402 `init/enable/cyclic_velocity_mode` services are not advertised until `ros2_canopen`'s device_manager has finished booting both drivers (~3-4 s in practice). Without the delay, `epos4_controller`'s constructor-time `wait_for_service(1s)` calls race the bus_config and silently fail, leaving the EPOS4s disabled.
 
-If you prefer to bring the stack up piece by piece (useful for debugging):
+If you prefer to bring the stack up piece by piece (useful for debugging, main コンテナ内):
 ```bash
 ros2 launch maxon_epos4_ros2 bus_config_cia402_epos4_vel.launch.py
 # ...wait until "Slave 0x1: Switched NMT state to START" appears...
-ros2 run epos4_controller epos4_controller  --ros-args --params-file src/rerobot_bringup/config/params_2d.yaml
-ros2 run epos4_controller epos4_odometry    --ros-args --params-file src/rerobot_bringup/config/params_2d.yaml
+ros2 run epos4_controller epos4_controller  --ros-args --params-file src/bringup/rerobot_bringup/config/params_2d.yaml
+ros2 run epos4_controller epos4_odometry    --ros-args --params-file src/bringup/rerobot_bringup/config/params_2d.yaml
 ```
 
 Keyboard teleop (publishes Twist on `/robot_speed_cmd`, prints per-wheel traveled distance from `/motor{1,2}/.../joint_states`):
 ```bash
-ros2 run epos4_teleop teleop_keyboard --ros-args --params-file src/epos4_teleop/config/params.yaml
+ros2 run epos4_teleop teleop_keyboard --ros-args --params-file src/app/epos4_teleop/config/params.yaml
 ```
 
-SLAM / Nav2 / gamepad / IMU (each in its own terminal, on top of a running bringup):
+個別 launch (どのコンテナで動くかに注意):
 ```bash
-ros2 launch rerobot_bringup slam.launch.py           # slam_toolbox mapping + slam.rviz
-ros2 launch rerobot_bringup nav2.launch.py           # map_server + amcl + Nav2 (keepout 込み) + nav2.rviz
-ros2 launch rerobot_bringup joy_teleop.launch.py     # Xbox pad (LB=deadman, RB=turbo)
-ros2 launch rerobot_bringup realsense_imu.launch.py  # RealSense IMU → madgwick → /imu/data (LIO-SAM 入力用)
+ros2 launch rerobot_slamtoolbox slam.launch.py       # slamtoolbox コンテナ: slam_toolbox mapping + slam.rviz
+ros2 launch rerobot_bringup nav2.launch.py           # main コンテナ: map_server + amcl + Nav2 (keepout 込み) + nav2.rviz
+ros2 launch rerobot_bringup joy_teleop.launch.py     # main コンテナ: Xbox pad (LB=deadman, RB=turbo)
+ros2 launch rerobot_bringup realsense_imu.launch.py  # main コンテナ: RealSense IMU → madgwick → /imu/data (LIO/GLIM 系入力用)
 ```
 
-Single-motor sanity tests live in `epos4_vel_ros2`:
-```bash
-ros2 run epos4_vel_ros2 epos4_vel_test    # one EPOS4 (motor1)
-ros2 run epos4_vel_ros2 2chanel_test      # both EPOS4s
-```
+(旧 `epos4_vel_ros2` の単体テストは 2026-07-26 に削除 — 必要なら `v1-monolithic` から復元)
 
 ## Architecture
 
@@ -89,7 +103,7 @@ The robot's control plane is a layered pipeline; each layer is a separate ROS 2 
 [epos4_controller]   ── inverse kinematics, mode/state mgmt for both motors
         │ canopen_interfaces/COData on /motor{1,2}/cia402_device_{1,2}/tpdo (target velocity)
         ▼
-[ros2_canopen Cia402Driver]  ── from external/maxon_epos4_ros2
+[ros2_canopen Cia402Driver]  ── from drivers/epos4compact50-5can (maxon_epos4_ros2)
         │ CAN frames (SDO/PDO)
         ▼
 [EPOS4 #1 + EPOS4 #2 over can0]
@@ -106,13 +120,12 @@ is involved (the old `/robot_encoder_states` fan-in design is gone).
 
 ### Packages
 
-- **`src/epos4_controller`** — application layer (executables only). Both nodes consume parameters from `src/rerobot_bringup/config/params_2d.yaml` (3D 構成では `params_3d.yaml`; epos4 セクションは同値) (`tread_width`, `tire_diam`, `gear_ratio`, `invert_left/right`):
+- **`ros2_ws_main/src/app/epos4_controller`** — application layer (executables only). Both nodes consume parameters from `bringup/rerobot_bringup/config/params_2d.yaml` (3D 構成では `params_3d.yaml`; epos4 セクションは同値) (`tread_width`, `tire_diam`, `gear_ratio`, `invert_left/right`):
   - `epos4_controller` — owns the EPOS4 lifecycle (auto-calls init → enable → cyclic_velocity_mode in its constructor), converts `/robot_speed_cmd` into per-wheel target velocities (rpm), and fans them out to both motors via the canopen TPDO topic at 100 Hz. The `init` service reliably emits `Homing failed` because CSV mode doesn't require homing — this is expected and the subsequent `enable` / `cyclic_velocity_mode` service calls succeed and leave the motors ready.
   - `epos4_odometry` — subscribes to both per-motor `joint_states` topics via a `message_filters` ApproximateTime sync. Computes 2D pose with mid-step heading integration; publishes `/odom`, broadcasts TF, and republishes wheel-side `/joint_states` for `robot_state_publisher`. Parameters for frame names, TF on/off, gear ratio, and per-wheel inversion (`invert_left/right`). ⚠️ `joint_states.velocity` from the driver is suspected always-0 (0x606C is not PDO-mapped in bus.yml) — rotation checks must use position deltas.
-- **`src/rerobot_bringup`** — system bringup assets (no C++ code). Owns:
+- **`ros2_ws_main/src/bringup/rerobot_bringup`** — system bringup assets (no C++ code). Owns:
   - `launch/rerobot_bringup_2d.launch.py` — **2D LiDAR** composite bringup (bus_config + 5 s TimerAction + controller + odometry + robot_state_publisher + `urg_node`, frame_id `laser`). Does **not** launch RViz; visualization is owned by `nav2.launch.py` / `slam.launch.py` so the two don't open duplicate windows.
-  - `launch/rerobot_bringup_3d.launch.py` — **3D LiDAR** composite bringup. `rerobot_bringup_2d.launch.py` と同構成で `urg_node` を `rfans_driver` (R-Fans, `src/external/StarROS2`) に差し替えたもの。frame_id `rfans`、出力 PointCloud2 `/sdk_could`。`device_ip` / `rps` / `model` を launch 引数で上書き可。`/scan` は出さない (LaserScan 変換は含まない)。
-  - `launch/slam.launch.py` — slam_toolbox (mapping) + `slam.rviz`。config は `config/slam_toolbox.yaml` (scan_queue_size 等は意図的な設定)。
+  - `launch/rerobot_bringup_3d.launch.py` — **3D LiDAR** composite bringup. `rerobot_bringup_2d.launch.py` と同構成で `urg_node` を `rfans_driver` (R-Fans, `drivers/StarROS2`) に差し替えたもの。frame_id `rfans`、出力 PointCloud2 `/sdk_could`。`device_ip` / `rps` / `model` を launch 引数で上書き可。`/scan` は出さない (LaserScan 変換は含まない)。
   - `launch/nav2.launch.py` — map_server + amcl + Nav2 (RPP controller, keepout フィルタ込み) + `nav2.rviz`。config は `config/nav2_params.yaml`。⚠️ `bt_navigator` の `plugin_lib_names` を列挙すると Jazzy では二重登録 segfault — デフォルトに任せる。
   - `launch/joy_teleop.launch.py` + `config/joy_teleop.yaml` — Xbox ゲームパッド teleop (joy + teleop_twist_joy, LB=deadman, RB=turbo)。
   - `launch/realsense_imu.launch.py` — RealSense を 6 軸 IMU として起動し `imu_filter_madgwick` (use_mag=false) で orientation を合成して `/imu/data` に出す (LIO-SAM の imuTopic 既定と一致)。
@@ -121,21 +134,23 @@ is involved (the old `/robot_encoder_states` fan-in design is gone).
   - `urdf/rerobot_2d.urdf` — robot description (2D, LiDAR link `laser` @ xyz `0 0 0.714`).
   - `urdf/rerobot_3d.urdf` — robot description (3D, LiDAR link `rfans` を 2D と同位置 xyz `0 0 0.714` に配置)。
   - `rviz/nav2.rviz` — Nav2 view (Fixed Frame: `map`, Navigation 2 panel, `/map` + keepout mask + costmaps + global/local plan + amcl particles + footprint). Launched by `nav2.launch.py`.
-  - `rviz/slam.rviz` — SLAM view (Fixed Frame: `map`, RobotModel/TF/Odometry + the in-progress `/map` + `/scan`; no Nav2-specific displays). Launched by `slam.launch.py`.
-- **`src/epos4_teleop`** — keyboard teleop. Publishes `geometry_msgs/Twist` on `/robot_speed_cmd` and subscribes directly to `/motor{1,2}/cia402_device_{1,2}/joint_states` to print cumulative left/right wheel distance. Keys: `w/s` (linear ±), `a/d` (angular ±), `space`/`x` (stop), `+/-` (scale step), `r` (reset distance), `f` (toggle 脱力/free mode via `/robot_free_mode` — see `docs/features/2026-06-05_motor_free_mode.md`), `q` (quit with zero Twist).
-- **`src/epos4_vel_ros2`** — standalone single-motor (and 2-motor) test programs. Useful for bench-bringing-up an EPOS4 without the full control stack.
-- **`src/external/epos4compact50-5can`** — git submodule; vendors the `maxon_epos4_ros2` package. Its launch file (`bus_config_cia402_epos4_vel.launch.py`) is what wires `cia402_device_1` (node_id 1, namespace `/motor1`) and `cia402_device_2` (node_id 2, namespace `/motor2`) onto `can0`. ⚠️ `bus.yml` はこの submodule 内 — 変更は submodule 側にコミットし、親リポジトリで gitlink を更新する。
-- **`src/external/StarROS2`** — git submodule; Sure-Star R-Fans-16 の `rfans_driver` (ROS 2 移植版)。経緯は `docs/features/2026-06-13_rfans_driver_ros2_port.md`。
-- **`src/external/LIO-SAM`** (ros2 branch) — git submodule; 3D LiDAR + IMU オドメトリ。ビルドは通る (Dockerfile に `ros-jazzy-gtsam` 追加済み) が、bringup への統合はまだ (`realsense_imu.launch.py` が入力側 `/imu/data` を用意する段階まで)。
-- **`src/external/realsense-ros`** — git submodule (Intel RealSense driver)。**`src/realsense2_camera_launch`** (リポジトリ内の launch-only パッケージ) が IMU 専用デフォルト (color/depth 無効, gyro/accel 有効, unite_imu_method=2) の `rs_launch.py` を持つ。
+- **`ros2_ws_slamtoolbox/src/rerobot_slamtoolbox`** — slam_toolbox 系資産 (2026-07-26 に rerobot_bringup から分離、slamtoolbox コンテナ専用):
+  - `launch/slam.launch.py` — slam_toolbox (mapping) + `slam.rviz`。config は `config/slam_toolbox.yaml` (scan_queue_size 等は意図的な設定)。lifecycle の CONFIGURE→ACTIVATE を launch 側から発火する (Jazzy の autostart 不具合対応)。
+  - `rviz/slam.rviz` — SLAM view (Fixed Frame: `map`, RobotModel/TF/Odometry + the in-progress `/map` + `/scan`; no Nav2-specific displays)。
+- **`ros2_ws_main/src/app/epos4_teleop`** — keyboard teleop. Publishes `geometry_msgs/Twist` on `/robot_speed_cmd` and subscribes directly to `/motor{1,2}/cia402_device_{1,2}/joint_states` to print cumulative left/right wheel distance. Keys: `w/s` (linear ±), `a/d` (angular ±), `space`/`x` (stop), `+/-` (scale step), `r` (reset distance), `f` (toggle 脱力/free mode via `/robot_free_mode` — see `docs/features/2026-06-05_motor_free_mode.md`), `q` (quit with zero Twist).
+- **`ros2_ws_main/src/drivers/epos4compact50-5can`** — git submodule; vendors the `maxon_epos4_ros2` package. Its launch file (`bus_config_cia402_epos4_vel.launch.py`) is what wires `cia402_device_1` (node_id 1, namespace `/motor1`) and `cia402_device_2` (node_id 2, namespace `/motor2`) onto `can0`. ⚠️ `bus.yml` はこの submodule 内 — 変更は submodule 側にコミットし、親リポジトリで gitlink を更新する。
+- **`ros2_ws_main/src/drivers/StarROS2`** — git submodule; Sure-Star R-Fans-16 の `rfans_driver` (ROS 2 移植版)。経緯は `docs/features/2026-06-13_rfans_driver_ros2_port.md`。
+- **`ros2_ws_main/src/drivers/realsense-ros`** — git submodule (Intel RealSense driver)。**`ros2_ws_main/src/bringup/realsense2_camera_launch`** (リポジトリ内の launch-only パッケージ) が IMU 専用デフォルト (color/depth 無効, gyro/accel 有効, unite_imu_method=2) の `rs_launch.py` を持つ。
+- **`ros2_ws_glim/config/`** — GLIM の設定 JSON 一式 (colcon パッケージではない)。glim コンテナに `/glim_config` として mount され `glim_rosnode -p config_path:=/glim_config` で読まれる。IMU レス運用は `odometry_estimation_ct` (CT-ICP) + sub/global mapping 両方の `enable_imu: false` が必須。
+- **`ros2_ws_liosam/src/LIO-SAM`** (ros2 branch) — git submodule; 3D LiDAR + IMU オドメトリ。liosam コンテナでビルド可能だが **IMU 入手不可のため凍結中** (`realsense_imu.launch.py` が入力側 `/imu/data` を用意する段階まで)。
 
 ### Key conventions
 
-- The two motors are addressed via the namespaces `/motor1/cia402_device_1` and `/motor2/cia402_device_2` (defined in `external/.../bus.yml`). Any new node that talks to a motor must follow this namespace pattern. Physical wiring: **motor1 = right wheel, motor2 = left wheel** (see the `claude_swap` comments in `epos4_controller` / `epos4_odometry`; some older log strings still carry the reversed labels).
+- The two motors are addressed via the namespaces `/motor1/cia402_device_1` and `/motor2/cia402_device_2` (defined in `drivers/epos4compact50-5can/.../bus.yml`). Any new node that talks to a motor must follow this namespace pattern. Physical wiring: **motor1 = right wheel, motor2 = left wheel** (see the `claude_swap` comments in `epos4_controller` / `epos4_odometry`; some older log strings still carry the reversed labels).
 - `epos4_controller` drives the EPOS4 in **cyclic synchronous velocity mode** by writing target velocity (object 0x60FF, sub 0x00) into `COData` messages on the per-motor `tpdo` topic. The controller's own publish timer runs at 100 Hz; the PDO sync period is 50 ms (set in `bus.yml`).
 - Joint position/velocity from the canopen driver are **SI-scaled by the driver itself** via `bus.yml`'s `scale_pos_from_dev = 0.0015339 (≈ 2π/4096)` and `scale_vel_from_dev = 0.10472 (= 2π/60)`. So `joint_states.position` is **motor-shaft angle in radians** and `joint_states.velocity` is **rad/s** — not raw qc/rpm. Any consumer computing wheel distance should do `distance_m = (Δposition / gear_ratio) × (tire_diam / 2)`. Outgoing commands go the other way: controller publishes **rpm** on the TPDO, which the driver scales to device units via `scale_vel_to_dev = 9.5493`.
 - ROS 2 params files **must** use the key `ros__parameters` (two underscores). A single-underscore typo (`ros_parameters`) will crash the node on startup with `RCLInvalidROSArgsError: Cannot have a value before ros__parameters`, and it is not obvious from the symptom (nodes exit before publishing anything).
-- `tread_width`, `tire_diam`, `gear_ratio`, and `invert_left/right` are duplicated as ROS parameters in each consumer, sourced from `src/rerobot_bringup/config/params_2d.yaml` and `params_3d.yaml` (whose epos4 sections must match) (and a parallel copy in `src/epos4_teleop/config/params.yaml`). Keep them in sync if you change the chassis (`/params-sync` skill で検査できる)。
+- `tread_width`, `tire_diam`, `gear_ratio`, and `invert_left/right` are duplicated as ROS parameters in each consumer, sourced from `ros2_ws_main/src/bringup/rerobot_bringup/config/params_2d.yaml` and `params_3d.yaml` (whose epos4 sections must match) (and a parallel copy in `ros2_ws_main/src/app/epos4_teleop/config/params.yaml`). Keep them in sync if you change the chassis (`/params-sync` skill で検査できる)。
 - ⚠️ `gear_ratio: 1.25` is deliberate: the physical reduction is 5:1, but the encoder resolution is off by exactly 4× (quadrature double-interpretation), and 1.25 compensates. Do **not** "fix" it to 5.0 in isolation — the proper fix changes three things at once (EPOS4 object 0x3010:01 / bus.yml scale / gear_ratio). See `docs/issue/2026-07-07_wheel_odometry_encoder_scaling_4x.md`.
 
 ## Documentation & Claude Workflow

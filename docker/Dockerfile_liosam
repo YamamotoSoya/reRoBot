@@ -1,0 +1,41 @@
+# claude: liosam コンテナ (2026-07-26 再編で main から分離、IMU 再入手まで凍結中の器)。
+# 役割: LIO-SAM (ros2 branch, ros2_ws_liosam/src/LIO-SAM submodule) のビルドと実行。
+# GTSAM を要求するのはこのコンテナだけ。GLIM (GTSAM 4.3a0, 別コンテナ) との
+# バージョン衝突を避けるための分離でもある。
+FROM ros:jazzy-ros-base
+
+RUN apt-get update && apt-get install -y \
+    python3-colcon-common-extensions \
+    build-essential \
+    git \
+    # --- LIO-SAM 依存 (旧ルート Dockerfile から移設) ---
+    # 公式 (TixiaoShan/LIO-SAM) の依存を ROS 2 Jazzy 用に読み替えたもの:
+    #   PCL / cv_bridge(OpenCV) / tf2 / Boost::timer + GTSAM。
+    ros-jazzy-pcl-ros \
+    ros-jazzy-pcl-conversions \
+    ros-jazzy-cv-bridge \
+    ros-jazzy-tf2 \
+    ros-jazzy-tf2-ros \
+    ros-jazzy-tf2-eigen \
+    ros-jazzy-tf2-sensor-msgs \
+    ros-jazzy-tf2-geometry-msgs \
+    libpcl-dev \
+    libboost-timer-dev \
+    libeigen3-dev \
+    # 公式は ppa:borglab/gtsam-release-4.0 を使うが noble(24.04) 非対応。
+    # universe の libgtsam-dev は gtsam_unstable ヘッダ
+    # (imuPreintegration.cpp が include する IncrementalFixedLagSmoother.h)
+    # を含まず、libgtsam-unstable-dev は noble に存在しない。
+    # → gtsam_unstable 同梱の ros-jazzy-gtsam (GTSAM 4.2.0) を使う。 # claude
+    ros-jazzy-gtsam \
+    # LIO-SAM の launch が使う可視化
+    ros-jazzy-rviz2 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /workspace
+
+# claude: 対話シェル用 (スクリプト経由の実行では compose の environment が正)
+RUN echo "source /opt/ros/jazzy/setup.bash" >> ~/.bashrc && \
+    echo "export ROS_DOMAIN_ID=150" >> ~/.bashrc
+
+CMD ["bash"]

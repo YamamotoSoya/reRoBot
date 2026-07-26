@@ -1,3 +1,8 @@
+# claude: 再編 (2026-07-26) — 旧ルート Dockerfile を main コンテナ用に減量したもの。
+#   slam_toolbox            → Dockerfile_slamtoolbox (別コンテナ)
+#   LIO-SAM 依存 (PCL/GTSAM) → Dockerfile_liosam (別コンテナ, IMU 再入手まで凍結)
+#   GLIM                    → 公式イメージ koide3/glim_ros2:jazzy (Dockerfile なし)
+# main が担うもの: CAN モータ制御 + LiDAR/RealSense ドライバ + odometry + Nav2 + teleop。
 FROM ros:jazzy-ros-base
 
 RUN apt-get update && apt-get install -y \
@@ -31,9 +36,7 @@ RUN apt-get update && apt-get install -y \
     # --- Xbox / joystick teleop --- # claude
     ros-jazzy-joy \
     ros-jazzy-teleop-twist-joy \
-    # --- slam toolbox ---
-    ros-jazzy-slam-toolbox \
-    # --- navigation2 ---
+    # --- navigation2 (main に統合 — apt 同士で依存衝突が無いため分離しない) --- # claude
     ros-jazzy-navigation2 \
     ros-jazzy-nav2-bringup \
     ros-jazzy-nav2-minimal-tb* \
@@ -41,28 +44,18 @@ RUN apt-get update && apt-get install -y \
     ros-jazzy-robot-localization \
     # --- LiDAR (Sure-Star RFans/CFans rfans_driver) ---
     libpcap-dev \
-    # --- LIO-SAM (LiDAR odometry, src/external/LIO-SAM) --- # claude
-    # 公式 (TixiaoShan/LIO-SAM) の依存を ROS 2 Jazzy 用に読み替えたもの:
-    #   PCL / cv_bridge(OpenCV) / tf2 / Boost::timer + GTSAM。
-    #   navigation・robot_localization・robot_state_publisher は
-    #   上の navigation2 / sensor integration / ros-base で導入済み。
-    ros-jazzy-pcl-ros \
-    ros-jazzy-pcl-conversions \
-    ros-jazzy-cv-bridge \
+    # --- tf2 基本 (epos4_odometry / realsense2_camera が使用) --- # claude
     ros-jazzy-tf2 \
     ros-jazzy-tf2-ros \
-    ros-jazzy-tf2-eigen \
-    ros-jazzy-tf2-sensor-msgs \
-    ros-jazzy-tf2-geometry-msgs \
-    libpcl-dev \
-    libboost-timer-dev \
-    # 公式は ppa:borglab/gtsam-release-4.0 を使うが noble(24.04) 非対応。
-    # universe の libgtsam-dev は gtsam_unstable ヘッダ
-    # (imuPreintegration.cpp が include する IncrementalFixedLagSmoother.h)
-    # を含まず、libgtsam-unstable-dev は noble に存在しない。
-    # → gtsam_unstable 同梱の ros-jazzy-gtsam (GTSAM 4.2.0) を使う。 # claude
-    ros-jazzy-gtsam \
-    # 6軸IMU(RealSense) → orientation付与 (LIO-SAM入力用) # claude
+    # --- realsense2_camera のビルド依存 --- # claude
+    # 旧 Dockerfile では cv_bridge を「LIO-SAM 用」とコメントしていたが、実際は
+    # realsense2_camera も要求する。image_transport / diagnostic_updater / eigen は
+    # 旧 Dockerfile に無く、realsense-ros のビルドに必要なため追加。 # claude
+    ros-jazzy-cv-bridge \
+    ros-jazzy-image-transport \
+    ros-jazzy-diagnostic-updater \
+    libeigen3-dev \
+    # 6軸IMU(RealSense) → orientation付与 (GLIM/LIO 系の入力用) # claude
     ros-jazzy-imu-filter-madgwick \
     # -----------------------------------
     && rm -rf /var/lib/apt/lists/*
@@ -77,6 +70,8 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /workspace
 
+# claude: 対話シェル用。スクリプト (docker exec bash -c) は .bashrc を読まないため、
+# ROS_DOMAIN_ID は docker-compose.yml の environment でも設定している (そちらが正)。
 RUN echo "source /opt/ros/jazzy/setup.bash" >> ~/.bashrc && \
     echo "export ROS_DOMAIN_ID=150" >> ~/.bashrc && \
     echo "source /usr/share/colcon_cd/function/colcon_cd.sh" >> ~/.bashrc && \

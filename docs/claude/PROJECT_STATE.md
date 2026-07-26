@@ -3,7 +3,7 @@
      読み順: CLAUDE.md (規約・ビルド) → 本ファイル (現在地) → docs/issue/ (問題詳細)。 -->
 # reRoBot プロジェクト状態メモ (Claude 用)
 
-- **最終更新: 2026-07-26** (GLIM 採用方針の決定 + リポジトリ再編 `feat/workspace-split` 進行中まで反映。ros2_ws_main/src の app/bringup/drivers グループ化まで完了。⚠️ 再編完了まで docker compose は起動不可の過渡状態)
+- **最終更新: 2026-07-26** (Docker 4 コンテナ分割 + scripts/ 作成 + CLAUDE.md/skills 追従まで完了。イメージビルドの完了確認と起動検証が残)
 - 書き手: Claude Code (Fable 5)。次の Claude はまずこれを読めば現在地が分かるようにしてある。
 
 ---
@@ -61,13 +61,16 @@ EPOS4 ×2                     │
 - R-Fans-16: 20 Hz で点群取得 (z=0 問題・低 fps 問題は解決済み — docs/report/2026-06-13 ×2)。
 
 **構成はあるが未完/未接続**:
-- **リポジトリ再編が進行中** (`feat/workspace-split`, 07-26〜): 機能別 workspace 分割
-  (`ros2_ws_main` / `ros2_ws_slamtoolbox` / `ros2_ws_nav2` / `ros2_ws_glim` / `ros2_ws_liosam`)。
-  `src/` からの移動は完了 (submodule は各 ws の src/ 直下に直接配置、symlink 撤廃)。
-  **rerobot_bringup の slam/nav2 分離・Dockerfile 分割・compose 書き換えが未了 → この間 docker compose は起動不可**。
+- **リポジトリ再編がほぼ完了** (`feat/workspace-split`, 07-26): 機能別 workspace + コンテナ分割。
+  分割基準は「依存の壁」— **Nav2 は main に統合** (apt 同士で衝突しないため)、slam_toolbox は別コンテナ (ユーザ判断)。
+  - コンテナ: `rerobot_env` (main: モータ+ドライバ+Nav2+teleop) / `slamtoolbox_env` / `glim_env` (公式イメージ) / `liosam_env` (凍結)。
+    全て `network_mode: host` + `ipc: host` + `ROS_DOMAIN_ID=150` (compose の environment が正 — exec bash -c は .bashrc を読まない)。
+  - 起動は `scripts/*.sh` (bash 常駐 + docker exec 方式): can_up / build / bringup{2d,3d} / nav2d / slam2d / glim3d / teleop / stop。
+  - slam 資産は `rerobot_slamtoolbox` パッケージに分離済み (`ros2 launch rerobot_slamtoolbox slam.launch.py`)。
+  - main の build.sh に `CMAKE_EXPORT_COMPILE_COMMANDS=ON` (ホストエディタの参照エラー対策の布石)。
+  - **残: イメージビルド完了確認・起動検証 (vcan/実機)・空 ros2_ws_nav2 削除**。旧 volume は削除済み、旧イメージ (7.95GB) は新ビルド成功後に削除予定。
   旧構成は `archive/monolithic` ブランチ + タグ `v1-monolithic` (= 2686cd9) に恒久保存済み。
-  計画詳細: `~/.claude-school/plans/imu-glim-swift-hartmanis.md` (ユーザがディレクトリ再編を自分で実施中、
-  Docker 再編以降は Claude が引き継ぐ)。`feat/claude-optimize` (3D 自律移動 bringup 9 コミット) は**破棄決定** (ユーザ判断)。
+  `feat/claude-optimize` (3D 自律移動 bringup 9 コミット) は**破棄決定** (ユーザ判断)。
 - **3D SLAM は GLIM (koide3) を採用する方針** (07-26 決定、IMU 入手不可のため)。要件調査済み:
   IMU レスは `odometry_estimation_ct` (CT-ICP) で公式サポート、`koide3/glim_ros2:jazzy` 公式イメージあり (CUDA 不要)。
   ⚠️ R-Fans 点群の `timeflag` フィールドは GLIM 非認識 (認識名は `t`/`time`/`time_stamp`/`timestamp`) →
@@ -114,6 +117,7 @@ EPOS4 ×2                     │
 | 07-26 | CLAUDE.md 全面更新 (Issue 16/17 の古い記述修正、LIO-SAM/RealSense/skills/docs 運用を反映)。.gitmodules の LIO-SAM branch 設定を修正 (末尾スラッシュ付き孤立セクションに `branch = ros2` が置かれ `update --remote` が master を取る状態だった)。コード変更後に本ファイルの更新を促す Stop hook (.claude/hooks/check-project-state.sh) を導入。`annotate` スキル追加 (返信中の発展用語に ※n + 📘 注釈ブロック、既知用語リストで自己調整)。`user-level` スキル + `docs/claude/USER_LEVEL.md` (git 管理外) 導入 — monthly/knowledge/既知リストからユーザ知識レベルを推定し annotate・knowledge-check の較正元にする。git 運用を **main 直コミット**に方針変更 (ユーザ指示) |
 | 07-26 (2) | IMU 入手不可が判明 → **3D SLAM に GLIM 採用を決定** (要件調査で IMU レス CT-ICP を確認)。機能別 workspace + コンテナ分割の再編開始 (`feat/workspace-split`)。旧構成を `archive/monolithic` + タグ `v1-monolithic` にアーカイブ (ユーザ自身が git 操作を実施)。`feat/claude-optimize` は破棄決定 |
 | 07-26 (3) | 再編の ws 分割 + app/bringup/drivers グループ化をコミット (1e7f11c)。`epos4_vel_ros2` を削除 (553068d, 役割は epos4_controller に置換済み)。`epos4_teleop` は脱力モード入口 + 距離計測ツールとして存続と判断 |
+| 07-26 (4) | **Nav2 は main 統合・slam_toolbox は別コンテナ**の分割基準を確定 (「機能でなく依存の壁で分ける」)。slam 資産を `rerobot_slamtoolbox` に分離。Docker 4 分割 (main/slamtoolbox/glim/liosam) + scripts/ 8 本 + CLAUDE.md/skills 追従を Claude が実施。cv_bridge の「LIO-SAM 用」コメントが誤り (realsense2_camera が要求) と判明し main に残置、realsense の欠落依存 (image_transport 等) も補完 |
 
 ## 7. コードを触るときに知らないと踏む罠 (経緯由来の知識)
 
@@ -151,10 +155,10 @@ EPOS4 ×2                     │
 
 ## 10. 次にやることになっている作業
 
-**最優先: リポジトリ再編の完遂** (計画: `~/.claude-school/plans/imu-glim-swift-hartmanis.md`):
-1. ~~ros2_ws_main/src の app/bringup/drivers グループ化~~ (✅ 07-26 完了) + rerobot_bringup から slam/nav2 パッケージ分離 (未了、ユーザ実施中)
-2. Dockerfile 4 分割 + docker-compose 書き換え (profiles + `ipc: host`) + scripts/ 作成 (Claude 担当)
-3. CLAUDE.md・.claude/skills のパス参照を新構成に全面更新
+**最優先: リポジトリ再編の仕上げ** (計画: `~/.claude-school/plans/imu-glim-swift-hartmanis.md`):
+1. ~~ws 分割・グループ化・slam 分離・Docker 4 分割・scripts・CLAUDE.md/skills 更新~~ (✅ 07-26 完了)
+2. イメージビルド完了確認 → `build.sh main` / `build.sh slamtoolbox` → vcan モード起動検証 (`/verify`) → コミット
+3. 空 `ros2_ws_nav2/` の削除 (nav2 は main 統合のため不要)、旧イメージ `rerobot-rerobot` (7.95GB) の削除
 4. GLIM 導入: `ros2_ws_glim/config/` (CT-ICP, `enable_imu: false` ×2) → bag 録画 → `glim_rosbag` オフライン評価
    → 必要なら StarROS2 に per-point `time` フィールド追加
 

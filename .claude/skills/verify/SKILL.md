@@ -20,7 +20,9 @@ description: Docker コンテナ rerobot_env 内でビルド・スタック起�
 ## 共通手順
 
 1. **コンテナ確認**: `docker ps --filter name=rerobot_env`。停止中なら
-   `docker compose up -d --build` (リポジトリルートで)。
+   `docker compose up -d main` (リポジトリルートで)。
+   ※ 2026-07-26 再編後: main コンテナの ws は `ros2_ws_main/` (mount 先は従来どおり
+   `/workspace/src`)。slam_toolbox は別コンテナ `slamtoolbox_env` (profile: slamtoolbox)。
 
 2. **ビルド**:
    ```sh
@@ -93,8 +95,8 @@ interpolated position / cyclic **position** のみ実装で、**CSV (cyclic velo
 
 8. **アプリ層を起動** (それぞれバックグラウンド):
    ```sh
-   ros2 run epos4_controller epos4_controller --ros-args --params-file /workspace/src/rerobot_bringup/config/params_2d.yaml
-   ros2 run epos4_controller epos4_odometry   --ros-args --params-file /workspace/src/rerobot_bringup/config/params_2d.yaml
+   ros2 run epos4_controller epos4_controller --ros-args --params-file /workspace/src/bringup/rerobot_bringup/config/params_2d.yaml
+   ros2 run epos4_controller epos4_odometry   --ros-args --params-file /workspace/src/bringup/rerobot_bringup/config/params_2d.yaml
    ```
 
 9. **コマンド経路を検証**: Twist を流して CAN フレームを観測:
