@@ -6,7 +6,7 @@
 
 深掘りが必要な問題は本ディレクトリの慣例どおり 1 issue = 1 ファイルで別途起票する。
 既存の個別 issue: [2026-07-07_wheel_odometry_encoder_scaling_4x.md](2026-07-07_wheel_odometry_encoder_scaling_4x.md)
-(エンコーダ分解能の 4 倍ズレ — `gear_ratio: 1.25` は対症療法。本一覧の Issue 4 と同じ bus.yml が根本原因の所在)。
+(エンコーダ分解能の 4 倍ズレ — **2026-07-29 解決済み**: bus.yml 2π/1024 + gear_ratio 5.0 の 2 点同時修正を適用。以下の本文中の「gear_ratio 1.25」記述は監査時点 (2026-07-07) のスナップショット)。
 
 ## サマリ
 
