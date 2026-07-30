@@ -3,7 +3,7 @@
      読み順: CLAUDE.md (規約・ビルド) → 本ファイル (現在地) → docs/issue/ (問題詳細)。 -->
 # reRoBot プロジェクト状態メモ (Claude 用)
 
-- **最終更新: 2026-07-29** (エンコーダ 4 倍ズレ問題を実測で確定 → **根本修正を適用・浮かせ検証 OK** (bus.yml 2π/1024 + gear_ratio 5.0)。⚠️ 実車速度が従来の 4 倍 (=指令どおり) になったので接地は低速から。未コミット — bus.yml は submodule 側コミット + gitlink 更新が必要。残: 接地検証、nav2d/slam2d 起動検証、main マージ)
+- **最終更新: 2026-07-30** (glim コンテナを `docker/Dockerfile_glim` 化 — 公式イメージベースの薄い層で他コンテナと構成統一、ビルド・起動検証済み。GLIM config JSON 作成は次回。⚠️ 07-29 のエンコーダ修正の残タスクは継続: 接地検証 (低速から — 実車速度が従来の 4 倍=指令どおり)、bus.yml の submodule 側コミット + gitlink 更新、nav2d/slam2d 起動検証、main マージ)
 - 書き手: Claude Code (Fable 5)。次の Claude はまずこれを読めば現在地が分かるようにしてある。
 
 ---
@@ -125,6 +125,7 @@ EPOS4 ×2                     │
 | 07-26 (4) | **Nav2 は main 統合・slam_toolbox は別コンテナ**の分割基準を確定 (「機能でなく依存の壁で分ける」)。slam 資産を `rerobot_slamtoolbox` に分離。Docker 4 分割 (main/slamtoolbox/glim/liosam) + scripts/ 8 本 + CLAUDE.md/skills 追従を Claude が実施。cv_bridge の「LIO-SAM 用」コメントが誤り (realsense2_camera が要求) と判明し main に残置、realsense の欠落依存 (image_transport 等) も補完 |
 | 07-29 | **エンコーダ 4 倍ズレの実測確定セッション** (実機・タイヤ浮かせ)。SDO read で両ノード 0x3010:01=256/0x3000:05=1024 (EPOS 側は正しい)、手回し 1 回転 = 7.86 rad ≈ 5120 inc (EPOS Studio 側実測とも一致)、candump で raw tpdo 無スケール素通し (0.2 m/s 指令 → 0x60FF=-31) を確認。**速度相殺説は否定 — 実車は指令の 1/4 速で走っていた**。根本修正は ROS 側 2 点同時に簡約 (issue doc 更新済み)。副産物: joint_states.velocity=0 の機構解明、再編後 bringup2d の実機起動成功 |
 | 07-29 (2) | **根本修正を適用・浮かせ検証 OK** (issue 解決)。bus.yml `scale_pos_from_dev: 2π/1024` / `scale_pos_to_dev: 162.97` + `gear_ratio: 5.0` ×5 箇所を同時変更、3 パッケージ再ビルド。検証: 0.2 m/s 指令 → 0x60FF=-127・0x606C≈-127 rpm・/odom 変位 2.15 m (≈指令×実効時間) で 3 系統整合。CLAUDE.md の規約 2 箇所も更新 (2π/1024、raw tpdo 無スケールの明記)。余波調査で未使用の pos 側 bus.yml も同修正、古い「3 点同時」指示 (triage/prompt/audit) を解決済みに更新。**未コミット** (bus.yml ×2 は submodule 側コミット + 親 gitlink 更新が必要)。接地検証 (10 m 直進・360° 旋回・低速から) が残 |
+| 07-30 | glim コンテナを `docker/Dockerfile_glim` 化 (公式 `koide3/glim_ros2:jazzy` ベースの薄い層: rviz2 + 対話 bashrc のみ追加、GLIM 本体はビルドしない)。他 3 コンテナと compose/build.sh の構成を統一。ビルド・起動・glim_ros 実行体の疎通は検証済み。**`ros2_ws_glim/config/` の設定 JSON 作成と glim_rosnode 起動検証は未着手** (ユーザ指示で次回に持ち越し) |
 
 ## 7. コードを触るときに知らないと踏む罠 (経緯由来の知識)
 

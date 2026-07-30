@@ -1,7 +1,7 @@
 # claude: 機能別コンテナ構成 (2026-07-26 再編)。分割基準は「依存の壁」:
 #   main        — CAN モータ制御 + センサドライバ + odometry + Nav2 + teleop (常用、profile なし)
 #   slamtoolbox — slam_toolbox 2D mapping (profile: slamtoolbox)
-#   glim        — 3D SLAM GLIM。GTSAM 4.3a0 を含む公式イメージ (profile: glim)
+#   glim        — 3D SLAM GLIM。公式イメージ (GTSAM 4.3a0 同梱) ベースの Dockerfile_glim (profile: glim)
 #   liosam      — LIO-SAM。GTSAM 4.2.0 (ros-jazzy-gtsam)。IMU 再入手まで凍結 (profile: liosam)
 # 全サービス共通:
 #   network_mode: host + ipc: host + ROS_DOMAIN_ID=150 → コンテナ間は DDS で疎通。
@@ -61,9 +61,11 @@ services:
     profiles: [glim]
     network_mode: host
     ipc: host
-    # claude: ビルドなし — koide3 公式イメージをそのまま使う (GTSAM 4.3a0 同梱)。
-    # 設定は ./ros2_ws_glim/config を bind mount し、glim_rosnode に config_path で渡す。
-    image: koide3/glim_ros2:jazzy
+    # claude: koide3 公式イメージ (GLIM ビルド済み + GTSAM 4.3a0 同梱) ベースの薄い Dockerfile。
+    # GLIM 本体はビルドしない。設定は ./ros2_ws_glim/config を bind mount し、glim_rosnode に config_path で渡す。
+    build:
+      context: ./docker
+      dockerfile: Dockerfile_glim
     tty: true
     stdin_open: true
     environment:

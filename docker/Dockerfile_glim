@@ -1,0 +1,16 @@
+# claude: glim コンテナ (3D SLAM GLIM)。ベースは koide3 公式イメージ
+# (GLIM ビルド済みバイナリ + GTSAM 4.3a0 同梱) — GLIM 本体はここではビルドしない。
+# 他コンテナと構成を揃えるための薄い層: 可視化 (rviz2) + 対話シェル環境のみ追加。
+# ROS 環境の正は /ros_entrypoint.sh (/opt/ros/jazzy と /root/ros2_ws/install を source)。
+FROM koide3/glim_ros2:jazzy
+
+RUN apt-get update && apt-get install -y \
+    ros-jazzy-rviz2 \
+    && rm -rf /var/lib/apt/lists/*
+
+# claude: 対話シェル用 (スクリプト経由の実行では /ros_entrypoint.sh + compose の environment が正)
+RUN echo "source /opt/ros/jazzy/setup.bash" >> ~/.bashrc && \
+    echo "source /root/ros2_ws/install/setup.bash" >> ~/.bashrc && \
+    echo "export ROS_DOMAIN_ID=150" >> ~/.bashrc
+
+CMD ["bash"]

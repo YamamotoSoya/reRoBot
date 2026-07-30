@@ -14,7 +14,7 @@ The workflow runs across **function-specific Docker containers** (2026-07-26 再
 |----------|---------|-----------|------|
 | `rerobot_env` (main) | `docker/Dockerfile_main` | `ros2_ws_main/` | CAN モータ制御 + LiDAR/RealSense ドライバ + odometry + **Nav2** + teleop。常用 (profile なし) |
 | `slamtoolbox_env` | `docker/Dockerfile_slamtoolbox` | `ros2_ws_slamtoolbox/` | slam_toolbox 2D mapping (profile: `slamtoolbox`) |
-| `glim_env` | `koide3/glim_ros2:jazzy` (公式、ビルド不要) | `ros2_ws_glim/` (config JSON のみ) | 3D SLAM GLIM。GTSAM 4.3a0 同梱 (profile: `glim`) |
+| `glim_env` | `docker/Dockerfile_glim` (公式 `koide3/glim_ros2:jazzy` ベースの薄い層、GLIM 本体はビルドしない) | `ros2_ws_glim/` (config JSON のみ) | 3D SLAM GLIM。GTSAM 4.3a0 同梱 (profile: `glim`) |
 | `liosam_env` | `docker/Dockerfile_liosam` | `ros2_ws_liosam/` | LIO-SAM。GTSAM 4.2.0。**IMU 再入手まで凍結** (profile: `liosam`) |
 
 全コンテナ共通: `network_mode: host` + `ipc: host` + `ROS_DOMAIN_ID=150` でコンテナ間は DDS 疎通 (`ipc: host` が無いと FastDDS の共有メモリ転送が繋がらず「topic list に見えるのに echo できない」症状になる)。コンテナは bash 常駐で、起動は `scripts/*.sh` が `docker exec` で launch を投入する方式。

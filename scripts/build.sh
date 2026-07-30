@@ -31,15 +31,16 @@ case "$ws" in
        nice -n 10 colcon build --symlink-install --executor sequential'
     ;;
   images)
-    # claude: Docker イメージの (再) ビルド。3 サービス同時だと PC が落ちるため 1 本ずつ直列。
+    # claude: Docker イメージの (再) ビルド。複数サービス同時だと PC が落ちるため 1 本ずつ直列。
+    # glim は公式イメージベースの薄い層 (Dockerfile_glim) のみビルドする。
     export COMPOSE_PARALLEL_LIMIT=1
-    for svc in main slamtoolbox liosam; do
+    for svc in main slamtoolbox glim liosam; do
       echo "[build] image: $svc"
-      docker compose --profile slamtoolbox --profile liosam build "$svc"
+      docker compose --profile slamtoolbox --profile glim --profile liosam build "$svc"
     done
     ;;
   *)
-    echo "usage: $0 [main|slamtoolbox|liosam|images]  (glim は公式イメージのためビルド不要)"
+    echo "usage: $0 [main|slamtoolbox|liosam|images]  (glim の colcon build は不要 — イメージは images に含む)"
     exit 1
     ;;
 esac
