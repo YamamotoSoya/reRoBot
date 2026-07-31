@@ -98,11 +98,21 @@ public:
     declare_parameter("gear_ratio", 1.0);
     declare_parameter("invert_left", false);
     declare_parameter("invert_right", false);
+    // claude: 加減速ランプ上限 [モータ軸 rpm/s]。CSV モードはドライブ側の加減速
+    // プロファイルを使わないため、指令ステップ(例: joy 離し = 最高速→0)がそのまま
+    // 最大制動電流+回生スパイクになる(2026-07-31 の全モータ同時停止の原因)。
+    // ここで 0x60FF へ渡す値の変化率を制限する。EPOS4 の Max acceleration(0x60C5)と
+    // 同じ単位にしてあるので、EPOS 側の安全網はこれより大きい値に設定する。
+    declare_parameter("max_motor_accel_rpm_per_s", 2000.0);
+    declare_parameter("max_motor_decel_rpm_per_s", 2000.0);
     tread_width_ = get_parameter("tread_width").as_double();
     tire_diam_ = get_parameter("tire_diam").as_double();
     gear_ratio_ = get_parameter("gear_ratio").as_double();
     invert_left_ = get_parameter("invert_left").as_bool();
     invert_right_ = get_parameter("invert_right").as_bool();
+    // claude: 100 Hz タイマ 1 tick あたりの最大変化量 [rpm] に前計算しておく
+    accel_step_ = get_parameter("max_motor_accel_rpm_per_s").as_double() * 0.01;
+    decel_step_ = get_parameter("max_motor_decel_rpm_per_s").as_double() * 0.01;
 
     // initializing and conection
     topic_timer_ =
@@ -205,6 +215,14 @@ private:
   bool invert_left_;
   bool invert_right_;
 
+  // claude: 加減速ランプ。m*_value_ は「要求ターゲット」(cmdSpeedCallback が即時更新)、
+  // m*_cmd_ は「実際に tpdo へ出す値」で、timer_callback が毎 tick ステップ制限付きで
+  // 要求へ近づける。両者とも executor スレッド上でのみ触るので排他は不要。
+  double m1_cmd_ = 0.0;
+  double m2_cmd_ = 0.0;
+  double accel_step_;  // [rpm/tick] 加速側(|rpm| が増える向き)の上限
+  double decel_step_;  // [rpm/tick] 減速側(0 へ向かう・符号反転を跨ぐ向き)の上限
+
   void shutdown_node()
   {
     m1_value_ = 0.0;
@@ -218,18 +236,36 @@ private:
     rclcpp::shutdown();
   }
 
+  // claude: current(現在出力)を target(要求)へ 1 tick 分だけ近づける slew rate limiter。
+  // |rpm| が増える向き(同符号での増速)は accel_step_、それ以外(減速・符号反転)は
+  // decel_step_ で制限する。符号反転は「decel で 0 を跨ぎ、その後 accel で加速」になる。
+  double ramp_toward(double current, double target) const
+  {
+    const bool speeding_up = (target * current >= 0.0) && (std::abs(target) > std::abs(current));
+    const double step = speeding_up ? accel_step_ : decel_step_;
+    const double delta = target - current;
+    if (std::abs(delta) <= step) {
+      return target;
+    }
+    return current + std::copysign(step, delta);
+  }
+
   void timer_callback()
   {
+    // claude: 要求ターゲットへランプしながら追従(急変指令をここで滑らかにする)
+    m1_cmd_ = ramp_toward(m1_cmd_, m1_value_);
+    m2_cmd_ = ramp_toward(m2_cmd_, m2_value_);
+
     auto m1_msg = canopen_interfaces::msg::COData();
     m1_msg.index = 0x60ff;
     m1_msg.subindex = 0x00;
-    m1_msg.data = static_cast<int>(m1_value_);
+    m1_msg.data = static_cast<int>(m1_cmd_);
     m1_tpdo_publisher_->publish(m1_msg);
 
     auto m2_msg = canopen_interfaces::msg::COData();
     m2_msg.index = 0x60ff;
     m2_msg.subindex = 0x00;
-    m2_msg.data = static_cast<int>(m2_value_);
+    m2_msg.data = static_cast<int>(m2_cmd_);
     m2_tpdo_publisher_->publish(m2_msg);
 
     // if (js_arrived_m1_ && js_arrived_m2_ &&
@@ -442,6 +478,8 @@ private:
     free_mode_ = msg->data;
     m1_value_ = 0.0;  // 脱力中も復帰直後も指令を 0 から始める
     m2_value_ = 0.0;
+    m1_cmd_ = 0.0;  // claude: ランプ出力も 0 リセット(非励磁中に旧値から滑らかに
+    m2_cmd_ = 0.0;  //         下げる意味はなく、復帰時に旧速度が残ると危険)
     if (free_mode_) {
       RCLCPP_INFO(get_logger(), "脱力モード ON: disabling both motors (free wheel)");
       call_trigger_service(m1_client_driver_disable_, "disable");

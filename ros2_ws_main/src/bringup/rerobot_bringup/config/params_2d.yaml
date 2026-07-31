@@ -5,6 +5,13 @@ epos4_controller_node:
     gear_ratio: 5.0   # motor_rev / wheel_rev (物理ギヤ比 5:1)。エンコーダ較正は bus.yml 側 (2π/1024) に修正済み 2026-07-29 # claude
     invert_left: true
     invert_right: true
+    # claude: 0x60FF 指令の加減速ランプ上限 [モータ軸 rpm/s] (2026-07-31 追加)。
+    #   ステップ指令(joy 離し等)による制動電流/回生スパイクで全モータ停止した対策。
+    #   換算: 車体加速度 1 m/s² ≈ 637 rpm/s (tire 0.15 m, gear 5:1)。2000 ≈ 3.1 m/s²
+    #   (772 rpm ≈ 1.2 m/s からの停止が約 0.4 s)。EPOS4 側 Max acceleration (0x60C5)
+    #   はこれより大きい値にして安全網とする。
+    max_motor_accel_rpm_per_s: 2000.0
+    max_motor_decel_rpm_per_s: 2000.0
 
 epos4_odometry_node:
   ros__parameters:
