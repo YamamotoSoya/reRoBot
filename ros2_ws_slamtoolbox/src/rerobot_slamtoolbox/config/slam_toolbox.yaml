@@ -28,7 +28,9 @@ slam_toolbox:
     debug_logging: false
     throttle_scans: 1
     transform_publish_period: 0.02
-    map_update_interval: 5.0
+    # claude: 5.0→2.0 s (2026-08-01)。/map の再生成・配信周期 (RViz の見た目の更新)。
+    # 地図が大きくなるほど 1 回の再生成が重くなるので、広域マッピングで重ければ戻す。
+    map_update_interval: 2.0
     resolution: 0.05
     min_laser_range: 0.0
     max_laser_range: 30.0
@@ -49,8 +51,12 @@ slam_toolbox:
     # ---- Loop closure / scan matching (defaults; tune later) ----
     use_scan_matching: true
     use_scan_barycenter: true
-    minimum_travel_distance: 0.5
-    minimum_travel_heading: 0.5
+    # claude: 0.5→0.2 m (2026-08-01)。スキャン追加の距離ゲートを詰めて地図更新を細かくする。
+    # 併せて minimum_time_interval (0.5s) のゲートも効く点に注意 — 0.2m を 0.5s より
+    # 速く進む速度 (>0.4 m/s) では時間ゲート側が律速になる。
+    minimum_travel_distance: 0.2
+    # claude: 0.5→0.25 rad (≈14°)。旋回時のスキャン追加も細かく (距離と旋回は OR 判定)。
+    minimum_travel_heading: 0.25
     scan_buffer_size: 10
     scan_buffer_maximum_scan_distance: 10.0
     link_match_minimum_response_fine: 0.1

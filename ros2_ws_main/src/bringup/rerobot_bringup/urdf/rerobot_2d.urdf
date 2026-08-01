@@ -64,10 +64,13 @@
     </visual>
   </link>
 
+  <!-- claude: LiDAR は上下逆さに取付 (2026-08-01 ユーザ申告)。roll=π で反転を表現。
+       スキャン面の高さ (光学中心 z=0.714) は変わらない。
+       前後が 180° ずれて見える場合は取付の向きが逆なので rpy="0 3.14159... 0" (pitch=π) に変更する。-->
   <joint name="laser_joint" type="fixed">
     <parent link="base_link"/>
     <child  link="laser"/>
-    <origin xyz="0 0 0.714" rpy="0 0 0"/>
+    <origin xyz="0 0 0.714" rpy="3.141592653589793 0 0"/>
   </joint>
 
 </robot>
