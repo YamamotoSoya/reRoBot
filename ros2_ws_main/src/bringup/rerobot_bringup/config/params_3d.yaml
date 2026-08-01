@@ -56,7 +56,8 @@ rfans_driver:
     OutExport_path: ""
     # true でデュアルエコー (2 反射) データレベルを使う
     use_double_echo: false
-    # true なら点群の timeflag に GPS 時刻、false なら UTC(内部)時刻を入れる
+    # true なら点群の time (旧 timeflag) の基準に GPS 時刻、false なら UTC(内部)時刻を使う
+    # (どちらでも出力はスキャン先頭からの相対秒。GLIM の deskew 用)
     use_gps: false
     # 再生レート計算に使う角度範囲 [deg]。rate は cut_angle_range/360 で按分
     cut_angle_range: 360.0

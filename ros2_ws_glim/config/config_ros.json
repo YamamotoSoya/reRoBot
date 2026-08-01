@@ -54,7 +54,10 @@
     "points_time_offset": 0.0,
     "acc_scale": 0.0, // Auto-detect if zero
     // TF config
-    "imu_frame_id": "", // Auto-detect if blank
+    // claude: IMU レスでは自動検出が働かず既定値 "imu" に落ち、rviz_viewer が
+    // 毎フレーム imu->glim_base の TF lookup に失敗して警告を連発する。
+    // base_frame_id と同値にすると lookup 自体がスキップされる (rviz_viewer.cpp L195)
+    "imu_frame_id": "glim_base",
     "lidar_frame_id": "", // Auto-detect if blank
     // claude: IMU レスだと imu_frame の自動検出が働かないため base を明示。
     // 車輪オドメトリの odom->base_link と衝突しないよう glim_base に分離
