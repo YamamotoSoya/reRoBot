@@ -3,7 +3,7 @@
      読み順: CLAUDE.md (規約・ビルド) → 本ファイル (現在地) → docs/issue/ (問題詳細)。 -->
 # reRoBot プロジェクト状態メモ (Claude 用)
 
-- **最終更新: 2026-07-31** (EPOS Studio ゲイン硬化後に「最高速→ゼロ指令で全モータ同時停止」が発生 → 原因はランプ無しのステップ指令による制動電流/回生スパイクと診断し、**epos4_controller に加減速ランプ (slew rate limiter) を実装** (`max_motor_accel/decel_rpm_per_s`, 既定 2000)。ビルド済み・**実機検証は未** — bringup 再起動 + 浮かせ→接地テストが次の作業。EPOS 側は Max acceleration 無制限 (0xFFFFFFFF)・Max output current 15 A と判明 → 有限値への変更 + Save All Parameters をユーザに提案済み。⚠️ 07-29 のエンコーダ修正の残タスクは継続: 接地検証、bus.yml の submodule 側コミット + gitlink 更新、nav2d/slam2d 起動検証、main マージ。GLIM config JSON 作成も未着手)
+- **最終更新: 2026-08-01** (3D bringup で点群が出ない問題を解決: `rfans_driver` が起動直後に無言 SIGABRT — 原因はプリビルド `libstar.so` の古い C++ 例外ランタイム export による横取りで、同一ドメインに他ノードが残存していると FastDDS のポート衝突例外で 100% 即死。両 launch に `LD_PRELOAD` 追加で解消し、**LiDAR → PC → コンテナ → /sdk_could (~6 Hz, 13,035 点/msg) まで実機で開通確認済み** — docs/report/2026-08-01 参照。⚠️ 未コミット: bringup_3d launch + StarROS2 submodule の launch (submodule → 親 gitlink の順)。07-31 のランプ実機検証・07-29 の接地検証・bus.yml submodule コミット・GLIM config 作成は引き続き残)
 - 書き手: Claude Code (Fable 5)。次の Claude はまずこれを読めば現在地が分かるようにしてある。
 
 ---
@@ -58,7 +58,9 @@ EPOS4 ×2                     │
 - 起動時の EPOS4 自動初期化 — init レース修正済みで 10/10 成功 (docs/report/2026-06-04)。
 - slam_toolbox での地図生成 (9 号館の map 取得済み → maps/ はホスト側、リポジトリ外)。
 - **Nav2 自律走行が成功している** (2026-06-12): 2D Pose Estimate → Nav2 Goal で自律移動。keepout フィルタ込み。
-- R-Fans-16: 20 Hz で点群取得 (z=0 問題・低 fps 問題は解決済み — docs/report/2026-06-13 ×2)。
+- R-Fans-16: 点群取得 (z=0 問題・低 fps 問題は解決済み — docs/report/2026-06-13 ×2)。
+  08-01 に起動直後 SIGABRT (libstar.so の例外ランタイム横取り) を LD_PRELOAD で解決し、実機で
+  `/sdk_could` 開通を再確認 (実測 ~6 Hz / 13,035 点/msg @ rps=10。旧記録の 20 Hz との差は要観察 — report 2026-08-01 のフォロアップ TODO)。
 
 **構成はあるが未完/未接続**:
 - **リポジトリ再編がほぼ完了** (`feat/workspace-split`, 07-26): 機能別 workspace + コンテナ分割。
@@ -126,6 +128,7 @@ EPOS4 ×2                     │
 | 07-29 | **エンコーダ 4 倍ズレの実測確定セッション** (実機・タイヤ浮かせ)。SDO read で両ノード 0x3010:01=256/0x3000:05=1024 (EPOS 側は正しい)、手回し 1 回転 = 7.86 rad ≈ 5120 inc (EPOS Studio 側実測とも一致)、candump で raw tpdo 無スケール素通し (0.2 m/s 指令 → 0x60FF=-31) を確認。**速度相殺説は否定 — 実車は指令の 1/4 速で走っていた**。根本修正は ROS 側 2 点同時に簡約 (issue doc 更新済み)。副産物: joint_states.velocity=0 の機構解明、再編後 bringup2d の実機起動成功 |
 | 07-29 (2) | **根本修正を適用・浮かせ検証 OK** (issue 解決)。bus.yml `scale_pos_from_dev: 2π/1024` / `scale_pos_to_dev: 162.97` + `gear_ratio: 5.0` ×5 箇所を同時変更、3 パッケージ再ビルド。検証: 0.2 m/s 指令 → 0x60FF=-127・0x606C≈-127 rpm・/odom 変位 2.15 m (≈指令×実効時間) で 3 系統整合。CLAUDE.md の規約 2 箇所も更新 (2π/1024、raw tpdo 無スケールの明記)。余波調査で未使用の pos 側 bus.yml も同修正、古い「3 点同時」指示 (triage/prompt/audit) を解決済みに更新。**未コミット** (bus.yml ×2 は submodule 側コミット + 親 gitlink 更新が必要)。接地検証 (10 m 直進・360° 旋回・低速から) が残 |
 | 07-30 | glim コンテナを `docker/Dockerfile_glim` 化 (公式 `koide3/glim_ros2:jazzy` ベースの薄い層: rviz2 + 対話 bashrc のみ追加、GLIM 本体はビルドしない)。他 3 コンテナと compose/build.sh の構成を統一。ビルド・起動・glim_ros 実行体の疎通は検証済み。**`ros2_ws_glim/config/` の設定 JSON 作成と glim_rosnode 起動検証は未着手** (ユーザ指示で次回に持ち越し) |
+| 08-01 | **3D 点群不通の解決** (report 08-01)。`rfans_driver` が起動 ~90 ms で無言 SIGABRT。gdb で `libstar.so` (プリビルド blob) が `__cxa_throw` 等の古い例外ランタイムを export → FastDDS のポート衝突例外 (正常系) の unwind を横取りして abort と特定。発火条件は「同一ドメインに先住ノード」= コンテナ内の残留 RViz 等 (だから従来のまっさら起動では潜伏)。bringup_3d + StarROS2 の両 launch に `additional_env: LD_PRELOAD=libstdc++:libgcc_s` を追加して解消。tcpdump で LiDAR パケット到着 (192.168.0.3:2014, 1206 B) も確認し全経路開通。**未コミット** (StarROS2 submodule → 親 gitlink) |
 | 07-31 | **全モータ同時停止 ×2 の診断と対策**。ユーザが EPOS Studio でゲイン硬化 (キビキビ化) 後、joy 走行中に「動いて止まる + PDO 送信不能連発 + EPOS 赤ランプ」。1 回目は CANUSB の USB stall (`urb -32`) と同時刻に両モータ SDO timeout、2 回目は**最高速→ゼロ指令の瞬間に USB 無傷のまま**同症状 — 個別フォルトなら CAN 応答は残るので、ランプ無しステップ指令 → 制動電流/回生スパイク → 電源/CAN 巻き添えの signature と診断 (旧「ふにゃんふにゃん」ゲインが実質ランプとして働き隠れていた)。対策: **epos4_controller に slew rate limiter 実装** (`max_motor_accel/decel_rpm_per_s`=2000 rpm/s ≈ 3.1 m/s²、params_2d/3d に追加)。スクリーンショット (~/Pictures/epos4 setting) から EPOS 側 Max acceleration=0xFFFFFFFF (無制限)・Max output current=15 A (上限) と判明 → 0x60C5 有限化 (>2000 rpm/s) + 電流 8〜10 A + Save All Parameters を提案。EPOS Error History での確定 (0x3210 過電圧 / 0x2310 過電流 / 0x81FD bus-off) と浮かせ→接地検証が残 |
 
 ## 7. コードを触るときに知らないと踏む罠 (経緯由来の知識)
@@ -141,6 +144,7 @@ EPOS4 ×2                     │
 6. ROS 2 params の `ros__parameters` はアンダースコア 2 つ。1 つだと起動即死で症状から原因が分からない。
 7. **CSV モードにはドライブ側の加減速ランプが無い** (07-31 に実機で踏んだ)。0x60FF へのステップ指令は速度ループが本気で追従し、制動電流/回生スパイクで保護作動や CAN 巻き添え死を起こす。滑らかさの責任は指令側 = epos4_controller のランプ (`max_motor_accel/decel_rpm_per_s`)。これを外す/緩める時は EPOS 側 Max acceleration (0x60C5) が安全網として有限値であることを先に確認。「両モータ同時に SDO timeout」はドライブ単体でなくバス/電源レベルの死のサイン。
 7. bus.yml は submodule (`src/external/epos4compact50-5can`) 内 → 変更は submodule 側にコミットし、親で gitlink 更新。
+8. **rfans_driver は LD_PRELOAD 必須** (08-01)。プリビルド `libstar.so` が古い C++ 例外ランタイムを export しており、素で起動すると同一ドメインに他ノードがいるだけで無言 SIGABRT する。launch 経由なら `additional_env` で自動適用済み — `ros2 run` で直接起動する時は手動で `LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libstdc++.so.6:/lib/x86_64-linux-gnu/libgcc_s.so.1` を付ける。launch 前に `./scripts/stop.sh` で残留ノードを掃除する習慣も予防になる。
 
 ## 8. docs/ ディレクトリの地図
 

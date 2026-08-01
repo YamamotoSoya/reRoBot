@@ -94,6 +94,14 @@ def generate_launch_description():
                 "model": LaunchConfiguration("model"),
             },
         ],
+        # claude: libstar.so (ベンダー blob) が古い C++ 例外ランタイム (__cxa_throw 等) を
+        #   export しており、FastDDS がポート衝突時に投げる正常系例外の unwind を横取りして
+        #   SIGABRT で即死する (他ノードが同一ドメインにいると 100% 再現)。正規の
+        #   libstdc++/libgcc を先に解決させて無効化する (2026-08-01)。
+        additional_env={
+            "LD_PRELOAD": "/usr/lib/x86_64-linux-gnu/libstdc++.so.6:"
+                          "/lib/x86_64-linux-gnu/libgcc_s.so.1"
+        },
         output="screen",
     )
 
