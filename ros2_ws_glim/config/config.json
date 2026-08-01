@@ -1,0 +1,15 @@
+{
+  /*** Global Configuration ***/
+  "global": {
+    "config_path": "",
+    "config_ros": "config_ros.json",
+    "config_logging": "config_logging.json",
+    "config_viewer": "config_viewer.json",
+    "config_sensors": "config_sensors.json",
+    "config_preprocess": "config_preprocess.json",
+    // claude: CPU 運用 + IMU レス (R-Fans 単独) 構成。odometry は CT-ICP、mapping は CPU 版 + enable_imu:false
+    "config_odometry": "config_odometry_ct.json",
+    "config_sub_mapping": "config_sub_mapping_cpu.json",
+    "config_global_mapping": "config_global_mapping_cpu.json"
+  }
+}
