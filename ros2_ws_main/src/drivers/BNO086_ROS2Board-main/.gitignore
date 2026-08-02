@@ -1,0 +1,37 @@
+# firmware build output (CMake + FetchContent)
+/build/
+
+# ROS 2 / colcon
+/ros2_ws/build/
+/ros2_ws/install/
+/ros2_ws/log/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# KiCad ローカル設定・キャッシュ
+*.kicad_prl
+fp-info-cache
+
+# KiCad 自動バックアップ / autosave / ロック
+*-backups/
+*.bak
+*-bak
+_autosave-*
+*.lck
+~*.lck
+\#auto_saved_files#
+
+# 製造・生成物（プラグイン/CLIで再生成可能）
+production/
+bom/
+*.step
+*.stp
+
+# ERC/DRC レポート等の一時出力
+*.rpt
+
+# macOS
+.DS_Store

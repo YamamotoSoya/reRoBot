@@ -1,0 +1,5 @@
+(sym_lib_table
+  (version 7)
+  (lib (name "TCAN844DDFRQ1")(type "KiCad")(uri "${KIPRJMOD}/libs/TCAN844DDFRQ1/TCAN844DDFRQ1.kicad_sym")(options "")(descr ""))
+  (lib (name "NJW1933F1-AT-TE2")(type "KiCad")(uri "${KIPRJMOD}/libs/NJW1933F1-AT-TE2/NJW1933F1-AT-TE2.kicad_sym")(options "")(descr ""))
+)

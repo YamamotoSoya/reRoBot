@@ -1,0 +1,40 @@
+# Usage:
+#   cd docker && docker compose build
+#   docker compose run --rm ros2          # interactive shell
+#
+# Reaching the board:
+#   Linux  - uncomment `devices:` below to pass /dev/ttyACM0 straight through.
+#   macOS  - Docker Desktop cannot forward USB. Run the TCP bridge on the host
+#            (python3 tools/serial_bridge.py) and start the node with
+#            port:=socket://host.docker.internal:5555
+services:
+  ros2:
+    build:
+      context: .
+      args:
+        ROS_DISTRO: ${ROS_DISTRO:-jazzy}
+    image: bno086-ros2:${ROS_DISTRO:-jazzy}
+    container_name: bno086_ros2
+    stdin_open: true
+    tty: true
+    # Bridge networking keeps host.docker.internal resolvable, which is how
+    # the macOS serial bridge is reached. On Linux, swap this for
+    # `network_mode: host` if you need DDS discovery with nodes outside the
+    # container - but note that host mode drops host.docker.internal.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ipc: host
+    ports:
+      # Browser visualiser (ros2 run bno086_imu_driver imu_viz).
+      # `docker compose run` needs --service-ports for these to apply.
+      - "8080:8080"
+    environment:
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
+      - RCUTILS_COLORIZED_OUTPUT=1
+    volumes:
+      - ../ros2_ws:/ros2_ws
+      - ../tools:/tools:ro
+    # Linux hosts only - hand the board through to the container directly.
+    devices:
+      - /dev/bno086:/dev/bno086
+    working_dir: /ros2_ws

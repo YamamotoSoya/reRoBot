@@ -3,7 +3,7 @@
      読み順: CLAUDE.md (規約・ビルド) → 本ファイル (現在地) → docs/issue/ (問題詳細)。 -->
 # reRoBot プロジェクト状態メモ (Claude 用)
 
-- **最終更新: 2026-08-01** (3D bringup で点群が出ない問題を解決: `rfans_driver` が起動直後に無言 SIGABRT — 原因はプリビルド `libstar.so` の古い C++ 例外ランタイム export による横取りで、同一ドメインに他ノードが残存していると FastDDS のポート衝突例外で 100% 即死。両 launch に `LD_PRELOAD` 追加で解消し、**LiDAR → PC → コンテナ → /sdk_could (~6 Hz, 13,035 点/msg) まで実機で開通確認済み** — docs/report/2026-08-01 参照。⚠️ 未コミット: bringup_3d launch + StarROS2 submodule の launch (submodule → 親 gitlink の順)。07-31 のランプ実機検証・07-29 の接地検証・bus.yml submodule コミット・GLIM config 作成は引き続き残)
+- **最終更新: 2026-08-02** (自作 BNO086 IMU ボードのドライバ一式 `drivers/BNO086_ROS2Board-main/` を受領・main ws に統合。RealSense IMU 経路を置き換える本命。colcon 干渉 (firmware/ と Mac ビルド成果物がパッケージ誤認識) を COLCON_IGNORE + build/ 削除で解消、Dockerfile_main に python3-serial 追加 (イメージ再ビルド済み)、URDF 2 ファイルに `imu_link` 追加 (とりあえず rfans と同位置 z=0.714)。ws ビルド 10 パッケージ成功 + TF 検証済み。**実機ボード接続は未検証**。⚠️ 未コミット: 上記一式 + 08-01 の bringup_3d launch + StarROS2 submodule launch + bus.yml submodule。07-31 のランプ実機検証・07-29 の接地検証・GLIM config 作成は引き続き残)
 - 書き手: Claude Code (Fable 5)。次の Claude はまずこれを読めば現在地が分かるようにしてある。
 
 ---
@@ -26,7 +26,7 @@
 | 減速比 | 物理 5:1 = `gear_ratio: 5.0` (07-29 根本修正済み) | エンコーダは 256 pulses × 4 逓倍 = 1024 inc/モータ回転、タイヤ 1 回転 = 5120 inc。bus.yml `scale_pos_from_dev = 2π/1024` |
 | 2D LiDAR | HOKUYO UTM-30LX (USB, urg_node) | frame `laser`, base_link から z+0.714 |
 | 3D LiDAR | Sure-Star R-Fans-16 (Ethernet 192.168.0.3, rfans_driver) | frame `rfans`, PointCloud2 `/sdk_could` (typo だが仕様) |
-| IMU | RealSense (D435i) を 6 軸 IMU として使用予定 | ⚠️ **07-26 時点で IMU 実機が入手不可** → LiDAR-only の GLIM を先行導入する方針。`realsense_imu.launch.py` → madgwick → `/imu/data` は IMU 再入手後の LIO 系入力用に温存 |
+| IMU | **自作 BNO086 ボード** (USB CDC, `bno086_imu_driver` → `/imu/data`) を採用予定 (08-02 受領) | RealSense IMU 経路を置き換える本命。製作者 (fTomo-robot) の未公開 repo の先行コピー → 後日 fork + submodule 化予定。**実機接続は未検証**。`realsense_imu.launch.py` は完全移行確定まで温存 (⚠️ 同時起動すると /imu/data が衝突) |
 | ゲームパッド | Xbox (joy + teleop_twist_joy, LB=deadman, RB=turbo) | |
 
 ## 3. ソフトウェア全体像
@@ -86,6 +86,9 @@ EPOS4 ×2                     │
 - LIO-SAM: submodule として回収済み (07-11, ros2 branch, T13 解決)。ビルドは通るが **IMU 入手不可のため当面凍結**。
   `realsense_imu.launch.py` は IMU 再入手後の GLIM CPU (LIO) モード格上げ用に温存。
 - RViz での R-Fans 点群表示手順が未確立 (triage T12 に手順記載)。
+- **BNO086 IMU** (08-02): `bno086_imu_driver` が main ws でビルド成功、`imu_link` 追加・pyserial 導入・TF 検証まで完了。
+  **残: 実機ボード接続 (/dev/ttyACM0, udev ルール `tools/99-bno086.rules` のホスト導入) → /imu/data 実出力確認 → bringup への launch 組み込み → LIO-SAM 凍結解除の検討**。
+  搭載位置は暫定 (rfans と同位置) — 実搭載が決まったら URDF 更新。
 
 **品質面の課題**: SLAM が「絶妙にずれる」、低速でハンチング、Nav2 走行が遅い — いずれも
 オドメトリ/エンコーダ問題 (§5) が根っこにある可能性が高い。
@@ -128,6 +131,7 @@ EPOS4 ×2                     │
 | 07-29 | **エンコーダ 4 倍ズレの実測確定セッション** (実機・タイヤ浮かせ)。SDO read で両ノード 0x3010:01=256/0x3000:05=1024 (EPOS 側は正しい)、手回し 1 回転 = 7.86 rad ≈ 5120 inc (EPOS Studio 側実測とも一致)、candump で raw tpdo 無スケール素通し (0.2 m/s 指令 → 0x60FF=-31) を確認。**速度相殺説は否定 — 実車は指令の 1/4 速で走っていた**。根本修正は ROS 側 2 点同時に簡約 (issue doc 更新済み)。副産物: joint_states.velocity=0 の機構解明、再編後 bringup2d の実機起動成功 |
 | 07-29 (2) | **根本修正を適用・浮かせ検証 OK** (issue 解決)。bus.yml `scale_pos_from_dev: 2π/1024` / `scale_pos_to_dev: 162.97` + `gear_ratio: 5.0` ×5 箇所を同時変更、3 パッケージ再ビルド。検証: 0.2 m/s 指令 → 0x60FF=-127・0x606C≈-127 rpm・/odom 変位 2.15 m (≈指令×実効時間) で 3 系統整合。CLAUDE.md の規約 2 箇所も更新 (2π/1024、raw tpdo 無スケールの明記)。余波調査で未使用の pos 側 bus.yml も同修正、古い「3 点同時」指示 (triage/prompt/audit) を解決済みに更新。**未コミット** (bus.yml ×2 は submodule 側コミット + 親 gitlink 更新が必要)。接地検証 (10 m 直進・360° 旋回・低速から) が残 |
 | 07-30 | glim コンテナを `docker/Dockerfile_glim` 化 (公式 `koide3/glim_ros2:jazzy` ベースの薄い層: rviz2 + 対話 bashrc のみ追加、GLIM 本体はビルドしない)。他 3 コンテナと compose/build.sh の構成を統一。ビルド・起動・glim_ros 実行体の疎通は検証済み。**`ros2_ws_glim/config/` の設定 JSON 作成と glim_rosnode 起動検証は未着手** (ユーザ指示で次回に持ち越し) |
+| 08-02 | **自作 BNO086 IMU ボード受領・main ws に統合** (RealSense IMU 置き換えの本命、未公開 repo の zip 先行コピー → 後日 fork+submodule 化)。colcon 干渉解消 (`firmware/COLCON_IGNORE` + Mac ビルド成果物 `build/` 削除 — 放置すると STM32 HAL がパッケージ誤認識され build.sh main が壊れる)、Dockerfile_main に `python3-serial` 追加 + main イメージ再ビルド、URDF 2d/3d に `imu_link` (暫定 z=0.714, rfans と同位置)。ws ビルド 10 パッケージ + tf_static (base_link→imu_link, z=0.714) 検証済み。実機ボード接続は未 |
 | 08-01 | **3D 点群不通の解決** (report 08-01)。`rfans_driver` が起動 ~90 ms で無言 SIGABRT。gdb で `libstar.so` (プリビルド blob) が `__cxa_throw` 等の古い例外ランタイムを export → FastDDS のポート衝突例外 (正常系) の unwind を横取りして abort と特定。発火条件は「同一ドメインに先住ノード」= コンテナ内の残留 RViz 等 (だから従来のまっさら起動では潜伏)。bringup_3d + StarROS2 の両 launch に `additional_env: LD_PRELOAD=libstdc++:libgcc_s` を追加して解消。tcpdump で LiDAR パケット到着 (192.168.0.3:2014, 1206 B) も確認し全経路開通。**未コミット** (StarROS2 submodule → 親 gitlink) |
 | 07-31 | **全モータ同時停止 ×2 の診断と対策**。ユーザが EPOS Studio でゲイン硬化 (キビキビ化) 後、joy 走行中に「動いて止まる + PDO 送信不能連発 + EPOS 赤ランプ」。1 回目は CANUSB の USB stall (`urb -32`) と同時刻に両モータ SDO timeout、2 回目は**最高速→ゼロ指令の瞬間に USB 無傷のまま**同症状 — 個別フォルトなら CAN 応答は残るので、ランプ無しステップ指令 → 制動電流/回生スパイク → 電源/CAN 巻き添えの signature と診断 (旧「ふにゃんふにゃん」ゲインが実質ランプとして働き隠れていた)。対策: **epos4_controller に slew rate limiter 実装** (`max_motor_accel/decel_rpm_per_s`=2000 rpm/s ≈ 3.1 m/s²、params_2d/3d に追加)。スクリーンショット (~/Pictures/epos4 setting) から EPOS 側 Max acceleration=0xFFFFFFFF (無制限)・Max output current=15 A (上限) と判明 → 0x60C5 有限化 (>2000 rpm/s) + 電流 8〜10 A + Save All Parameters を提案。EPOS Error History での確定 (0x3210 過電圧 / 0x2310 過電流 / 0x81FD bus-off) と浮かせ→接地検証が残 |
 
@@ -145,6 +149,8 @@ EPOS4 ×2                     │
 7. **CSV モードにはドライブ側の加減速ランプが無い** (07-31 に実機で踏んだ)。0x60FF へのステップ指令は速度ループが本気で追従し、制動電流/回生スパイクで保護作動や CAN 巻き添え死を起こす。滑らかさの責任は指令側 = epos4_controller のランプ (`max_motor_accel/decel_rpm_per_s`)。これを外す/緩める時は EPOS 側 Max acceleration (0x60C5) が安全網として有限値であることを先に確認。「両モータ同時に SDO timeout」はドライブ単体でなくバス/電源レベルの死のサイン。
 7. bus.yml は submodule (`src/external/epos4compact50-5can`) 内 → 変更は submodule 側にコミットし、親で gitlink 更新。
 8. **rfans_driver は LD_PRELOAD 必須** (08-01)。プリビルド `libstar.so` が古い C++ 例外ランタイムを export しており、素で起動すると同一ドメインに他ノードがいるだけで無言 SIGABRT する。launch 経由なら `additional_env` で自動適用済み — `ros2 run` で直接起動する時は手動で `LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libstdc++.so.6:/lib/x86_64-linux-gnu/libgcc_s.so.1` を付ける。launch 前に `./scripts/stop.sh` で残留ノードを掃除する習慣も予防になる。
+9. **BNO086 を fork+submodule 化するとき `firmware/COLCON_IGNORE` を fork 側にコミットし忘れると build.sh main が再び壊れる** (08-02)。vendored コピー内へのローカル追加はディレクトリ差し替えで消える。症状は「STM32 HAL/CMSIS がパッケージ誤認識 → colcon 全体停止」で、"前は動いてた" 形で再発する。
+10. **`scripts/build.sh` は端末なし (自動化・Claude) から呼ぶと `docker exec -it` が stdin エラーで失敗するのに exit 0 を返す** (08-02 発見)。何もビルドされずに成功に見える。非対話でビルドする時は `-it` を外した `docker exec` で colcon を直接叩く。
 
 ## 8. docs/ ディレクトリの地図
 
@@ -176,6 +182,9 @@ EPOS4 ×2                     │
    → OK なら `feat/workspace-split` を main にマージして再編クローズ。空 `ros2_ws_nav2/` の削除も忘れず
 3. GLIM 導入: `ros2_ws_glim/config/` (CT-ICP, `enable_imu: false` ×2) → bag 録画 → `glim_rosbag` オフライン評価
    → 必要なら StarROS2 に per-point `time` フィールド追加
+4. BNO086 IMU の実機接続: udev ルール導入 → `ros2 launch bno086_imu_driver bno086.launch.py` で /imu/data 確認
+   → bringup への組み込み → IMU 前提の構成 (LIO-SAM 凍結解除 / GLIM の IMU ありモード) を再検討。
+   公開されたら fork + submodule 化 (⚠️ §7-9: COLCON_IGNORE を fork に含める)
 
 従来のトリアージ指示書 `docs/issue/2026-07-07_monthly_2026_6_todo_triage.prompt.md` は再編完了後に再開 (優先順・完了条件つき)。
 要約: A1 LiDAR FOV → A2 slam lifecycle → A3 rviz エラー確認 → A4 脱力モード修正 →

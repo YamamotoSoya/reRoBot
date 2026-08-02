@@ -1,0 +1,9 @@
+EESchema-DOCLIB  Version 2.0
+#
+$CMP NJW1933F1-AT-TE2
+D Switching Voltage Regulators 600mA 500kHz Stp Dwn Switching Regulator
+K
+F https://www.nisshinbo-microdevices.co.jp/en/pdf/datasheet/NJW1933_E.pdf
+$ENDCMP
+#
+#End Doc Library

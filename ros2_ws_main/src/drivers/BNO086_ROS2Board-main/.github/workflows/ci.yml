@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  firmware:
+    name: firmware (STM32F042C6)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the ARM toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            gcc-arm-none-eabi binutils-arm-none-eabi libnewlib-arm-none-eabi \
+            cmake ninja-build
+
+      # The ST libraries (CMSIS / HAL / USB Device) are pulled by FetchContent
+      # at configure time, so cache them to keep the job under a minute.
+      - name: Cache fetched ST libraries
+        uses: actions/cache@v4
+        with:
+          path: build/fw/_deps
+          key: fetchcontent-${{ hashFiles('firmware/CMakeLists.txt') }}
+
+      - name: Build (USB CDC)
+        run: |
+          cmake -S firmware -B build/fw -G Ninja
+          cmake --build build/fw
+
+      - name: Build (USART1)
+        run: |
+          cmake -S firmware -B build/fw-uart -G Ninja \
+            -DHOST_LINK_USB=OFF -DHOST_LINK_UART=ON
+          cmake --build build/fw-uart
+
+      # 32 KiB flash / 6 KiB RAM leaves very little headroom, so make the
+      # usage visible on every build.
+      - name: Report flash and RAM usage
+        run: arm-none-eabi-size build/fw/bno086_ros2board.elf
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware
+          path: |
+            build/fw/bno086_ros2board.elf
+            build/fw/bno086_ros2board.bin
+            build/fw/bno086_ros2board.hex
+
+  ros2:
+    name: ros2 driver (Jazzy)
+    runs-on: ubuntu-latest
+    container: ros:jazzy-ros-base
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            python3-pytest python3-serial python3-colcon-common-extensions
+
+      # The tests drive the driver through a pseudo-terminal, so no board is
+      # needed - but rclpy has to come from the ROS environment.
+      - name: Run the test suite
+        working-directory: ros2_ws/src/bno086_imu_driver
+        shell: bash
+        run: |
+          source /opt/ros/jazzy/setup.bash
+          python3 -m pytest test -q
+
+      - name: colcon build
+        working-directory: ros2_ws
+        shell: bash
+        run: |
+          source /opt/ros/jazzy/setup.bash
+          colcon build --symlink-install

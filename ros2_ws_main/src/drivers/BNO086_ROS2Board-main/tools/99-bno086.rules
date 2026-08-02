@@ -1,0 +1,21 @@
+# udev rules for the BNO086_ROS2Board (Linux hosts only).
+#
+#   sudo cp tools/99-bno086.rules /etc/udev/rules.d/
+#   sudo udevadm control --reload-rules && sudo udevadm trigger
+#
+# Without these the board shows up as /dev/ttyACM* but is only readable by the
+# dialout group, and its device number changes depending on what else is
+# plugged in. The rules give every user access and add a stable /dev/bno086.
+
+# Running firmware: USB CDC. Note that 0483:5740 is ST's generic CDC pair, so
+# any other STM32 CDC device would match too - drop the SYMLINK line if you
+# have more than one plugged in at once.
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="5740", MODE="0666", SYMLINK+="bno086"
+
+# ROM bootloader (S2 BOOT + S1 RESET), so STM32_Programmer_CLI / dfu-util can
+# flash without sudo.
+SUBSYSTEM=="usb", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="df11", MODE="0666"
+
+# ST-Link, for SWD flashing via OpenOCD / st-flash.
+SUBSYSTEM=="usb", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="374b", MODE="0666"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="3748", MODE="0666"

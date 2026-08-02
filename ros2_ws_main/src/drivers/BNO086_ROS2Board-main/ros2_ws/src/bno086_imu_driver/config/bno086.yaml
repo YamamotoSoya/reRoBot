@@ -1,0 +1,56 @@
+/**:
+  ros__parameters:
+    # USB CDC firmware enumerates as /dev/ttyACM*; the UART build needs the
+    # /dev/ttyUSB* of whatever adapter is plugged into J4.
+    port: /dev/ttyACM0
+    baudrate: 921600          # ignored by USB CDC, used by the UART build
+
+    frame_id: imu_link
+    parent_frame: odom
+    publish_tf: false
+
+    # Timestamp samples with the board's own microsecond clock (mapped onto
+    # ROS time) rather than the arrival time. Much lower jitter over USB.
+    use_device_time: true
+
+    imu_rate_hz: 100.0
+    mag_rate_hz: 25.0
+
+    # Per-axis noise, used to fill the covariance matrices. Measure these on
+    # a stationary board and replace the defaults.
+    angular_velocity_stddev: 0.005      # rad/s
+    linear_acceleration_stddev: 0.05    # m/s^2
+    magnetic_field_stddev: 0.5          # microtesla
+
+    # Floor for the orientation covariance; the sensor's own accuracy
+    # estimate is used when it is larger than this.
+    min_orientation_stddev: 0.01        # rad
+
+    # Publish orientation even before the fusion has converged. Leave false
+    # to have uncalibrated orientation marked invalid instead.
+    require_calibrated_orientation: false
+
+    # false: rotation vector referenced to magnetic north. yaw is an absolute
+    #        heading, so it does not return to 0 after a reset - use the tare
+    #        service for that. Nearby motors, magnets or steel corrupt it;
+    #        watch |B| on /imu/mag, which should sit near 50 uT.
+    # true:  game rotation vector, gyro + accelerometer only. Immune to
+    #        magnetic disturbance, but the tare service has no effect on it
+    #        (see the known issues in the README).
+    # Measured stationary indoors: both drift under 0.5 deg/min at high
+    # accuracy, so the default is fine unless the magnetometer is disturbed.
+    use_game_rotation_vector: false
+
+    # Make the board's current pose the origin whenever the stream comes up
+    # (node start, board reset via S1, or the reset service).
+    #   off - publish the sensor's own reference
+    #   yaw - zero the heading only; roll and pitch stay gravity-referenced
+    #   all - zero all three axes, so the current pose reads (0, 0, 0)
+    # Note: the tare has no effect when use_game_rotation_vector is true.
+    # U4 (BNO086) is placed at 180 deg on this PCB, so the chip's +X/+Y point
+    # along the board's -X/-Y. This rotates the published data about Z into
+    # the board frame. Set 0.0 to publish the raw sensor frame instead.
+    mount_yaw_deg: 180.0
+
+    auto_tare: all
+    auto_tare_delay: 2.0    # seconds to let the fusion settle first

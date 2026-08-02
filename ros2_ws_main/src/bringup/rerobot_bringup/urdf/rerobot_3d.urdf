@@ -74,4 +74,25 @@
     <origin xyz="0 0 0.714" rpy="0 0 0"/>
   </joint>
 
+  <!-- claude: BNO086 IMU (bno086_imu_driver の frame_id 既定 imu_link と一致させる)。
+       搭載位置はとりあえず 3D LiDAR (rfans) と同位置 — 実搭載位置が決まったら更新。
+       ボードの 180° 実装はドライバ側 mount_yaw_deg=180 で補正済みなので rpy は 0。 -->
+  <link name="imu_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.03 0.03 0.01"/>
+      </geometry>
+      <material name="imu_green">
+        <color rgba="0.1 0.6 0.2 1.0"/>
+      </material>
+    </visual>
+  </link>
+
+  <joint name="imu_joint" type="fixed">
+    <parent link="base_link"/>
+    <child  link="imu_link"/>
+    <origin xyz="0 0 0.714" rpy="0 0 0"/>
+  </joint>
+
 </robot>

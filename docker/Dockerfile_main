@@ -57,6 +57,8 @@ RUN apt-get update && apt-get install -y \
     libeigen3-dev \
     # 6軸IMU(RealSense) → orientation付与 (GLIM/LIO 系の入力用) # claude
     ros-jazzy-imu-filter-madgwick \
+    # --- BNO086 IMU driver (bno086_imu_driver) の実行時依存 (pyserial) --- # claude
+    python3-serial \
     # -----------------------------------
     && rm -rf /var/lib/apt/lists/*
 
