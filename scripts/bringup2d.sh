@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # claude: 2D bringup (CANopen bus + epos4_controller/odometry + robot_state_publisher + urg_node)
-# を main コンテナでバックグラウンド起動する。前提: scripts/can_up.sh 済み・build.sh main 済み。
+# を main コンテナでバックグラウンド起動する。前提: can0 up (通常はアダプタ挿入で自動)・build.sh main 済み。
 # ログ: docker exec rerobot_env tail -f /workspace/log/bringup2d.log
 set -eu
 cd "$(dirname "$0")/.."

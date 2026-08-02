@@ -47,7 +47,7 @@ git submodule は**各 workspace の src/ 直下に直接配置** (旧 symlink �
 推奨は `scripts/` の用途別スクリプト (ホストで実行)。コンテナ確保 → `docker exec` での launch 投入までを一括で行う:
 
 ```bash
-./scripts/can_up.sh      # can0 up (要 sudo)。bringup 前に 1 回
+./scripts/can_up.sh      # can0 状態確認 + 復旧。通常は udev + canusb-up.service で挿すだけ自動 up (README 参照)
 ./scripts/bringup2d.sh   # 2D bringup (main, バックグラウンド。ログ: /workspace/log/bringup2d.log)
 ./scripts/nav2d.sh       # 自律走行一発 = bringup2d + Nav2 + RViz (main 内)
 ./scripts/slam2d.sh      # 地図作成 = bringup2d + slam_toolbox + RViz (slamtoolbox コンテナ)
