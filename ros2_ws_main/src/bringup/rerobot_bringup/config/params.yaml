@@ -1,7 +1,9 @@
-# claude: 3D LiDAR (R-Fans) 構成用パラメータ。
-#   epos4_* セクションは params_2d.yaml と同値 (シャシは共通)。変更時は両方を同期。
-#   rfans_driver セクションは StarROS2 の rfans_driver.launch.py の inline param 相当を
-#   yaml 化したもの (yaml は型を保持するため ParameterValue ラップ不要)。
+# claude: 統合パラメータ (2026-08-10)。旧 params_2d.yaml / params_3d.yaml を 1 本化した。
+#   従来は「epos4_* セクションは 2 ファイルで同値に保つ」という手動同期が必要だったが、
+#   URDF 統合 (rerobot.urdf) に合わせて重複自体を廃止した。
+#   車体パラメータの重複は epos4_teleop/config/params.yaml との間にのみ残る
+#   (/params-sync skill で検査可能)。
+
 epos4_controller_node:
   ros__parameters:
     tread_width: 0.41 #[m]
@@ -28,7 +30,7 @@ epos4_odometry_node:
     invert_left: true
     invert_right: true
 
-# claude: node 名 "rfans_driver" は rerobot_bringup_3d.launch.py の Node(name=...) と一致必須
+# claude: node 名 "rfans_driver" は rerobot_bringup.launch.py の Node(name=...) と一致必須
 rfans_driver:
   ros__parameters:
     # デバイス機種。角度フィルタ選択と再生レート計算に使う。LED 数はパケットから自動検出
@@ -40,7 +42,7 @@ rfans_driver:
     device_port: 2014
     # スキャン速度 [Hz / rps]。5 / 10 / 20 のいずれか。launch 引数 rps:= で上書き可
     rps: 10
-    # 出力 PointCloud2 の header.frame_id。rerobot_3d.urdf の rfans link 名と一致
+    # 出力 PointCloud2 の header.frame_id。rerobot.urdf の rfans link 名と一致
     frame_id: "rfans"
     # 生パケット用トピック名 (レガシー。現 publish 経路では未使用だが互換のため保持)
     advertise_name: "rfans_packets"

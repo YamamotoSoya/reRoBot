@@ -61,20 +61,24 @@ git submodule は**各 workspace の src/ 直下に直接配置** (旧 symlink �
 
 ```bash
 # main コンテナ内 (docker exec -it rerobot_env bash):
-#   2D LiDAR (HOKUYO urg_node) 構成:
-ros2 launch rerobot_bringup rerobot_bringup_2d.launch.py
-#   3D LiDAR (R-Fans rfans_driver) 構成:
-ros2 launch rerobot_bringup rerobot_bringup_3d.launch.py
+#   統合 bringup (実体)。lidar_2d / lidar_3d / imu を boolean 引数で選択:
+ros2 launch rerobot_bringup rerobot_bringup.launch.py lidar_2d:=true lidar_3d:=true imu:=true
+#   構成別ラッパ (推奨。実体 launch に boolean を固定して渡すだけ):
+ros2 launch rerobot_bringup rerobot_bringup_2d.launch.py        # 2D のみ (IMU なし, scripts 互換)
+ros2 launch rerobot_bringup rerobot_bringup_3d.launch.py        # 3D のみ (IMU なし, scripts 互換)
+ros2 launch rerobot_bringup rerobot_bringup_2d_imu.launch.py    # 2D + IMU
+ros2 launch rerobot_bringup rerobot_bringup_3d_imu.launch.py    # 3D + IMU
+ros2 launch rerobot_bringup rerobot_bringup_2d3d_imu.launch.py  # 2D + 3D + IMU 全部載せ
 ```
 
-The 5-second `TimerAction` in `rerobot_bringup_2d.launch.py` / `rerobot_bringup_3d.launch.py` exists because the cia402 `init/enable/cyclic_velocity_mode` services are not advertised until `ros2_canopen`'s device_manager has finished booting both drivers (~3-4 s in practice). Without the delay, `epos4_controller`'s constructor-time `wait_for_service(1s)` calls race the bus_config and silently fail, leaving the EPOS4s disabled.
+The 5-second `TimerAction` in `rerobot_bringup.launch.py` exists because the cia402 `init/enable/cyclic_velocity_mode` services are not advertised until `ros2_canopen`'s device_manager has finished booting both drivers (~3-4 s in practice). Without the delay, `epos4_controller`'s constructor-time `wait_for_service(1s)` calls race the bus_config and silently fail, leaving the EPOS4s disabled.
 
 If you prefer to bring the stack up piece by piece (useful for debugging, main コンテナ内):
 ```bash
 ros2 launch maxon_epos4_ros2 bus_config_cia402_epos4_vel.launch.py
 # ...wait until "Slave 0x1: Switched NMT state to START" appears...
-ros2 run epos4_controller epos4_controller  --ros-args --params-file src/bringup/rerobot_bringup/config/params_2d.yaml
-ros2 run epos4_controller epos4_odometry    --ros-args --params-file src/bringup/rerobot_bringup/config/params_2d.yaml
+ros2 run epos4_controller epos4_controller  --ros-args --params-file src/bringup/rerobot_bringup/config/params.yaml
+ros2 run epos4_controller epos4_odometry    --ros-args --params-file src/bringup/rerobot_bringup/config/params.yaml
 ```
 
 Keyboard teleop (publishes Twist on `/robot_speed_cmd`, prints per-wheel traveled distance from `/motor{1,2}/.../joint_states`):
@@ -120,19 +124,17 @@ is involved (the old `/robot_encoder_states` fan-in design is gone).
 
 ### Packages
 
-- **`ros2_ws_main/src/app/epos4_controller`** — application layer (executables only). Both nodes consume parameters from `bringup/rerobot_bringup/config/params_2d.yaml` (3D 構成では `params_3d.yaml`; epos4 セクションは同値) (`tread_width`, `tire_diam`, `gear_ratio`, `invert_left/right`):
+- **`ros2_ws_main/src/app/epos4_controller`** — application layer (executables only). Both nodes consume parameters from `bringup/rerobot_bringup/config/params.yaml` (`tread_width`, `tire_diam`, `gear_ratio`, `invert_left/right`):
   - `epos4_controller` — owns the EPOS4 lifecycle (auto-calls init → enable → cyclic_velocity_mode in its constructor), converts `/robot_speed_cmd` into per-wheel target velocities (rpm), and fans them out to both motors via the canopen TPDO topic at 100 Hz. The `init` service reliably emits `Homing failed` because CSV mode doesn't require homing — this is expected and the subsequent `enable` / `cyclic_velocity_mode` service calls succeed and leave the motors ready.
   - `epos4_odometry` — subscribes to both per-motor `joint_states` topics via a `message_filters` ApproximateTime sync. Computes 2D pose with mid-step heading integration; publishes `/odom`, broadcasts TF, and republishes wheel-side `/joint_states` for `robot_state_publisher`. Parameters for frame names, TF on/off, gear ratio, and per-wheel inversion (`invert_left/right`). ⚠️ `joint_states.velocity` from the driver is suspected always-0 (0x606C is not PDO-mapped in bus.yml) — rotation checks must use position deltas.
 - **`ros2_ws_main/src/bringup/rerobot_bringup`** — system bringup assets (no C++ code). Owns:
-  - `launch/rerobot_bringup_2d.launch.py` — **2D LiDAR** composite bringup (bus_config + 5 s TimerAction + controller + odometry + robot_state_publisher + `urg_node`, frame_id `laser`). Does **not** launch RViz; visualization is owned by `nav2.launch.py` / `slam.launch.py` so the two don't open duplicate windows.
-  - `launch/rerobot_bringup_3d.launch.py` — **3D LiDAR** composite bringup. `rerobot_bringup_2d.launch.py` と同構成で `urg_node` を `rfans_driver` (R-Fans, `drivers/StarROS2`) に差し替えたもの。frame_id `rfans`、出力 PointCloud2 `/sdk_could`。`device_ip` / `rps` / `model` を launch 引数で上書き可。`/scan` は出さない (LaserScan 変換は含まない)。
+  - `launch/rerobot_bringup.launch.py` — **統合 composite bringup (実体)** (2026-08-10 に 2d/3d launch を統合)。bus_config + 5 s TimerAction + controller + odometry + robot_state_publisher に加え、boolean 引数でセンサドライバを選択: `lidar_2d` → `urg_node` (frame_id `laser`, `/scan`)、`lidar_3d` → `rfans_driver` (R-Fans, `drivers/StarROS2`, frame_id `rfans`, PointCloud2 `/sdk_could`, LD_PRELOAD 適用済み)、`imu` → `bno086_imu_driver` (`/imu/data`)。接続系引数 `serial_port` / `device_ip` / `rps` / `model` / `imu_port` で上書き可。Does **not** launch RViz; visualization is owned by `nav2.launch.py` / `slam.launch.py` so the two don't open duplicate windows。`/scan` は 2D LiDAR のみ (3D 点群の LaserScan 変換は含まない)。
+  - `launch/rerobot_bringup_{2d,3d}.launch.py` — 構成別ラッパ (IMU なし、`scripts/bringup{2d,3d}.sh` 互換)。`launch/rerobot_bringup_{2d_imu,3d_imu,2d3d_imu}.launch.py` — IMU 込みの構成別ラッパ。全て実体 launch に boolean を固定して渡すだけ。
   - `launch/nav2.launch.py` — map_server + amcl + Nav2 (RPP controller, keepout フィルタ込み) + `nav2.rviz`。config は `config/nav2_params.yaml`。⚠️ `bt_navigator` の `plugin_lib_names` を列挙すると Jazzy では二重登録 segfault — デフォルトに任せる。
   - `launch/joy_teleop.launch.py` + `config/joy_teleop.yaml` — Xbox ゲームパッド teleop (joy + teleop_twist_joy, LB=deadman, RB=turbo)。
   - `launch/realsense_imu.launch.py` — RealSense を 6 軸 IMU として起動し `imu_filter_madgwick` (use_mag=false) で orientation を合成して `/imu/data` に出す (LIO-SAM の imuTopic 既定と一致)。
-  - `config/params_2d.yaml` — chassis parameters consumed by `epos4_controller` / `epos4_odometry` (2D 構成)。
-  - `config/params_3d.yaml` — 同 chassis parameters (2D と同値) + `rfans_driver` セクション (機種/接続/frame_id `rfans`/theta remap)。
-  - `urdf/rerobot_2d.urdf` — robot description (2D, LiDAR link `laser` @ xyz `0 0 0.714`).
-  - `urdf/rerobot_3d.urdf` — robot description (3D, LiDAR link `rfans` を 2D と同位置 xyz `0 0 0.714` に配置)。
+  - `config/params.yaml` — 統合パラメータ (2026-08-10 に params_2d/3d を 1 本化)。chassis parameters (`epos4_controller` / `epos4_odometry`) + `rfans_driver` セクション (機種/接続/frame_id `rfans`/theta remap)。
+  - `urdf/rerobot.urdf` — 統合 robot description (2026-08-10 に rerobot_2d/3d.urdf を 1 本化)。`laser` / `rfans` / `imu_link` を常に含む。⚠️ センサ位置は全て実測待ちプレースホルダ (3 つとも xyz `0 0 0.714` に重ねてある) — 実測したら joint origin を更新。
   - `rviz/nav2.rviz` — Nav2 view (Fixed Frame: `map`, Navigation 2 panel, `/map` + keepout mask + costmaps + global/local plan + amcl particles + footprint). Launched by `nav2.launch.py`.
 - **`ros2_ws_slamtoolbox/src/rerobot_slamtoolbox`** — slam_toolbox 系資産 (2026-07-26 に rerobot_bringup から分離、slamtoolbox コンテナ専用):
   - `launch/slam.launch.py` — slam_toolbox (mapping) + `slam.rviz`。config は `config/slam_toolbox.yaml` (scan_queue_size 等は意図的な設定)。lifecycle の CONFIGURE→ACTIVATE を launch 側から発火する (Jazzy の autostart 不具合対応)。
@@ -150,7 +152,7 @@ is involved (the old `/robot_encoder_states` fan-in design is gone).
 - `epos4_controller` drives the EPOS4 in **cyclic synchronous velocity mode** by writing target velocity (object 0x60FF, sub 0x00) into `COData` messages on the per-motor `tpdo` topic. The controller's own publish timer runs at 100 Hz; the PDO sync period is 50 ms (set in `bus.yml`).
 - Joint position/velocity from the canopen driver are **SI-scaled by the driver itself** via `bus.yml`'s `scale_pos_from_dev = 0.0061359 (= 2π/1024; 実機エンコーダ 256 pulses × 4 逓倍, 2026-07-29 修正)` and `scale_vel_from_dev = 0.10472 (= 2π/60)`. So `joint_states.position` is **motor-shaft angle in radians** and `joint_states.velocity` is **rad/s** — not raw qc/rpm. Any consumer computing wheel distance should do `distance_m = (Δposition / gear_ratio) × (tire_diam / 2)`. Outgoing commands: controller publishes **rpm** on the raw `tpdo` topic, which the driver passes through **unscaled** to 0x60FF (candump で実証 2026-07-29 — `scale_vel_to_dev` はこの経路では使われない)。EPOS4 側の Velocity Unit が 1 rpm なので単位はそのまま一致する。
 - ROS 2 params files **must** use the key `ros__parameters` (two underscores). A single-underscore typo (`ros_parameters`) will crash the node on startup with `RCLInvalidROSArgsError: Cannot have a value before ros__parameters`, and it is not obvious from the symptom (nodes exit before publishing anything).
-- `tread_width`, `tire_diam`, `gear_ratio`, and `invert_left/right` are duplicated as ROS parameters in each consumer, sourced from `ros2_ws_main/src/bringup/rerobot_bringup/config/params_2d.yaml` and `params_3d.yaml` (whose epos4 sections must match) (and a parallel copy in `ros2_ws_main/src/app/epos4_teleop/config/params.yaml`). Keep them in sync if you change the chassis (`/params-sync` skill で検査できる)。
+- `tread_width`, `tire_diam`, `gear_ratio`, and `invert_left/right` are duplicated as ROS parameters in each consumer, sourced from `ros2_ws_main/src/bringup/rerobot_bringup/config/params.yaml` (and a parallel copy in `ros2_ws_main/src/app/epos4_teleop/config/params.yaml`). Keep them in sync if you change the chassis (`/params-sync` skill で検査できる)。(2026-08-10: params_2d/3d の 2 ファイル重複は params.yaml 統合で解消 — 残る重複は teleop 側のみ)
 - `gear_ratio: 5.0` は物理ギヤ比 (motor_rev / wheel_rev)。2026-07-29 に根本修正済み — それ以前は bus.yml のエンコーダ分解能ズレ (4096 vs 実機 1024) を `gear_ratio: 1.25` で相殺しており、**実車が指令速度の 1/4 で走っていた**。修正は bus.yml (`2π/1024`) と gear_ratio (5.0) の 2 点同時変更が必須で、片方だけ戻すと距離か速度が 4 倍狂う。経緯は `docs/issue/2026-07-07_wheel_odometry_encoder_scaling_4x.md`。⚠️ 修正以前に較正した速度系チューニング (teleop スケール・Nav2 速度上限等) は「1/4 速の実車」基準の可能性があるので注意。
 
 ## Documentation & Claude Workflow

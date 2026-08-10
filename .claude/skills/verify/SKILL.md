@@ -95,8 +95,8 @@ interpolated position / cyclic **position** のみ実装で、**CSV (cyclic velo
 
 8. **アプリ層を起動** (それぞれバックグラウンド):
    ```sh
-   ros2 run epos4_controller epos4_controller --ros-args --params-file /workspace/src/bringup/rerobot_bringup/config/params_2d.yaml
-   ros2 run epos4_controller epos4_odometry   --ros-args --params-file /workspace/src/bringup/rerobot_bringup/config/params_2d.yaml
+   ros2 run epos4_controller epos4_controller --ros-args --params-file /workspace/src/bringup/rerobot_bringup/config/params.yaml
+   ros2 run epos4_controller epos4_odometry   --ros-args --params-file /workspace/src/bringup/rerobot_bringup/config/params.yaml
    ```
 
 9. **コマンド経路を検証**: Twist を流して CAN フレームを観測:

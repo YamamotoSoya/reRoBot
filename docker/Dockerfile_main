@@ -18,6 +18,8 @@ RUN apt-get update && apt-get install -y \
     ros-jazzy-ros2-control \
     # --- Visualization ---
     ros-jazzy-rviz2 \
+    ros-jazzy-rviz-imu-plugin \
+    # ↑ RViz の Imu 表示 (向き箱 + 加速度矢印)。IMU 取付向きの視覚検証用 2026-08-10 # claude
     ros-jazzy-rqt \
     ros-jazzy-rqt-common-plugins \
     ros-jazzy-rqt-tf-tree \

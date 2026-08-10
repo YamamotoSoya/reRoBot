@@ -1,0 +1,130 @@
+<?xml version="1.0"?>
+<!-- claude: 統合 URDF (2026-08-10)。実機には 2D LiDAR (UTM-30LX) と 3D LiDAR (R-Fans-16)
+     が両方常設 + BNO086 IMU を搭載予定のため、旧 rerobot_2d.urdf / rerobot_3d.urdf を
+     1 本に統合した。起動するドライバは rerobot_bringup.launch.py の引数で選ぶ
+     (URDF は常に全センサの TF を出す — 使わないセンサの静的 TF が残っても無害)。
+     センサ位置はユーザ実測値 (2026-08-10 反映): laser (0.07, 0, 0.215) /
+     rfans (-0.075, 0, 0.725) / imu (0, 0, 0.64)。 -->
+<robot name="rerobot">
+
+  <link name="base_link">
+    <visual>
+      <origin xyz="0 0 0.05" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.50 0.35 0.10"/>
+      </geometry>
+      <material name="body_gray">
+        <color rgba="0.4 0.4 0.4 1.0"/>
+      </material>
+    </visual>
+  </link>
+
+  <link name="m1_wheel_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="1.5707963267948966 0 0"/>
+      <geometry>
+        <cylinder radius="0.075" length="0.05"/>
+      </geometry>
+      <material name="wheel_black">
+        <color rgba="0.1 0.1 0.1 1.0"/>
+      </material>
+    </visual>
+  </link>
+
+  <link name="m2_wheel_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="1.5707963267948966 0 0"/>
+      <geometry>
+        <cylinder radius="0.075" length="0.05"/>
+      </geometry>
+      <material name="wheel_black">
+        <color rgba="0.1 0.1 0.1 1.0"/>
+      </material>
+    </visual>
+  </link>
+
+  <!-- claude: motor1 = 右輪 (y-), motor2 = 左輪 (y+) が実配線だが、URDF の可視化上は
+       車軸位置さえ合っていれば左右の別は TF に影響しない (wheel joint は可視化専用)。 -->
+  <joint name="m1_wheel" type="continuous">
+    <parent link="base_link"/>
+    <child  link="m1_wheel_link"/>
+    <origin xyz="0 0.205 0.075" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+  </joint>
+
+  <joint name="m2_wheel" type="continuous">
+    <parent link="base_link"/>
+    <child  link="m2_wheel_link"/>
+    <origin xyz="0 -0.205 0.075" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+  </joint>
+
+  <!-- claude: 2D LiDAR (HOKUYO UTM-30LX, 簡易ジオメトリ)。xyz はユーザ実測 (2026-08-10)。
+       ⚠️ rpy="0 0 0" = 正立取付。旧 URDF (〜08-10) は roll=π (上下逆さ補正) だった —
+       取付が本当に正立か実機の /scan で要確認 (逆さのままだと左右鏡像になり
+       slam/amcl が既存地図と合わなくなる)。逆さなら roll=π に戻す。 -->
+  <link name="laser">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.04" length="0.04"/>
+      </geometry>
+      <material name="lidar_blue">
+        <color rgba="0.1 0.3 0.8 1.0"/>
+      </material>
+    </visual>
+  </link>
+
+  <joint name="laser_joint" type="fixed">
+    <parent link="base_link"/>
+    <child  link="laser"/>
+    <origin xyz="0.07 0 0.215" rpy="0 0 0"/>
+  </joint>
+
+  <!-- claude: 3D LiDAR (R-Fans-16, 簡易ジオメトリ)。link 名 rfans は
+       rerobot_bringup.launch.py / params.yaml (rfans_driver.frame_id) と一致させること。
+       xyz はユーザ実測 (2026-08-10): 車軸中心の 7.5 cm 後方・0.725 m 上。 -->
+  <link name="rfans">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.05" length="0.08"/>
+      </geometry>
+      <material name="lidar_blue2">
+        <color rgba="0.1 0.5 0.8 1.0"/>
+      </material>
+    </visual>
+  </link>
+
+  <joint name="rfans_joint" type="fixed">
+    <parent link="base_link"/>
+    <child  link="rfans"/>
+    <origin xyz="-0.075 0 0.725" rpy="0 0 0"/>
+  </joint>
+
+  <!-- claude: BNO086 IMU (bno086_imu_driver の frame_id 既定 imu_link と一致させる)。
+       xyz はユーザ実測 (2026-08-10)。向き (rpy) は実データで確定 (2026-08-10, /imu/data 実測):
+         静止重力: accel z=+9.81 → imu_Z = base_Z (上向き, 裏返し無し)
+         前進押し出しの加速度: 前 = imu_-Y → imu_Y = base_-X (後ろ向き)
+         右手系の帰結: imu_X = base_Y (左向き)。左回りゆっくり旋回で gyro_Z > 0 も整合。
+       = Rz(+90°) → rpy = (0, 0, π/2)。上から見て 90° 左に回して正立取付。
+       (当初申告の「裏返し (Z→-Z)」は誤りだったことをデータで棄却済み) -->
+  <link name="imu_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.03 0.03 0.01"/>
+      </geometry>
+      <material name="imu_green">
+        <color rgba="0.1 0.6 0.2 1.0"/>
+      </material>
+    </visual>
+  </link>
+
+  <joint name="imu_joint" type="fixed">
+    <parent link="base_link"/>
+    <child  link="imu_link"/>
+    <origin xyz="0 0 0.64" rpy="0 0 1.5707963267948966"/>
+  </joint>
+
+</robot>

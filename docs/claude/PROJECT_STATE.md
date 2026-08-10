@@ -3,7 +3,7 @@
      読み順: CLAUDE.md (規約・ビルド) → 本ファイル (現在地) → docs/issue/ (問題詳細)。 -->
 # reRoBot プロジェクト状態メモ (Claude 用)
 
-- **最終更新: 2026-08-02** (自作 BNO086 IMU ボードのドライバ一式 `drivers/BNO086_ROS2Board-main/` を受領・main ws に統合。RealSense IMU 経路を置き換える本命。colcon 干渉 (firmware/ と Mac ビルド成果物がパッケージ誤認識) を COLCON_IGNORE + build/ 削除で解消、Dockerfile_main に python3-serial 追加 (イメージ再ビルド済み)、URDF 2 ファイルに `imu_link` 追加 (とりあえず rfans と同位置 z=0.714)。ws ビルド 10 パッケージ成功 + TF 検証済み。**実機ボード接続は未検証**。⚠️ 未コミット: 上記一式 + 08-01 の bringup_3d launch + StarROS2 submodule launch + bus.yml submodule。07-31 のランプ実機検証・07-29 の接地検証・GLIM config 作成は引き続き残)
+- **最終更新: 2026-08-10** (bringup を統合構成に再編: URDF 1 本化 `rerobot.urdf` (laser + rfans + imu_link 常設 — 実機に両 LiDAR 併設のため)、params 1 本化 `params.yaml` (params_2d/3d の epos4 重複を廃止)、launch は実体 `rerobot_bringup.launch.py` (boolean 引数 lidar_2d/lidar_3d/imu) + 構成別ラッパ 5 本 (`_2d`/`_3d` = IMU なし scripts 互換, `_2d_imu`/`_3d_imu`/`_2d3d_imu` = IMU 込み新設)。コンテナ内ビルド + 全 launch の評価検証済み。センサ位置はユーザ実測を反映済み: laser (0.07, 0, 0.215, rpy=0 — ⚠️ 旧 roll=π の逆さ補正を撤廃、実機 /scan で要確認)・rfans (-0.075, 0, 0.725)・imu (0, 0, 0.64, rpy=(π,0,π/2) = 裏返し+90° 取付の軸対応 imu_X→base_Y, imu_Y→base_X, imu_Z→-base_Z)。GLIM config は 08-01 にコミット済み (config_odometry_ct + enable_imu:false ×2) で、StarROS2 の per-point time フィールド化 (timeflag→time) も完了 — GLIM 実点群での起動検証が次)
 - 書き手: Claude Code (Fable 5)。次の Claude はまずこれを読めば現在地が分かるようにしてある。
 
 ---
@@ -26,7 +26,7 @@
 | 減速比 | 物理 5:1 = `gear_ratio: 5.0` (07-29 根本修正済み) | エンコーダは 256 pulses × 4 逓倍 = 1024 inc/モータ回転、タイヤ 1 回転 = 5120 inc。bus.yml `scale_pos_from_dev = 2π/1024` |
 | 2D LiDAR | HOKUYO UTM-30LX (USB, urg_node) | frame `laser`, base_link から z+0.714 |
 | 3D LiDAR | Sure-Star R-Fans-16 (Ethernet 192.168.0.3, rfans_driver) | frame `rfans`, PointCloud2 `/sdk_could` (typo だが仕様) |
-| IMU | **自作 BNO086 ボード** (USB CDC, `bno086_imu_driver` → `/imu/data`) を採用予定 (08-02 受領) | RealSense IMU 経路を置き換える本命。製作者 (fTomo-robot) の未公開 repo の先行コピー → 後日 fork + submodule 化予定。**実機接続は未検証**。`realsense_imu.launch.py` は完全移行確定まで温存 (⚠️ 同時起動すると /imu/data が衝突) |
+| IMU | **自作 BNO086 ボード** (USB CDC, `bno086_imu_driver` → `/imu/data`) を採用予定 (08-02 受領) | RealSense IMU 経路を置き換える本命。製作者 (fTomo-robot) の未公開 repo の先行コピー → 後日 fork + submodule 化予定。**08-10 実機初疎通 OK** (/dev/ttyACM0 開通・auto tare 発火・/imu/data publish 確認)。**取付向きは実データで確定済み (08-10)**: rpy=(0,0,π/2) — 重力 (z 上向き)・前進押し出し (前=imu −Y)・左旋回 (gyro z>0) の 3 系統が整合。当初申告の「裏返し」はデータで棄却。`realsense_imu.launch.py` は完全移行確定まで温存 (⚠️ 同時起動すると /imu/data が衝突) |
 | ゲームパッド | Xbox (joy + teleop_twist_joy, LB=deadman, RB=turbo) | |
 
 ## 3. ソフトウェア全体像
@@ -40,7 +40,7 @@ ros2_canopen Cia402Driver ×2 (bus.yml: sync 50ms, PDO)
         ▼                    ▲ joint_states (motor rad / rad/s ※velocity は常に0の疑い)
 EPOS4 ×2                     │
         epos4_odometry ── 2topic を ApproximateTime 同期 → /odom + TF + /joint_states
-        robot_state_publisher ── URDF (rerobot_2d/3d.urdf)
+        robot_state_publisher ── URDF (rerobot.urdf — 08-10 に 2d/3d を統合)
         slam_toolbox (mapping) / map_server+amcl+Nav2 (走行)
 ```
 
@@ -86,9 +86,12 @@ EPOS4 ×2                     │
 - LIO-SAM: submodule として回収済み (07-11, ros2 branch, T13 解決)。ビルドは通るが **IMU 入手不可のため当面凍結**。
   `realsense_imu.launch.py` は IMU 再入手後の GLIM CPU (LIO) モード格上げ用に温存。
 - RViz での R-Fans 点群表示手順が未確立 (triage T12 に手順記載)。
-- **BNO086 IMU** (08-02): `bno086_imu_driver` が main ws でビルド成功、`imu_link` 追加・pyserial 導入・TF 検証まで完了。
-  **残: 実機ボード接続 (/dev/ttyACM0, udev ルール `tools/99-bno086.rules` のホスト導入) → /imu/data 実出力確認 → bringup への launch 組み込み → LIO-SAM 凍結解除の検討**。
-  搭載位置は暫定 (rfans と同位置) — 実搭載が決まったら URDF 更新。
+- **BNO086 IMU** (08-02 統合 → 08-10 実機初疎通 OK): `/dev/ttyACM0` 開通、`/imu/data` publish 確認 (auto tare 発火も確認)。
+  bringup への組み込みも完了 (`rerobot_bringup.launch.py imu:=true` / `_imu` 系ラッパ)。搭載位置は実測反映済み (0, 0, 0.64)。
+  **取付向きも実データで確定・URDF 反映済み (08-10)**: rpy=(0,0,π/2)。確定方法は /imu/data の 240 s 記録から
+  重力ベクトル (z=+9.81 → 上向き)・前進押し出しの加速度方向 (前=imu −Y)・左旋回のジャイロ符号 (+z) の 3 系統照合
+  (ジャイロ⇔加速度計の整合も傾きイベントで交差検証済み)。`imu_check.launch.py` の RViz 重力矢印が静止時に
+  真上を向けば最終確認完了 → 次: LIO-SAM 凍結解除 / GLIM IMU モードの検討。
 
 **品質面の課題**: SLAM が「絶妙にずれる」、低速でハンチング、Nav2 走行が遅い — いずれも
 オドメトリ/エンコーダ問題 (§5) が根っこにある可能性が高い。
@@ -132,6 +135,7 @@ EPOS4 ×2                     │
 | 07-29 (2) | **根本修正を適用・浮かせ検証 OK** (issue 解決)。bus.yml `scale_pos_from_dev: 2π/1024` / `scale_pos_to_dev: 162.97` + `gear_ratio: 5.0` ×5 箇所を同時変更、3 パッケージ再ビルド。検証: 0.2 m/s 指令 → 0x60FF=-127・0x606C≈-127 rpm・/odom 変位 2.15 m (≈指令×実効時間) で 3 系統整合。CLAUDE.md の規約 2 箇所も更新 (2π/1024、raw tpdo 無スケールの明記)。余波調査で未使用の pos 側 bus.yml も同修正、古い「3 点同時」指示 (triage/prompt/audit) を解決済みに更新。**未コミット** (bus.yml ×2 は submodule 側コミット + 親 gitlink 更新が必要)。接地検証 (10 m 直進・360° 旋回・低速から) が残 |
 | 07-30 | glim コンテナを `docker/Dockerfile_glim` 化 (公式 `koide3/glim_ros2:jazzy` ベースの薄い層: rviz2 + 対話 bashrc のみ追加、GLIM 本体はビルドしない)。他 3 コンテナと compose/build.sh の構成を統一。ビルド・起動・glim_ros 実行体の疎通は検証済み。**`ros2_ws_glim/config/` の設定 JSON 作成と glim_rosnode 起動検証は未着手** (ユーザ指示で次回に持ち越し) |
 | 08-02 | **自作 BNO086 IMU ボード受領・main ws に統合** (RealSense IMU 置き換えの本命、未公開 repo の zip 先行コピー → 後日 fork+submodule 化)。colcon 干渉解消 (`firmware/COLCON_IGNORE` + Mac ビルド成果物 `build/` 削除 — 放置すると STM32 HAL がパッケージ誤認識され build.sh main が壊れる)、Dockerfile_main に `python3-serial` 追加 + main イメージ再ビルド、URDF 2d/3d に `imu_link` (暫定 z=0.714, rfans と同位置)。ws ビルド 10 パッケージ + tf_static (base_link→imu_link, z=0.714) 検証済み。実機ボード接続は未 |
+| 08-10 | **bringup 統合再編** (実機に 2D/3D LiDAR 併設のため)。URDF を `rerobot.urdf` 1 本化 (laser + rfans + imu_link 常設、旧 rerobot_2d/3d.urdf 削除)、params を `params.yaml` 1 本化 (epos4 セクションの 2 ファイル重複を廃止、旧 params_2d/3d.yaml 削除)、launch を実体 `rerobot_bringup.launch.py` (boolean 引数 `lidar_2d`/`lidar_3d`/`imu` + 接続系引数透過) + ラッパ 5 本に再編 — `_2d`/`_3d` は IMU なしで scripts/*.sh 互換維持、`_2d_imu`/`_3d_imu`/`_2d3d_imu` を新設 (IMU は bno086.launch.py を include, port 引数 `imu_port`)。CLAUDE.md / params-sync skill を追従更新 (params-sync は 2 ファイル検査に)。コンテナ内で colcon ビルド + 全 6 launch の generate_launch_description() 評価 OK、install 内の旧ファイル残骸も掃除。同日中にユーザが実測 → URDF 反映済み: laser (0.07, 0, 0.215)・rfans (-0.075, 0, 0.725)・imu (0, 0, 0.64)。IMU の向きはユーザ実測の軸対応 (imu_X→base_Y, imu_Y→base_X, imu_Z→-base_Z) から rpy=(π, 0, π/2) を導出・数値検証して適用。⚠️ 2 点要実機確認: (1) laser の旧 roll=π (逆さ補正) が撤廃された — 逆さのままなら /scan が左右鏡像になる、(2) IMU 軸対応が mount_yaw_deg=180 補正後の出力軸か (チップ印字読みなら yaw が π ずれる。静止時 accel z≈-9.8・左旋回で gyro z<0 で判定)。同日さらに **BNO086 実機初疎通に成功** (/dev/ttyACM0, /imu/data publish, auto tare 確認 — 08-02 からの残タスク解消)。ただし静止時 **accel z=+9.81 → Z 軸は上向き**でユーザ申告の「裏返し」と矛盾 → 向き確定用に `imu_check.launch.py` + `rviz/imu_check.rviz` を新設 (driver + robot_state_publisher + RViz 重力矢印。CAN 非依存)、`ros-jazzy-rviz-imu-plugin` を稼働コンテナに導入 + Dockerfile_main に追記 (イメージ再ビルドは次回まとめて)。モータ系の実機起動検証は未 |
 | 08-01 | **3D 点群不通の解決** (report 08-01)。`rfans_driver` が起動 ~90 ms で無言 SIGABRT。gdb で `libstar.so` (プリビルド blob) が `__cxa_throw` 等の古い例外ランタイムを export → FastDDS のポート衝突例外 (正常系) の unwind を横取りして abort と特定。発火条件は「同一ドメインに先住ノード」= コンテナ内の残留 RViz 等 (だから従来のまっさら起動では潜伏)。bringup_3d + StarROS2 の両 launch に `additional_env: LD_PRELOAD=libstdc++:libgcc_s` を追加して解消。tcpdump で LiDAR パケット到着 (192.168.0.3:2014, 1206 B) も確認し全経路開通。**未コミット** (StarROS2 submodule → 親 gitlink) |
 | 07-31 | **全モータ同時停止 ×2 の診断と対策**。ユーザが EPOS Studio でゲイン硬化 (キビキビ化) 後、joy 走行中に「動いて止まる + PDO 送信不能連発 + EPOS 赤ランプ」。1 回目は CANUSB の USB stall (`urb -32`) と同時刻に両モータ SDO timeout、2 回目は**最高速→ゼロ指令の瞬間に USB 無傷のまま**同症状 — 個別フォルトなら CAN 応答は残るので、ランプ無しステップ指令 → 制動電流/回生スパイク → 電源/CAN 巻き添えの signature と診断 (旧「ふにゃんふにゃん」ゲインが実質ランプとして働き隠れていた)。対策: **epos4_controller に slew rate limiter 実装** (`max_motor_accel/decel_rpm_per_s`=2000 rpm/s ≈ 3.1 m/s²、params_2d/3d に追加)。スクリーンショット (~/Pictures/epos4 setting) から EPOS 側 Max acceleration=0xFFFFFFFF (無制限)・Max output current=15 A (上限) と判明 → 0x60C5 有限化 (>2000 rpm/s) + 電流 8〜10 A + Save All Parameters を提案。EPOS Error History での確定 (0x3210 過電圧 / 0x2310 過電流 / 0x81FD bus-off) と浮かせ→接地検証が残 |
 

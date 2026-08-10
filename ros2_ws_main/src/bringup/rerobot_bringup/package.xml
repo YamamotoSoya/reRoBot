@@ -14,10 +14,12 @@
   <exec_depend>maxon_epos4_ros2</exec_depend>
   <exec_depend>robot_state_publisher</exec_depend>
   <exec_depend>rviz2</exec_depend>
-  <!-- claude: 2D LiDAR (rerobot_bringup_2d.launch.py) -->
+  <!-- claude: 2D LiDAR (rerobot_bringup.launch.py, lidar_2d:=true) -->
   <exec_depend>urg_node</exec_depend>
-  <!-- claude: 3D LiDAR (rerobot_bringup_3d.launch.py, src/external/StarROS2) -->
+  <!-- claude: 3D LiDAR (rerobot_bringup.launch.py lidar_3d:=true, src/drivers/StarROS2) -->
   <exec_depend>rfans_driver</exec_depend>
+  <!-- claude: BNO086 IMU (rerobot_bringup.launch.py imu:=true, src/drivers/BNO086_ROS2Board-main) -->
+  <exec_depend>bno086_imu_driver</exec_depend>
   <!-- claude: slam_toolbox 系は rerobot_slamtoolbox (ros2_ws_slamtoolbox) に分離済み -->
   <!-- claude: Nav2 最小構成 (nav2.launch.py) で起動するサーバ群 -->
   <exec_depend>nav2_map_server</exec_depend>

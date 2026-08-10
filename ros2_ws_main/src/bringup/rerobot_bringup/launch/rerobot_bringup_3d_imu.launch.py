@@ -1,7 +1,7 @@
-# claude: 3D LiDAR のみ (IMU なし) 互換ラッパ (2026-08-10 に統合 launch 化)。
-#   実体は rerobot_bringup.launch.py。scripts/bringup3d.sh / glim3d.sh 等の既存呼び出しを
-#   壊さないために名前を維持している。IMU 込みは rerobot_bringup_3d_imu.launch.py。
-#   固定: lidar_2d=false, lidar_3d=true, imu=false
+# claude: 3D LiDAR + IMU 構成ラッパ (2026-08-10)。実体は rerobot_bringup.launch.py。
+#   固定: lidar_2d=false, lidar_3d=true, imu=true
+#   接続系引数 (device_ip / rps / model / imu_port 等) はそのまま透過する。
+#   GLIM の IMU ありモード / LIO-SAM の入力側になる構成。
 import os
 
 from ament_index_python.packages import get_package_share_directory
@@ -15,12 +15,16 @@ def generate_launch_description():
     pkg_share = get_package_share_directory("rerobot_bringup")
 
     passthrough_args = [
+        DeclareLaunchArgument("serial_port", default_value="/dev/ttyUSB-utm-30lx",
+                              description="HOKUYO LiDAR serial device path"),
         DeclareLaunchArgument("device_ip", default_value="192.168.0.3",
                               description="R-Fans LiDAR device IP (UDP source)"),
         DeclareLaunchArgument("rps", default_value="10",
                               description="R-Fans scan speed [Hz]: 5 / 10 / 20"),
         DeclareLaunchArgument("model", default_value="R-Fans-16",
-                              description="R-Fans model: R-Fans-32 / R-Fans-16 / R-Fans-V6K / C-Fans-128 / C-Fans-32"),
+                              description="R-Fans model"),
+        DeclareLaunchArgument("imu_port", default_value="/dev/ttyACM0",
+                              description="BNO086 IMU board serial device path"),
     ]
 
     bringup = IncludeLaunchDescription(
@@ -29,10 +33,12 @@ def generate_launch_description():
         launch_arguments={
             "lidar_2d": "false",
             "lidar_3d": "true",
-            "imu": "false",
+            "imu": "true",
+            "serial_port": LaunchConfiguration("serial_port"),
             "device_ip": LaunchConfiguration("device_ip"),
             "rps": LaunchConfiguration("rps"),
             "model": LaunchConfiguration("model"),
+            "imu_port": LaunchConfiguration("imu_port"),
         }.items(),
     )
 
