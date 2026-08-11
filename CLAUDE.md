@@ -168,8 +168,9 @@ is involved (the old `/robot_encoder_states` fan-in design is gone).
 | `docs/report/` | 解決済みバグの事後報告 | 大きなデバッグ完了時に `/debug-report` skill で追加 |
 | `docs/features/` | 追加機能の設計文書 | 機能追加時に `/feature-doc` skill で追加 |
 | `docs/monthly/` | ユーザの月次ゼミ報告 | **Claude は編集禁止** (読み取り専用の入力) |
+| `docs/text/` | テーマ別の体系的解説書 (書籍形式の教材) | 1 テーマ = 1 ディレクトリ。作成・更新は `/textbook` skill |
 
-Project skills (`.claude/skills/`): `verify` (コンテナ `rerobot_env` 内でビルド+起動検証; 実機 can0 が無ければ vcan0 + fake-slaves), `stack-health` (稼働スタックの読み取り専用診断), `params-sync` (車体パラメータ 3 ファイルの整合検査), `debug-report` / `feature-doc` / `project-state` (docs 更新), `knowledge-check` (実装の理解確認 → `docs/claude/knowledge/`), `annotate` (返信中の用語注釈の基準・書式), `explain-edits` (ファイル変更前の説明の基準・書式), `user-level` (知識レベルプロファイル `docs/claude/USER_LEVEL.md` の再推定)。
+Project skills (`.claude/skills/`): `verify` (コンテナ `rerobot_env` 内でビルド+起動検証; 実機 can0 が無ければ vcan0 + fake-slaves), `stack-health` (稼働スタックの読み取り専用診断), `params-sync` (車体パラメータ 3 ファイルの整合検査), `debug-report` / `feature-doc` / `project-state` (docs 更新), `knowledge-check` (実装の理解確認 → `docs/claude/knowledge/`), `annotate` (返信中の用語注釈の基準・書式), `explain-edits` (ファイル変更前の説明の基準・書式), `user-level` (知識レベルプロファイル `docs/claude/USER_LEVEL.md` の再推定), `textbook` (docs/text/ にテーマ別解説書を書籍形式で作成 — 章構成の型・樹形図優先・事例解剖の型を持つ)。
 
 MCP servers (`.mcp.json`): `context7` (ライブラリ最新ドキュメント), `playwright`, `memory` (`~/.claude/rerobot-mcp-memory.json`)。
 
