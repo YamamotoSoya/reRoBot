@@ -1,6 +1,9 @@
 # claude: IMU 取付向きの視覚検証用 RViz 設定 (imu_check.launch.py が読む)。
 #   Fixed Frame = base_link。Imu 表示 (rviz_imu_plugin) は加速度矢印を有効化してあり、
 #   静止時に矢印が真上を向けば imu_joint の rpy が正しい (詳細は launch のコメント参照)。
+#   fixed_frame_orientation は必ず false — true だと矢印がセンサ生値を base_link 軸に
+#   そのまま描いてしまい imu_link の TF が反映されず、取付検証にならない (2026-08-11 修正)。
+#   Imu 表示自前の axes は TF と紛らわしいので無効 (imu_link 軸は TF 表示が出す)。
 Panels:
   - Class: rviz_common/Displays
     Help Height: 78
@@ -73,7 +76,7 @@ Visualization Manager:
         Enable acceleration: true
       Axes properties:
         Axes scale: 0.30000001192092896
-        Enable axes: true
+        Enable axes: false
       Box properties:
         Box alpha: 1
         Box color: 255; 0; 0
@@ -92,7 +95,7 @@ Visualization Manager:
         Reliability Policy: Best Effort
         Value: /imu/data
       Value: true
-      fixed_frame_orientation: true
+      fixed_frame_orientation: false
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
