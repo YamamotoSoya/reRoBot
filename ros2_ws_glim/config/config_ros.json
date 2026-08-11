@@ -54,18 +54,18 @@
     "points_time_offset": 0.0,
     "acc_scale": 0.0, // Auto-detect if zero
     // TF config
-    // claude: IMU レスでは自動検出が働かず既定値 "imu" に落ち、rviz_viewer が
-    // 毎フレーム imu->glim_base の TF lookup に失敗して警告を連発する。
-    // base_frame_id と同値にすると lookup 自体がスキップされる (rviz_viewer.cpp L195)
-    "imu_frame_id": "glim_base",
+    // claude: IMU あり LIO 構成 (2026-08-11)。imu_frame_id は /imu/data の header
+    // (imu_link) から自動検出させる。
+    "imu_frame_id": "",
     "lidar_frame_id": "", // Auto-detect if blank
-    // claude: IMU レスだと imu_frame の自動検出が働かないため base を明示。
-    // 車輪オドメトリの odom->base_link と衝突しないよう glim_base に分離
+    // claude: 車輪オドメトリの odom->base_link と衝突しないよう glim_base に分離
     // (odom 直下に base_link と glim_base が並ぶ = 親子衝突なしで両者を比較できる)
     "base_frame_id": "glim_base",
     "odom_frame_id": "odom",
     "map_frame_id": "map",
-    "publish_imu2lidar": false, // claude: IMU が無いので imu->lidar TF は出さない
+    // claude: imu->lidar TF は出さない — GLIM が imu_link->rfans を publish すると
+    // robot_state_publisher の base_link->rfans と親が二重になり TF ツリーが壊れるため
+    "publish_imu2lidar": false,
     "tf_time_offset": 1e-6,
     // Extension modules
     "extension_modules": [
@@ -75,8 +75,8 @@
       // "libimu_validator.so"
     ],
     // Topics
-    // claude: points は rfans_driver の出力。imu_topic は CT-ICP 構成では未使用
-    // (将来 realsense_imu.launch.py を使う場合の出力名に合わせてある)
+    // claude: points は rfans_driver の出力。imu_topic は bno086_imu_driver の出力
+    // (LIO 構成 2026-08-11 から実際に消費される。時刻ずれは imu_time_offset で微調整)
     "imu_topic": "/imu/data",
     "points_topic": "/sdk_could",
     "image_topic": "/image",

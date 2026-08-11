@@ -25,6 +25,9 @@ def generate_launch_description():
                               description="R-Fans model"),
         DeclareLaunchArgument("imu_port", default_value="/dev/ttyACM0",
                               description="BNO086 IMU board serial device path"),
+        # claude_ekf: 車輪 odom + IMU の EKF 融合 (robot_localization) を透過 (2026-08-11)
+        DeclareLaunchArgument("ekf", default_value="false",
+                              description="Fuse wheel odom + IMU with robot_localization EKF"),
     ]
 
     bringup = IncludeLaunchDescription(
@@ -39,6 +42,7 @@ def generate_launch_description():
             "rps": LaunchConfiguration("rps"),
             "model": LaunchConfiguration("model"),
             "imu_port": LaunchConfiguration("imu_port"),
+            "ekf": LaunchConfiguration("ekf"),  # claude_ekf
         }.items(),
     )
 

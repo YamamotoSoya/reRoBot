@@ -103,12 +103,16 @@
   </joint>
 
   <!-- claude: BNO086 IMU (bno086_imu_driver の frame_id 既定 imu_link と一致させる)。
-       xyz はユーザ実測 (2026-08-10)。向き (rpy) は実データで確定 (2026-08-10, /imu/data 実測):
-         静止重力: accel z=+9.81 → imu_Z = base_Z (上向き, 裏返し無し)
-         前進押し出しの加速度: 前 = imu_-Y → imu_Y = base_-X (後ろ向き)
-         右手系の帰結: imu_X = base_Y (左向き)。左回りゆっくり旋回で gyro_Z > 0 も整合。
-       = Rz(+90°) → rpy = (0, 0, π/2)。上から見て 90° 左に回して正立取付。
-       (当初申告の「裏返し (Z→-Z)」は誤りだったことをデータで棄却済み) -->
+       xyz はユーザ実測 (2026-08-10)。向き (rpy) は 2026-08-11 の実走 bag (ekf_test) で最終確定:
+         rpy = (0, 0, π/2) = Rz(+90°)。正立、上から見て 90° 回し取付。
+         軸対応: imu_X→base_Y, imu_Y→base_-X, imu_Z→base_Z。
+       証拠 3 系統 (bag /workspace/log/ekf_test, 2026-08-11):
+         (1) 静止 60 s の accel z = +9.815 m/s² → Z 上向き (正立)
+         (2) 旋回中の gyro_z / 車輪 odom yaw rate = +1.015, 同符号率 100% → Z 反転なし
+         (3) 裏返し URDF で走った EKF の yaw が車輪 odom の鏡像 (-79° vs +74°) → 反転の実害を確認
+       注: 「裏返し (π,0,π/2)」説は 08-11 の目視確認に基づいたが、RViz 矢印表示のバグ
+       (fixed_frame_orientation) 修正前の見え方と混線していた可能性が高く、実走データで棄却。
+       ⚠️ この rpy を変えたら ros2_ws_glim/config/config_sensors.json の T_lidar_imu も要再計算。 -->
   <link name="imu_link">
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0"/>
@@ -124,7 +128,7 @@
   <joint name="imu_joint" type="fixed">
     <parent link="base_link"/>
     <child  link="imu_link"/>
-    <origin xyz="0 0 0.64" rpy="3.1415926535897932 0 1.5707963267948966"/>
+    <origin xyz="0 0 0.64" rpy="0 0 1.5707963267948966"/>
   </joint>
 
 </robot>

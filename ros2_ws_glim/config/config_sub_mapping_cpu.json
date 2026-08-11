@@ -4,7 +4,7 @@
   */
   "sub_mapping": {
     "so_name": "libsub_mapping.so",
-    "enable_imu": false, // claude: IMU レス運用 (CT-ICP) の必須設定
+    "enable_imu": true, // claude: BNO086 IMU あり LIO 構成 (2026-08-11)。IMU レス (CT-ICP) に戻すなら false
     "enable_optimization": false,
     // Keyframe update strategy
     "max_num_keyframes": 15,

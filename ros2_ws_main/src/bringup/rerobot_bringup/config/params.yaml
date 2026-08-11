@@ -26,9 +26,15 @@ epos4_odometry_node:
     gear_ratio: 5.0   # motor_rev / wheel_rev (物理ギヤ比 5:1)。エンコーダ較正は bus.yml 側 (2π/1024) に修正済み 2026-07-29 # claude
     odom_frame_id: "odom"
     base_frame_id: "base_link"
-    publish_tf: true
+    publish_tf: true   # claude_ekf: launch の ekf:=true 時は launch 側が後勝ちで false に上書き
     invert_left: true
     invert_right: true
+    # claude_ekf: /odom の共分散対角 [x y z roll pitch yaw] (2026-08-11 追加)。
+    #   robot_localization (ekf.yaml) の重み付けに使われる。z/roll/pitch は 2D では
+    #   観測不能なので 1e6 で「信用しない」。vy=0.001 は差動駆動の横滑りなし拘束。
+    # (1.0e6 の指数表記は YAML 1.1 パーサで文字列扱いになり得るため使わない)
+    pose_covariance_diagonal:  [0.001, 0.001, 1000000.0, 1000000.0, 1000000.0, 0.03]
+    twist_covariance_diagonal: [0.001, 0.001, 1000000.0, 1000000.0, 1000000.0, 0.03]
 
 # claude: node 名 "rfans_driver" は rerobot_bringup.launch.py の Node(name=...) と一致必須
 rfans_driver:

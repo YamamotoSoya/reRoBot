@@ -1,0 +1,51 @@
+# claude: robot_localization EKF 設定 (2026-08-11 新規)。車輪オドメトリ (/odom) と
+#   BNO086 IMU (/imu/data) を融合して /odometry/filtered + TF odom->base_link を出す。
+#   rerobot_bringup.launch.py の ekf:=true で起動 (このとき epos4_odometry の
+#   publish_tf は launch 側で自動 false — odom->base_link の TF 二重配信を防ぐ)。
+#
+#   融合方針:
+#   - 車輪 odom からは「速度」だけ取る (vx, vy, vyaw)。積分済みの pose を取ると
+#     IMU と二重に積分誤差を持ち込むため。vy=0 の測定は差動駆動の「横滑りしない」
+#     拘束として効く。
+#   - IMU からは yaw と yaw rate。加速度は BNO086 のノイズと振動を考えて使わない
+#     (2D 走行では車輪由来の vx の方が素直)。
+#   - yaw は imu0_relative: true で「起動時からの相対角」として扱う。BNO086 の
+#     絶対 yaw は磁北基準 (auto_tare でゼロ化はされるが、磁気外乱で信用できる
+#     保証がない) ため、絶対値には依存しない。
+ekf_filter_node:
+  ros__parameters:
+    frequency: 30.0
+    sensor_timeout: 0.2
+    two_d_mode: true          # z / roll / pitch とその速度を常に 0 に拘束
+    publish_tf: true          # odom -> base_link は EKF が出す
+    publish_acceleration: false
+
+    map_frame: map
+    odom_frame: odom
+    base_link_frame: base_link
+    world_frame: odom         # map フレームの補正は AMCL / SLAM 側の仕事
+
+    # 状態ベクトルの順序: [x, y, z, roll, pitch, yaw,
+    #                      vx, vy, vz, vroll, vpitch, vyaw,
+    #                      ax, ay, az]
+    odom0: /odom
+    odom0_config: [false, false, false,
+                   false, false, false,
+                   true,  true,  false,
+                   false, false, true,
+                   false, false, false]
+    odom0_differential: false
+    odom0_queue_size: 10
+
+    imu0: /imu/data
+    imu0_config: [false, false, false,
+                  false, false, true,
+                  false, false, false,
+                  false, false, true,
+                  false, false, false]
+    imu0_differential: false
+    imu0_relative: true
+    imu0_queue_size: 20
+    imu0_remove_gravitational_acceleration: true
+
+    # プロセスノイズは robot_localization 既定値から開始 (実走で振る)。

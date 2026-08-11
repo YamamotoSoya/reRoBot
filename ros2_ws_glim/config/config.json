@@ -7,8 +7,12 @@
     "config_viewer": "config_viewer.json",
     "config_sensors": "config_sensors.json",
     "config_preprocess": "config_preprocess.json",
-    // claude: CPU 運用 + IMU レス (R-Fans 単独) 構成。odometry は CT-ICP、mapping は CPU 版 + enable_imu:false
-    "config_odometry": "config_odometry_ct.json",
+    // claude: CPU 運用 + BNO086 IMU あり LIO 構成 (2026-08-11 切替)。odometry は
+    // libodometry_estimation_cpu (IMU プリインテグレーション), mapping は CPU 版 +
+    // enable_imu:true。IMU レス (CT-ICP) に戻すには config_odometry_ct.json +
+    // sub/global mapping の enable_imu:false + config_ros.json の IMU レス用
+    // TF 設定 (imu_frame_id: glim_base / publish_imu2lidar: false) を復元する。
+    "config_odometry": "config_odometry_cpu.json",
     "config_sub_mapping": "config_sub_mapping_cpu.json",
     "config_global_mapping": "config_global_mapping_cpu.json"
   }

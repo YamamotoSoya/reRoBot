@@ -3,7 +3,7 @@
      読み順: CLAUDE.md (規約・ビルド) → 本ファイル (現在地) → docs/issue/ (問題詳細)。 -->
 # reRoBot プロジェクト状態メモ (Claude 用)
 
-- **最終更新: 2026-08-10** (bringup を統合構成に再編: URDF 1 本化 `rerobot.urdf` (laser + rfans + imu_link 常設 — 実機に両 LiDAR 併設のため)、params 1 本化 `params.yaml` (params_2d/3d の epos4 重複を廃止)、launch は実体 `rerobot_bringup.launch.py` (boolean 引数 lidar_2d/lidar_3d/imu) + 構成別ラッパ 5 本 (`_2d`/`_3d` = IMU なし scripts 互換, `_2d_imu`/`_3d_imu`/`_2d3d_imu` = IMU 込み新設)。コンテナ内ビルド + 全 launch の評価検証済み。センサ位置はユーザ実測を反映済み: laser (0.07, 0, 0.215, rpy=0 — ⚠️ 旧 roll=π の逆さ補正を撤廃、実機 /scan で要確認)・rfans (-0.075, 0, 0.725)・imu (0, 0, 0.64, rpy=(π,0,π/2) = 裏返し+90° 取付の軸対応 imu_X→base_Y, imu_Y→base_X, imu_Z→-base_Z)。GLIM config は 08-01 にコミット済み (config_odometry_ct + enable_imu:false ×2) で、StarROS2 の per-point time フィールド化 (timeflag→time) も完了 — GLIM 実点群での起動検証が次)
+- **最終更新: 2026-08-11** (**(1) 車輪 odom + IMU の EKF 融合を実装** (`robot_localization`、`ekf.yaml` + `ekf:=true` launch 引数 + epos4_odometry に共分散対角追加)、**(2) GLIM を IMU あり LIO 構成へ切替** (config_odometry_cpu + enable_imu:true ×2 + T_lidar_imu)。**(3) EKF 初回実機テストの bag 解析で 3 件発見・修正** — teleop 51 m 表示は params 未指定起動 (車輪 odom 自体は 10 m 実測に対し 10.18 m と正確)・/odom twist が常に 0 だった実装バグ (velocity 常0 問題の踏み抜き) を位置差分に修正・**IMU 取付向きは実走データで正立 rpy=(0,0,π/2) に最終確定** (朝の目視判定「裏返し」を棄却、タイムライン 08-11 (2) 参照)。**次: 修正後の EKF 再テスト (360° 旋回含む)**。前回 08-10: bringup 統合再編: URDF 1 本化 `rerobot.urdf` (laser + rfans + imu_link 常設 — 実機に両 LiDAR 併設のため)、params 1 本化 `params.yaml` (params_2d/3d の epos4 重複を廃止)、launch は実体 `rerobot_bringup.launch.py` (boolean 引数 lidar_2d/lidar_3d/imu) + 構成別ラッパ 5 本 (`_2d`/`_3d` = IMU なし scripts 互換, `_2d_imu`/`_3d_imu`/`_2d3d_imu` = IMU 込み新設)。コンテナ内ビルド + 全 launch の評価検証済み。センサ位置はユーザ実測を反映済み: laser (0.07, 0, 0.215, rpy=0 — ⚠️ 旧 roll=π の逆さ補正を撤廃、実機 /scan で要確認)・rfans (-0.075, 0, 0.725)・imu (0, 0, 0.64, rpy=(π,0,π/2) = 裏返し+90° 取付の軸対応 imu_X→base_Y, imu_Y→base_X, imu_Z→-base_Z)。GLIM config は 08-01 にコミット済み (config_odometry_ct + enable_imu:false ×2) で、StarROS2 の per-point time フィールド化 (timeflag→time) も完了 — GLIM 実点群での起動検証が次)
 - 書き手: Claude Code (Fable 5)。次の Claude はまずこれを読めば現在地が分かるようにしてある。
 
 ---
@@ -26,7 +26,7 @@
 | 減速比 | 物理 5:1 = `gear_ratio: 5.0` (07-29 根本修正済み) | エンコーダは 256 pulses × 4 逓倍 = 1024 inc/モータ回転、タイヤ 1 回転 = 5120 inc。bus.yml `scale_pos_from_dev = 2π/1024` |
 | 2D LiDAR | HOKUYO UTM-30LX (USB, urg_node) | frame `laser`, base_link から z+0.714 |
 | 3D LiDAR | Sure-Star R-Fans-16 (Ethernet 192.168.0.3, rfans_driver) | frame `rfans`, PointCloud2 `/sdk_could` (typo だが仕様) |
-| IMU | **自作 BNO086 ボード** (USB CDC, `bno086_imu_driver` → `/imu/data`) を採用予定 (08-02 受領) | RealSense IMU 経路を置き換える本命。製作者 (fTomo-robot) の未公開 repo の先行コピー → 後日 fork + submodule 化予定。**08-10 実機初疎通 OK** (/dev/ttyACM0 開通・auto tare 発火・/imu/data publish 確認)。**取付向きは実データで確定済み (08-10)**: rpy=(0,0,π/2) — 重力 (z 上向き)・前進押し出し (前=imu −Y)・左旋回 (gyro z>0) の 3 系統が整合。当初申告の「裏返し」はデータで棄却。`realsense_imu.launch.py` は完全移行確定まで温存 (⚠️ 同時起動すると /imu/data が衝突) |
+| IMU | **自作 BNO086 ボード** (USB CDC, `bno086_imu_driver` → `/imu/data`) を採用予定 (08-02 受領) | RealSense IMU 経路を置き換える本命。製作者 (fTomo-robot) の未公開 repo の先行コピー → 後日 fork + submodule 化予定。**08-10 実機初疎通 OK** (/dev/ttyACM0 開通・auto tare 発火・/imu/data publish 確認)。**取付向きは 08-11 の実走 bag (ekf_test) で最終確定: rpy=(0,0,π/2) = 正立+90°**。証拠 3 系統: 静止 60 s の accel z=+9.815 (Z 上向き)・旋回中の gyro_z/車輪 odom yaw rate=+1.015 で同符号率 100%・裏返し URDF で走った EKF の yaw が車輪 odom の鏡像 (-79° vs +74°)。目視 (矢印) ベースの判定は 2 転 3 転したため、以後の向き検証はデータ照合を正とする。`realsense_imu.launch.py` は完全移行確定まで温存 (⚠️ 同時起動すると /imu/data が衝突) |
 | ゲームパッド | Xbox (joy + teleop_twist_joy, LB=deadman, RB=turbo) | |
 
 ## 3. ソフトウェア全体像
@@ -37,7 +37,7 @@ teleop_keyboard / joy_teleop / Nav2(RPP) ── Twist /robot_speed_cmd
 epos4_controller ─ IK・CiA402状態管理・100Hz TPDO(0x60FF rpm)
         ▼
 ros2_canopen Cia402Driver ×2 (bus.yml: sync 50ms, PDO)
-        ▼                    ▲ joint_states (motor rad / rad/s ※velocity は常に0の疑い)
+        ▼                    ▲ joint_states (motor rad / rad/s ※velocity は常に0 → odom twist は位置差分算出 08-11)
 EPOS4 ×2                     │
         epos4_odometry ── 2topic を ApproximateTime 同期 → /odom + TF + /joint_states
         robot_state_publisher ── URDF (rerobot.urdf — 08-10 に 2d/3d を統合)
@@ -78,8 +78,10 @@ EPOS4 ×2                     │
   - **残: 起動検証 (vcan/実機) → main へマージ・空 ros2_ws_nav2 削除**。再編一式はコミット済み (0e8cb39, push 済み)。
   旧構成は `archive/monolithic` ブランチ + タグ `v1-monolithic` (= 2686cd9) に恒久保存済み。
   `feat/claude-optimize` (3D 自律移動 bringup 9 コミット) は**破棄決定** (ユーザ判断)。
-- **3D SLAM は GLIM (koide3) を採用する方針** (07-26 決定、IMU 入手不可のため)。要件調査済み:
-  IMU レスは `odometry_estimation_ct` (CT-ICP) で公式サポート、`koide3/glim_ros2:jazzy` 公式イメージあり (CUDA 不要)。
+- **3D SLAM は GLIM (koide3) を採用する方針** (07-26 決定)。当初は IMU 入手不可のため
+  `odometry_estimation_ct` (CT-ICP, IMU レス) で構成 → **08-11 に BNO086 前提の IMU あり LIO 構成へ切替済み**
+  (`config_odometry_cpu` + sub/global mapping `enable_imu: true` + `T_lidar_imu` を URDF から算出。実点群+実 IMU での検証は未 —
+  bag 録画と LiDAR⇔IMU のタイムスタンプ整合確認が先)。`koide3/glim_ros2:jazzy` 公式イメージあり (CUDA 不要)。
   ⚠️ R-Fans 点群の `timeflag` フィールドは GLIM 非認識 (認識名は `t`/`time`/`time_stamp`/`timestamp`) →
   擬似タイムスタンプにフォールバックし deskew 劣化。GLIM は GTSAM 4.3a0 要求で `ros-jazzy-gtsam` 4.2.0 と競合 → 別コンテナ運用。
 - 3D 構成 (`rerobot_bringup_3d.launch.py`): 点群は出るが **/scan が無いので SLAM/Nav2 に繋がらない** (GLIM 導入で解消予定)。
@@ -88,10 +90,12 @@ EPOS4 ×2                     │
 - RViz での R-Fans 点群表示手順が未確立 (triage T12 に手順記載)。
 - **BNO086 IMU** (08-02 統合 → 08-10 実機初疎通 OK): `/dev/ttyACM0` 開通、`/imu/data` publish 確認 (auto tare 発火も確認)。
   bringup への組み込みも完了 (`rerobot_bringup.launch.py imu:=true` / `_imu` 系ラッパ)。搭載位置は実測反映済み (0, 0, 0.64)。
-  **取付向きも実データで確定・URDF 反映済み (08-10)**: rpy=(0,0,π/2)。確定方法は /imu/data の 240 s 記録から
-  重力ベクトル (z=+9.81 → 上向き)・前進押し出しの加速度方向 (前=imu −Y)・左旋回のジャイロ符号 (+z) の 3 系統照合
-  (ジャイロ⇔加速度計の整合も傾きイベントで交差検証済み)。`imu_check.launch.py` の RViz 重力矢印が静止時に
-  真上を向けば最終確認完了 → 次: LIO-SAM 凍結解除 / GLIM IMU モードの検討。
+  **取付向きは 08-11 の実走 bag で最終確定・URDF 反映済み**: rpy=(0,0,π/2) (正立+90°)。⚠️ 経緯 (2 転 3 転した):
+  08-10 の 240 s データ照合は「正立」→ 08-11 朝にユーザが矢印目視で「裏返し」と修正 → 同日の EKF 実機テスト bag
+  (静止 accel z=+9.815 / gyro_z⇔車輪 yaw rate 同符号 +1.015 / EKF yaw 鏡像) で**正立が確定**し裏返しを棄却。
+  目視判定は imu_check.rviz の表示バグ (fixed_frame_orientation, 08-11 修正) と混線していた可能性が高い。
+  **今後、取付向きの検証は必ず実データ照合で行う** (静止重力 + 旋回ジャイロ vs 車輪 odom の 2 点で一意に決まる)。
+  → EKF 融合 (`ekf:=true`) + GLIM LIO 構成は 08-11 実装済み。EKF 初回実機テストで /odom twist=0 の実装バグも発見・修正済み (§5)。
 
 **品質面の課題**: SLAM が「絶妙にずれる」、低速でハンチング、Nav2 走行が遅い — いずれも
 オドメトリ/エンコーダ問題 (§5) が根っこにある可能性が高い。
@@ -136,6 +140,8 @@ EPOS4 ×2                     │
 | 07-30 | glim コンテナを `docker/Dockerfile_glim` 化 (公式 `koide3/glim_ros2:jazzy` ベースの薄い層: rviz2 + 対話 bashrc のみ追加、GLIM 本体はビルドしない)。他 3 コンテナと compose/build.sh の構成を統一。ビルド・起動・glim_ros 実行体の疎通は検証済み。**`ros2_ws_glim/config/` の設定 JSON 作成と glim_rosnode 起動検証は未着手** (ユーザ指示で次回に持ち越し) |
 | 08-02 | **自作 BNO086 IMU ボード受領・main ws に統合** (RealSense IMU 置き換えの本命、未公開 repo の zip 先行コピー → 後日 fork+submodule 化)。colcon 干渉解消 (`firmware/COLCON_IGNORE` + Mac ビルド成果物 `build/` 削除 — 放置すると STM32 HAL がパッケージ誤認識され build.sh main が壊れる)、Dockerfile_main に `python3-serial` 追加 + main イメージ再ビルド、URDF 2d/3d に `imu_link` (暫定 z=0.714, rfans と同位置)。ws ビルド 10 パッケージ + tf_static (base_link→imu_link, z=0.714) 検証済み。実機ボード接続は未 |
 | 08-10 | **bringup 統合再編** (実機に 2D/3D LiDAR 併設のため)。URDF を `rerobot.urdf` 1 本化 (laser + rfans + imu_link 常設、旧 rerobot_2d/3d.urdf 削除)、params を `params.yaml` 1 本化 (epos4 セクションの 2 ファイル重複を廃止、旧 params_2d/3d.yaml 削除)、launch を実体 `rerobot_bringup.launch.py` (boolean 引数 `lidar_2d`/`lidar_3d`/`imu` + 接続系引数透過) + ラッパ 5 本に再編 — `_2d`/`_3d` は IMU なしで scripts/*.sh 互換維持、`_2d_imu`/`_3d_imu`/`_2d3d_imu` を新設 (IMU は bno086.launch.py を include, port 引数 `imu_port`)。CLAUDE.md / params-sync skill を追従更新 (params-sync は 2 ファイル検査に)。コンテナ内で colcon ビルド + 全 6 launch の generate_launch_description() 評価 OK、install 内の旧ファイル残骸も掃除。同日中にユーザが実測 → URDF 反映済み: laser (0.07, 0, 0.215)・rfans (-0.075, 0, 0.725)・imu (0, 0, 0.64)。IMU の向きはユーザ実測の軸対応 (imu_X→base_Y, imu_Y→base_X, imu_Z→-base_Z) から rpy=(π, 0, π/2) を導出・数値検証して適用。⚠️ 2 点要実機確認: (1) laser の旧 roll=π (逆さ補正) が撤廃された — 逆さのままなら /scan が左右鏡像になる、(2) IMU 軸対応が mount_yaw_deg=180 補正後の出力軸か (チップ印字読みなら yaw が π ずれる。静止時 accel z≈-9.8・左旋回で gyro z<0 で判定)。同日さらに **BNO086 実機初疎通に成功** (/dev/ttyACM0, /imu/data publish, auto tare 確認 — 08-02 からの残タスク解消)。ただし静止時 **accel z=+9.81 → Z 軸は上向き**でユーザ申告の「裏返し」と矛盾 → 向き確定用に `imu_check.launch.py` + `rviz/imu_check.rviz` を新設 (driver + robot_state_publisher + RViz 重力矢印。CAN 非依存)、`ros-jazzy-rviz-imu-plugin` を稼働コンテナに導入 + Dockerfile_main に追記 (イメージ再ビルドは次回まとめて)。モータ系の実機起動検証は未 |
+| 08-11 | **IMU 取付向き最終確定 + EKF 融合実装 + GLIM LIO 切替**。(1) `imu_check.rviz` の表示バグ発見・修正 — `fixed_frame_orientation: true` だと rviz_imu_plugin は imu_link の TF を捨てて生値を base_link 軸に描くため、加速度矢印が URDF 検証にならなかった (Imu 表示自前の axes も msg orientation 描画で TF 軸とは別物 → 紛らわしいので無効化)。その時点ではユーザ目視で rpy=(π,0,π/2) (裏返し) と判断し URDF に反映 (⚠️ のち同日の実走 bag で覆る — 08-11 (2) 行)。(2) **車輪 odom + IMU の EKF 融合** — `epos4_odometry` に pose/twist 共分散対角パラメータ追加 (claude_ekf タグ)、`config/ekf.yaml` 新規 (odom0=vx,vy,vyaw / imu0=yaw(relative),vyaw / two_d_mode)、`rerobot_bringup.launch.py` に `ekf:=true` 引数 (ekf_node 起動 + epos4_odometry の publish_tf 自動 false で TF 二重配信防止)。(3) **GLIM を IMU あり LIO 構成へ切替** — config.json→`config_odometry_cpu`、sub/global mapping `enable_imu:true`、`T_lidar_imu=[0.075,0,-0.085, √2/2,√2/2,0,0]` (URDF から算出・数値検証済み)、config_ros.json の IMU レスハック撤回 (imu_frame_id 自動検出へ。publish_imu2lidar は TF 親二重化防止のため false 維持)。**残: 実機検証** — EKF は静止/直進/旋回比較、GLIM は bag 録画 + LiDAR⇔IMU 時刻整合確認 + glim_rosbag 評価。Nav2 の odom 入力切替も未 |
+| 08-11 (2) | **EKF 初回実機テスト → bag 解析で 3 件発見・全て修正**。ユーザが静止 + 10 m 直進を実施 (360° 旋回は未実施)、bag は `/workspace/log/ekf_test`。(a) **teleop 距離が 51 m 表示** (実測 10 m) — bag の /odom は 10.18 m / 旋回 +0.5° と正確で車輪較正は無罪。51≈10×gear(5.0) から teleop が params 未指定起動 (gear=1.0 既定) と特定 (teleop.sh 経由なら 5.0 が読まれることも実測確認)。対策: teleop 起動時にパラメータ値を INFO 表示 + gear=1.0 なら WARN。(b) **/odometry/filtered の位置が終始 (0,0)** — /odom の twist が常に 0 のせい。原因は epos4_odometry が joint_states.velocity (0x606C 未 PDO マップで常に 0 — bag で実証、従来「疑い」だったもの) を配列非空というだけで優先使用していたこと。位置差分 (d_s/dt) ベースに修正。(c) **EKF の yaw が車輪 odom の鏡像 (-79° vs +74°)** — IMU 裏返し URDF が原因。bag の静止 accel z=+9.815 と gyro_z⇔車輪 yaw rate 同符号 (中央値 +1.015, 100%) で**正立 rpy=(0,0,π/2) が確定**、URDF と GLIM の T_lidar_imu (q=(0,0,√2/2,√2/2) に再計算) を修正。**残: 修正後の EKF 再テスト (静止/直進/360° 旋回 — C は初回未実施)** |
 | 08-01 | **3D 点群不通の解決** (report 08-01)。`rfans_driver` が起動 ~90 ms で無言 SIGABRT。gdb で `libstar.so` (プリビルド blob) が `__cxa_throw` 等の古い例外ランタイムを export → FastDDS のポート衝突例外 (正常系) の unwind を横取りして abort と特定。発火条件は「同一ドメインに先住ノード」= コンテナ内の残留 RViz 等 (だから従来のまっさら起動では潜伏)。bringup_3d + StarROS2 の両 launch に `additional_env: LD_PRELOAD=libstdc++:libgcc_s` を追加して解消。tcpdump で LiDAR パケット到着 (192.168.0.3:2014, 1206 B) も確認し全経路開通。**未コミット** (StarROS2 submodule → 親 gitlink) |
 | 07-31 | **全モータ同時停止 ×2 の診断と対策**。ユーザが EPOS Studio でゲイン硬化 (キビキビ化) 後、joy 走行中に「動いて止まる + PDO 送信不能連発 + EPOS 赤ランプ」。1 回目は CANUSB の USB stall (`urb -32`) と同時刻に両モータ SDO timeout、2 回目は**最高速→ゼロ指令の瞬間に USB 無傷のまま**同症状 — 個別フォルトなら CAN 応答は残るので、ランプ無しステップ指令 → 制動電流/回生スパイク → 電源/CAN 巻き添えの signature と診断 (旧「ふにゃんふにゃん」ゲインが実質ランプとして働き隠れていた)。対策: **epos4_controller に slew rate limiter 実装** (`max_motor_accel/decel_rpm_per_s`=2000 rpm/s ≈ 3.1 m/s²、params_2d/3d に追加)。スクリーンショット (~/Pictures/epos4 setting) から EPOS 側 Max acceleration=0xFFFFFFFF (無制限)・Max output current=15 A (上限) と判明 → 0x60C5 有限化 (>2000 rpm/s) + 電流 8〜10 A + Save All Parameters を提案。EPOS Error History での確定 (0x3210 過電圧 / 0x2310 過電流 / 0x81FD bus-off) と浮かせ→接地検証が残 |
 
@@ -144,7 +150,7 @@ EPOS4 ×2                     │
 1. **CiA402 遷移サービスは並行発行すると壊れる** (実機で 2 回踏んだ)。init→enable→csv は必ず逐次。
    復帰時に `init` (homing) を呼ぶと復帰不能。サービス戻り値は no-op 遷移で偽陰性 → 成否は SDO
    (0x6041/0x6061) で判定。この 3 つの罠が epos4_controller の「複雑さ」の正体 (triage C1)。
-2. **joint_states.velocity は常に 0** (07-29 確定: bus.yml で 0x606C 未マップのため driver のキャッシュが更新されない。SDO read 0x606C を打った直後だけ一度反映される)。回転判定は position 差分で行う。
+2. **joint_states.velocity は常に 0** (07-29 確定: bus.yml で 0x606C 未マップのため driver のキャッシュが更新されない。SDO read 0x606C を打った直後だけ一度反映される)。回転判定は position 差分で行う。⚠️ これを踏んで `epos4_odometry` の twist が終始 0 だった (velocity 配列の非空チェックだけで採用していた) — 08-11 に位置差分 (d_s/dt) ベースへ修正済み。velocity 配列を「存在するから」と信用しないこと。
 2'. **raw `tpdo` トピックは無スケールで素通し** (07-29 candump で実証)。controller の rpm 値がそのまま 0x60FF に届く (EPOS の Velocity Unit が 1 rpm なので単位は一致)。⚠️ 07-29 の根本修正 (gear_ratio 5.0) 以前は実車が指令の 1/4 速だったため、**それ以前に較正された速度系チューニング (teleop スケール・Nav2 速度上限/加速度) は「1/4 速の実車」基準** — 接地検証で要見直し。
 3. **「ちょうど 4 倍」のズレを見たらクアドラチャ 4 逓倍の二重解釈を疑う** (encoder issue の教訓)。
 4. タイヤを浮かせた状態の挙動 (ハンチング等) は実走行の参考にならない。評価は接地で。
@@ -184,11 +190,14 @@ EPOS4 ×2                     │
 1. ~~ws 分割・slam 分離・Docker 4 分割・scripts・イメージ/colcon ビルド確認・旧資産掃除・コミット (0e8cb39)~~ (✅ 07-26 完了)
 2. 起動検証: vcan モード (`/verify`) または実機 (`scripts/can_up.sh` → `nav2d.sh`) で旧構成同等の動作を確認
    → OK なら `feat/workspace-split` を main にマージして再編クローズ。空 `ros2_ws_nav2/` の削除も忘れず
-3. GLIM 導入: `ros2_ws_glim/config/` (CT-ICP, `enable_imu: false` ×2) → bag 録画 → `glim_rosbag` オフライン評価
-   → 必要なら StarROS2 に per-point `time` フィールド追加
-4. BNO086 IMU の実機接続: udev ルール導入 → `ros2 launch bno086_imu_driver bno086.launch.py` で /imu/data 確認
-   → bringup への組み込み → IMU 前提の構成 (LIO-SAM 凍結解除 / GLIM の IMU ありモード) を再検討。
-   公開されたら fork + submodule 化 (⚠️ §7-9: COLCON_IGNORE を fork に含める)
+3. GLIM 実データ検証 (08-11 に LIO 構成へ切替済み): `_3d_imu` 構成で bag 録画 (rfans 点群 + /imu/data) →
+   **LiDAR⇔IMU の header.stamp が同一時間軸か確認** (rfans は GPS 時刻の扱いに注意、ずれは `imu_time_offset` で微調整)
+   → `glim_rosbag` オフライン評価 → CT-ICP 構成と品質比較 → OK なら `glim3d.sh` オンライン運用へ
+4. EKF 融合の実機**再**検証: 初回 (08-11) は 3 バグ発見で終了 (修正済み — タイムライン 08-11 (2))。
+   再テストは `ekf:=true` で起動 → 静止ドリフト / 10 m 直進 / **360° 旋回 (初回未実施)** で
+   `/odometry/filtered` vs 生 `/odom` を比較。今回から /odom twist が生きているので filtered の位置も動くはず。
+   良好なら Nav2 の odom 入力を /odometry/filtered に切替 (nav2_params.yaml — 未着手)。
+   BNO086 repo が公開されたら fork + submodule 化 (⚠️ §7-9: COLCON_IGNORE を fork に含める)
 
 従来のトリアージ指示書 `docs/issue/2026-07-07_monthly_2026_6_todo_triage.prompt.md` は再編完了後に再開 (優先順・完了条件つき)。
 要約: A1 LiDAR FOV → A2 slam lifecycle → A3 rviz エラー確認 → A4 脱力モード修正 →

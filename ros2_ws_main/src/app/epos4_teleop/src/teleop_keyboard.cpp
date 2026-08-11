@@ -65,6 +65,18 @@ public:
     cmd_publisher_ = create_publisher<geometry_msgs::msg::Twist>(cmd_topic, 10);
     free_publisher_ = create_publisher<std_msgs::msg::Bool>(free_topic, 10);
 
+    // claude_ekf: 距離表示はこの 2 値に直結する。params-file を渡し忘れると
+    // gear_ratio が既定 1.0 になり距離が実際の 5 倍で表示される (2026-08-11 に実発生:
+    // 10 m 走行が 51 m 表示)。起動時に必ず値を見せて気付けるようにする。
+    RCLCPP_INFO(
+      get_logger(), "teleop params: tire_diam=%.3f m, gear_ratio=%.2f", tire_diam_, gear_ratio_);
+    if (gear_ratio_ == 1.0) {
+      RCLCPP_WARN(
+        get_logger(),
+        "gear_ratio=1.0 (default) — did you forget --params-file? "
+        "Distance display will be 5x too large on this robot.");
+    }
+
     // claude_swap: physical wiring is motor1 = RIGHT wheel, motor2 = LEFT wheel,
     // so the printed left/right distance labels follow the physical side, not the
     // motor index.

@@ -50,14 +50,19 @@
     "imu_bias_noise": 1e-5,
     // LiDAR config
     "global_shutter_lidar": false,
+    // claude: reRoBot 実機値 (2026-08-11, 同日中に正立確定で回転を再計算)。URDF rerobot.urdf から算出:
+    //   base->rfans t=(-0.075, 0, 0.725) rpy=(0,0,0) / base->imu t=(0, 0, 0.64) rpy=(0, 0, pi/2)
+    //   => t_lidar_imu = (0.075, 0, -0.085), R = Rz(90deg)
+    //   => q(x,y,z,w) = (0, 0, sqrt2/2, sqrt2/2)。imu_X->lidar_Y, imu_Y->-lidar_X, imu_Z->lidar_Z。
+    //   フォーマットは [x, y, z, qx, qy, qz, qw]。URDF のセンサ位置/向きを変えたら要再計算。
     "T_lidar_imu": [
-      0.006,
-      -0.012,
-      0.008,
+      0.075,
+      0.0,
+      -0.085,
       0.0,
       0.0,
-      0.0,
-      1.0
+      0.7071067811865476,
+      0.7071067811865476
     ],
     "intensity_field": "intensity",
     "ring_field": "",

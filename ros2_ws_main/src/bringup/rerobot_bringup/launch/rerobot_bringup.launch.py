@@ -4,6 +4,9 @@
 #     lidar_2d:=true/false  ... urg_node (HOKUYO, /scan)
 #     lidar_3d:=true/false  ... rfans_driver (R-Fans, /sdk_could)
 #     imu:=true/false       ... bno086_imu_driver (/imu/data)
+#     ekf:=true/false       ... robot_localization EKF (車輪 odom + IMU 融合, 2026-08-11)。
+#                               true で /odometry/filtered + TF odom->base_link を EKF が
+#                               担当し、epos4_odometry の TF は自動オフ。imu:=true と併用。
 #   URDF は rerobot.urdf 1 本 (laser / rfans / imu_link を常に含む — 使わないセンサの
 #   静的 TF が出ていても無害)。params は config/params.yaml 1 本。
 #   直接叩いてもよいが、構成別ラッパ (rerobot_bringup_{2d,3d}{,_imu}.launch.py /
@@ -15,7 +18,7 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, TimerAction
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
 # claude: launch 引数は文字列で解決されるため、int 等の型付き param は ParameterValue で包む
 from launch_ros.parameter_descriptions import ParameterValue
@@ -36,6 +39,12 @@ def generate_launch_description():
     imu_arg = DeclareLaunchArgument(
         "imu", default_value="true",
         description="Start bno086_imu_driver (/imu/data)")
+    # claude_ekf: 車輪 odom + IMU の EKF 融合 (robot_localization)。true にすると
+    # ekf_node が /odometry/filtered と TF odom->base_link を出し、epos4_odometry の
+    # publish_tf を自動で false にする (TF 二重配信の防止。/odom topic 自体は残る)。
+    ekf_arg = DeclareLaunchArgument(
+        "ekf", default_value="false",
+        description="Fuse wheel odom + IMU with robot_localization EKF")
 
     # claude: HOKUYO シリアルポート。udev rule 整備までは sudo ln -sf /dev/ttyUSB0
     # /dev/ttyUSB-utm-30lx で実体に紐付けるか、`serial_port:=/dev/ttyUSB0` で上書き。
@@ -81,11 +90,27 @@ def generate_launch_description():
         output="screen",
     )
 
+    # claude_ekf: ekf:=true のとき publish_tf を後勝ちで false に上書きする
+    # (odom->base_link は ekf_node が出すため)。launch 引数は文字列なので
+    # PythonExpression で bool 文字列に変換し ParameterValue(bool) で型付けする。
+    odom_publish_tf = ParameterValue(
+        PythonExpression(["'", LaunchConfiguration("ekf"), "'.lower() != 'true'"]),
+        value_type=bool)
     epos4_odometry_node = Node(
         package="epos4_controller",
         executable="epos4_odometry",
         name="epos4_odometry_node",
-        parameters=[params_file],
+        parameters=[params_file, {"publish_tf": odom_publish_tf}],
+        output="screen",
+    )
+
+    # claude_ekf: robot_localization EKF (車輪 odom + IMU 融合)。config は ekf.yaml。
+    ekf_node = Node(
+        package="robot_localization",
+        executable="ekf_node",
+        name="ekf_filter_node",
+        condition=IfCondition(LaunchConfiguration("ekf")),
+        parameters=[os.path.join(pkg_share, "config", "ekf.yaml")],
         output="screen",
     )
 
@@ -177,6 +202,7 @@ def generate_launch_description():
         lidar_2d_arg,
         lidar_3d_arg,
         imu_arg,
+        ekf_arg,
         serial_port_arg,
         device_ip_arg,
         rps_arg,
@@ -184,6 +210,7 @@ def generate_launch_description():
         imu_port_arg,
         bus_config,
         delayed_nodes,
+        ekf_node,
         robot_state_publisher_node,
         urg_node_node,
         rfans_node,

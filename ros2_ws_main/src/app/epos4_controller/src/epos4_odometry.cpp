@@ -1,6 +1,8 @@
 #include <cmath>
 #include <memory>
+#include <stdexcept>  // claude_ekf
 #include <string>
+#include <vector>  // claude_ekf
 
 #include "geometry_msgs/msg/transform_stamped.hpp"
 #include "message_filters/subscriber.h"                      // claude_tire claude_odom claude_sync
@@ -27,6 +29,15 @@ public:
     declare_parameter("publish_tf", true);
     declare_parameter("invert_left", false);
     declare_parameter("invert_right", false);
+    // claude_ekf: robot_localization に食わせるための共分散対角 (x y z roll pitch yaw)。
+    // 全ゼロのままだと EKF 側で「ほぼ完全な測定」と誤解釈される。z/roll/pitch は
+    // 2D 差動駆動では観測できないので大きな値で「信用しない」と明示する。
+    declare_parameter(
+      "pose_covariance_diagonal",
+      std::vector<double>{0.001, 0.001, 1e6, 1e6, 1e6, 0.03});   // claude_ekf
+    declare_parameter(
+      "twist_covariance_diagonal",
+      std::vector<double>{0.001, 0.001, 1e6, 1e6, 1e6, 0.03});   // claude_ekf
 
     tread_width_ = get_parameter("tread_width").as_double();
     wheel_radius_ = get_parameter("tire_diam").as_double() * 0.5;
@@ -36,6 +47,12 @@ public:
     publish_tf_ = get_parameter("publish_tf").as_bool();
     invert_left_ = get_parameter("invert_left").as_bool();
     invert_right_ = get_parameter("invert_right").as_bool();
+    pose_cov_diag_ = get_parameter("pose_covariance_diagonal").as_double_array();    // claude_ekf
+    twist_cov_diag_ = get_parameter("twist_covariance_diagonal").as_double_array();  // claude_ekf
+    if (pose_cov_diag_.size() != 6 || twist_cov_diag_.size() != 6) {                 // claude_ekf
+      RCLCPP_FATAL(get_logger(), "covariance_diagonal parameters must have 6 elements");
+      throw std::runtime_error("invalid covariance_diagonal parameter");             // claude_ekf
+    }
 
     odom_publisher_ = create_publisher<nav_msgs::msg::Odometry>("/odom", 10);
     // claude_tire: /joint_states for robot_state_publisher (wheel-side angles)
@@ -131,22 +148,14 @@ private:
     // wrap to [-pi, pi]
     theta_ = std::atan2(std::sin(theta_), std::cos(theta_));
 
-    // body-frame velocities
-    double v_lin = 0.0;
-    double v_ang = 0.0;
-    if (!left_msg->velocity.empty() && !right_msg->velocity.empty()) {  // claude_odom
-      double w_left = left_msg->velocity[0] * inv_gear;                 // claude_odom
-      double w_right = right_msg->velocity[0] * inv_gear;               // claude_odom
-      if (invert_left_) w_left = -w_left;
-      if (invert_right_) w_right = -w_right;
-      double v_l = w_left * wheel_radius_;
-      double v_r = w_right * wheel_radius_;
-      v_lin = 0.5 * (v_l + v_r);
-      v_ang = (v_r - v_l) / tread_width_;
-    } else {
-      v_lin = d_s / dt;
-      v_ang = d_theta / dt;
-    }
+    // claude_odom claude_ekf: body-frame velocities from position deltas.
+    // The driver's joint_states.velocity is ALWAYS zero (0x606C is not PDO-mapped
+    // in bus.yml) — confirmed from the 2026-08-11 ekf_test bag, where /odom pose
+    // moved 20 m while twist never exceeded 0.05 m/s. The old code preferred the
+    // velocity fields whenever the arrays were non-empty (they always are), so
+    // /odom twist was silently zero and the EKF never advanced its position.
+    double v_lin = d_s / dt;
+    double v_ang = d_theta / dt;
 
     tf2::Quaternion q;
     q.setRPY(0.0, 0.0, theta_);
@@ -164,6 +173,11 @@ private:
     odom.pose.pose.orientation.w = q.w();
     odom.twist.twist.linear.x = v_lin;
     odom.twist.twist.angular.z = v_ang;
+    // claude_ekf: 対角のみ埋める (6x6 row-major の 0,7,14,21,28,35)
+    for (size_t i = 0; i < 6; ++i) {
+      odom.pose.covariance[i * 7] = pose_cov_diag_[i];    // claude_ekf
+      odom.twist.covariance[i * 7] = twist_cov_diag_[i];  // claude_ekf
+    }
     odom_publisher_->publish(odom);
 
     if (publish_tf_) {
@@ -226,6 +240,8 @@ private:
   bool publish_tf_;
   bool invert_left_;
   bool invert_right_;
+  std::vector<double> pose_cov_diag_;   // claude_ekf
+  std::vector<double> twist_cov_diag_;  // claude_ekf
 
   bool initialized_ = false;
   double prev_pos_left_ = 0.0;
