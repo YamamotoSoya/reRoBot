@@ -91,7 +91,10 @@ bt_navigator:
   ros__parameters:
     global_frame: map           # 目標位置を解釈する基準フレーム
     robot_base_frame: base_link # ロボット基準フレーム
-    odom_topic: /odom           # オドメトリ入力トピック
+    # claude_ekf: 2026-08-11 から EKF 融合オドメトリ (/odometry/filtered) を標準入力にする。
+    #   nav2d.sh が bringup を imu:=true ekf:=true で起動する前提。EKF なしで動かすときは
+    #   ここと controller_server の odom_topic を /odom に戻すこと。
+    odom_topic: /odometry/filtered  # オドメトリ入力トピック (EKF 出力)
     bt_loop_duration: 10        # BT を回すループ周期 [ms]
     default_server_timeout: 20  # 各アクションサーバ応答待ちタイムアウト [ms]
     # claude: plugin_lib_names は指定しない。Jazzy の bt_navigator は標準 BT ノード
@@ -106,6 +109,9 @@ bt_navigator:
 controller_server:
   ros__parameters:
     controller_frequency: 20.0       # 制御ループ周波数 [Hz]
+    # claude_ekf: 現在速度のフィードバック元 (進捗判定・RPP の速度制御に使用)。
+    #   既定 "odom" のままだと EKF 構成で生 /odom を読んでしまうので明示する (2026-08-11)。
+    odom_topic: /odometry/filtered   # オドメトリ入力トピック (EKF 出力)
     min_x_velocity_threshold: 0.001  # この値未満の x 速度は 0 とみなす [m/s]
     min_y_velocity_threshold: 0.5    # y 速度しきい値 [m/s] (差動二輪は y=0)
     min_theta_velocity_threshold: 0.001  # 角速度しきい値 [rad/s]

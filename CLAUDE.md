@@ -49,7 +49,8 @@ git submodule は**各 workspace の src/ 直下に直接配置** (旧 symlink �
 ```bash
 ./scripts/can_up.sh      # can0 状態確認 + 復旧。通常は udev + canusb-up.service で挿すだけ自動 up (README 参照)
 ./scripts/bringup2d.sh   # 2D bringup (main, バックグラウンド。ログ: /workspace/log/bringup2d.log)
-./scripts/nav2d.sh       # 自律走行一発 = bringup2d + Nav2 + RViz (main 内)
+                         #   IMU=true EKF=true を前置すると BNO086 + EKF 融合込みで起動 (2026-08-11)
+./scripts/nav2d.sh       # 自律走行一発 = bringup2d (IMU+EKF 標準) + Nav2 + RViz (main 内)
 ./scripts/slam2d.sh      # 地図作成 = bringup2d + slam_toolbox + RViz (slamtoolbox コンテナ)
 ./scripts/bringup3d.sh   # 3D bringup (R-Fans。/scan は出ない)
 ./scripts/glim3d.sh      # 3D SLAM 評価 = bringup3d + GLIM (glim コンテナ)
@@ -130,7 +131,7 @@ is involved (the old `/robot_encoder_states` fan-in design is gone).
 - **`ros2_ws_main/src/bringup/rerobot_bringup`** — system bringup assets (no C++ code). Owns:
   - `launch/rerobot_bringup.launch.py` — **統合 composite bringup (実体)** (2026-08-10 に 2d/3d launch を統合)。bus_config + 5 s TimerAction + controller + odometry + robot_state_publisher に加え、boolean 引数でセンサドライバを選択: `lidar_2d` → `urg_node` (frame_id `laser`, `/scan`)、`lidar_3d` → `rfans_driver` (R-Fans, `drivers/StarROS2`, frame_id `rfans`, PointCloud2 `/sdk_could`, LD_PRELOAD 適用済み)、`imu` → `bno086_imu_driver` (`/imu/data`)。`ekf` → `robot_localization` の EKF (車輪 odom + IMU 融合, `config/ekf.yaml`, 2026-08-11 追加) — true で `/odometry/filtered` + TF odom→base_link を EKF が出し、`epos4_odometry` の publish_tf は launch 側で自動 false (TF 二重配信防止。既定 false)。接続系引数 `serial_port` / `device_ip` / `rps` / `model` / `imu_port` で上書き可。Does **not** launch RViz; visualization is owned by `nav2.launch.py` / `slam.launch.py` so the two don't open duplicate windows。`/scan` は 2D LiDAR のみ (3D 点群の LaserScan 変換は含まない)。
   - `launch/rerobot_bringup_{2d,3d}.launch.py` — 構成別ラッパ (IMU なし、`scripts/bringup{2d,3d}.sh` 互換)。`launch/rerobot_bringup_{2d_imu,3d_imu,2d3d_imu}.launch.py` — IMU 込みの構成別ラッパ。全て実体 launch に boolean を固定して渡すだけ。
-  - `launch/nav2.launch.py` — map_server + amcl + Nav2 (RPP controller, keepout フィルタ込み) + `nav2.rviz`。config は `config/nav2_params.yaml`。⚠️ `bt_navigator` の `plugin_lib_names` を列挙すると Jazzy では二重登録 segfault — デフォルトに任せる。
+  - `launch/nav2.launch.py` — map_server + amcl + Nav2 (RPP controller, keepout フィルタ込み) + `nav2.rviz`。config は `config/nav2_params.yaml`。**odom 入力は `/odometry/filtered` (EKF 出力) が標準** (2026-08-11) — `nav2d.sh` が bringup を `imu:=true ekf:=true` で起動する前提。EKF なし運用に戻すときは bt_navigator / controller_server の `odom_topic` を `/odom` に戻す。⚠️ `bt_navigator` の `plugin_lib_names` を列挙すると Jazzy では二重登録 segfault — デフォルトに任せる。
   - `launch/joy_teleop.launch.py` + `config/joy_teleop.yaml` — Xbox ゲームパッド teleop (joy + teleop_twist_joy, LB=deadman, RB=turbo)。
   - `launch/realsense_imu.launch.py` — RealSense を 6 軸 IMU として起動し `imu_filter_madgwick` (use_mag=false) で orientation を合成して `/imu/data` に出す (LIO-SAM の imuTopic 既定と一致)。
   - `config/params.yaml` — 統合パラメータ (2026-08-10 に params_2d/3d を 1 本化)。chassis parameters (`epos4_controller` / `epos4_odometry`) + `rfans_driver` セクション (機種/接続/frame_id `rfans`/theta remap)。

@@ -91,7 +91,9 @@ Visualization Manager:
           Color: 204; 51; 204
           Scale: 1
           Value: true
-        Value: true
+        # claude: /odom に共分散を入れ始めた (2026-08-11 EKF 対応) ため無効化。
+        #   z/roll/pitch の 1e6 (観測不能マーカー) が巨大な黄色い楕円として描画されるため。
+        Value: false
       Enabled: true
       Keep: 100
       Name: Odometry

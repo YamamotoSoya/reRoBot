@@ -10,6 +10,25 @@
 set -eu
 
 if ip link show can0 2>/dev/null | head -1 | grep -qE '[<,]UP[,>]'; then
+  # claude: can0 が UP でも安心できない — アダプタが USB ストール (urb -32) で再列挙されると、
+  # boot 時の slcand が「死んだ旧 ttyUSB」を掴んだまま can0 だけ UP に見える (2026-08-11 の
+  # 急回転事故で実証: /dev/ttyCANUSB は新デバイスを指すが slcand は旧デバイスに接続したまま)。
+  # slcand が実際に開いている tty と /dev/ttyCANUSB の実体を突き合わせて検出する。
+  slcand_pid="$(pgrep -x slcand | head -1 || true)"
+  slcand_tty=""
+  if [ -n "${slcand_pid}" ]; then
+    slcand_tty="$(readlink "/proc/${slcand_pid}/fd"/* 2>/dev/null | grep -m1 '^/dev/ttyUSB' || true)"
+  fi
+  canusb_tty="$(readlink -f /dev/ttyCANUSB 2>/dev/null || true)"
+  if [ -n "${slcand_pid}" ] && [ -n "${canusb_tty}" ] && [ "${slcand_tty}" != "${canusb_tty}" ]; then
+    echo "[can_up] ⚠️ can0 は UP だが slcand が旧デバイス (${slcand_tty:-不明}) を掴んだまま。"
+    echo "[can_up]    現在の CANUSB は ${canusb_tty} — canusb-up.service を再起動します (要 sudo)"
+    sudo systemctl restart canusb-up.service
+    sleep 1
+    ip -details link show can0 | head -3
+    echo "[can_up] can0 re-attached (slcan, 1 Mbps)"
+    exit 0
+  fi
   echo "[can_up] can0 is already up (canusb-up.service による自動起動)"
   ip -details link show can0 | head -3
   exit 0

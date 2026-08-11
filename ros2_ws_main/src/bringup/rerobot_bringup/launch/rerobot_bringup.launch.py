@@ -46,8 +46,9 @@ def generate_launch_description():
         "ekf", default_value="false",
         description="Fuse wheel odom + IMU with robot_localization EKF")
 
-    # claude: HOKUYO シリアルポート。udev rule 整備までは sudo ln -sf /dev/ttyUSB0
-    # /dev/ttyUSB-utm-30lx で実体に紐付けるか、`serial_port:=/dev/ttyUSB0` で上書き。
+    # claude: HOKUYO シリアルポート。udev rule (/etc/udev/rules.d/99-hokuyo-devices.rules,
+    # Hokuyo VID 15d1 → /dev/ttyUSB-utm-30lx) が整備済みなので、USB を挿せば自動で
+    # symlink が生える (実体は cdc_acm の /dev/ttyACM*)。symlink が無い = 物理的に未接続。
     serial_port_arg = DeclareLaunchArgument(
         "serial_port", default_value="/dev/ttyUSB-utm-30lx",
         description="HOKUYO LiDAR serial device path")

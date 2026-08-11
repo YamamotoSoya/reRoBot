@@ -88,7 +88,10 @@ Visualization Manager:
           Color: 204; 51; 204
           Scale: 1
           Value: true
-        Value: true
+        # claude: /odom に共分散を入れ始めた (2026-08-11 EKF 対応) ため無効化。
+        #   z/roll/pitch は「観測不能 = 信用しない」の意味で 1e6 を入れており、
+        #   有効にすると巨大な黄色い半透明楕円 (orientation 共分散) が描画されて邪魔。
+        Value: false
       Enabled: true
       Keep: 100
       Name: Odometry

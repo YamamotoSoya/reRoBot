@@ -13,9 +13,12 @@
 #   - costmap_filter_info_server: /costmap_filter_info (マスク値→コスト変換則)
 #   - Nav2 サーバ群              : controller / planner / behavior / bt_navigator
 #
-# 地図ディレクトリ構成 (map_dir 直下):
-#   <map_dir>/nav2/my_map.{yaml,pgm}        … 本体地図
-#   <map_dir>/keep_out/keep_out.{yaml,pgm}  … keepout マスク
+# 地図の渡し方は 2 通り (claude 2026-08-11 追加):
+#   a) map_dir 規約 — <map_dir>/nav2/my_map.{yaml,pgm} + <map_dir>/keep_out/keep_out.{yaml,pgm}
+#   b) map_yaml:=<yaml へのフルパス> で直接指定 (map_saver_cli の保存物をそのまま使う)。
+#      keepout マスク未作成の地図は use_keepout:=false を併用する
+#      (マスク yaml が無いと filter_mask_server の configure が失敗し
+#       localization 一式が上がらないため、フィルタ系 2 ノードごと外す)。
 #
 # 速度司令の配線: Nav2 既定の /cmd_vel を本機の /robot_speed_cmd (素の Twist) へ
 # リマップする。Twist 化は params 側の enable_stamped_cmd_vel: false で行う。
@@ -27,6 +30,7 @@ import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
+from launch.conditions import IfCondition, UnlessCondition  # claude
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 
@@ -57,9 +61,27 @@ def generate_launch_description():
         description="地図一式 (nav2/, keep_out/) を含む親ディレクトリ。",
     )
 
-    # map_dir から本体地図と keepout マスクの yaml パスを組み立てる。
-    map_yaml = PathJoinSubstitution([map_dir, "nav2", "my_map.yaml"])
-    keepout_yaml = PathJoinSubstitution([map_dir, "keep_out", "keep_out.yaml"])
+    # claude: 地図 yaml の直接指定。既定値を map_dir 規約から組み立てているので、
+    # map_yaml:= を渡したときだけ規約を無視して差し替わる (keepout_yaml も同様)。
+    map_yaml = LaunchConfiguration("map_yaml")
+    keepout_yaml = LaunchConfiguration("keepout_yaml")
+    use_keepout = LaunchConfiguration("use_keepout")
+
+    map_yaml_arg = DeclareLaunchArgument(
+        "map_yaml",
+        default_value=PathJoinSubstitution([map_dir, "nav2", "my_map.yaml"]),
+        description="本体地図 yaml へのフルパス。指定すると map_dir 規約より優先。",
+    )
+    keepout_yaml_arg = DeclareLaunchArgument(
+        "keepout_yaml",
+        default_value=PathJoinSubstitution([map_dir, "keep_out", "keep_out.yaml"]),
+        description="keepout マスク yaml へのフルパス。use_keepout:=false なら未使用。",
+    )
+    use_keepout_arg = DeclareLaunchArgument(
+        "use_keepout",
+        default_value="true",
+        description="keepout マスクを配信するか。マスク未作成の地図では false にする。",
+    )
 
     # ---- 速度司令リマップ: Nav2 の /cmd_vel を本機の /robot_speed_cmd へ ----
     cmd_vel_remap = ("/cmd_vel", "/robot_speed_cmd")
@@ -92,6 +114,7 @@ def generate_launch_description():
         name="filter_mask_server",
         output="screen",
         parameters=[params_file, {"use_sim_time": use_sim_time, "yaml_filename": keepout_yaml}],
+        condition=IfCondition(use_keepout),  # claude
     )
 
     # マスク値→コスト変換則の配信サーバ。
@@ -101,13 +124,17 @@ def generate_launch_description():
         name="costmap_filter_info_server",
         output="screen",
         parameters=[params_file, {"use_sim_time": use_sim_time}],
+        condition=IfCondition(use_keepout),  # claude
     )
 
+    # claude: lifecycle_manager は node_names を条件で切り替えられないため、
+    # keepout あり/なしで同名ノードを 2 定義し条件で片方だけ起動する。
     lifecycle_manager_localization = Node(
         package="nav2_lifecycle_manager",
         executable="lifecycle_manager",
         name="lifecycle_manager_localization",
         output="screen",
+        condition=IfCondition(use_keepout),
         parameters=[{
             "use_sim_time": use_sim_time,
             "autostart": True,
@@ -118,6 +145,19 @@ def generate_launch_description():
                 "filter_mask_server",
                 "costmap_filter_info_server",
             ],
+        }],
+    )
+
+    lifecycle_manager_localization_no_keepout = Node(  # claude
+        package="nav2_lifecycle_manager",
+        executable="lifecycle_manager",
+        name="lifecycle_manager_localization",
+        output="screen",
+        condition=UnlessCondition(use_keepout),
+        parameters=[{
+            "use_sim_time": use_sim_time,
+            "autostart": True,
+            "node_names": ["map_server", "amcl"],
         }],
     )
 
@@ -190,11 +230,15 @@ def generate_launch_description():
         use_sim_time_arg,
         params_file_arg,
         map_dir_arg,
+        map_yaml_arg,      # claude
+        keepout_yaml_arg,  # claude
+        use_keepout_arg,   # claude
         map_server,
         amcl,
         filter_mask_server,
         costmap_filter_info_server,
         lifecycle_manager_localization,
+        lifecycle_manager_localization_no_keepout,  # claude
         controller_server,
         planner_server,
         behavior_server,
