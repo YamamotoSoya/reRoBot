@@ -5,7 +5,9 @@
 # 公式イメージ内の ROS 環境は /ros_entrypoint.sh 経由で source する (overlay の場所に依存しないため)。
 set -eu
 cd "$(dirname "$0")/.."
-./scripts/bringup3d.sh
+# claude: GLIM は LIO 構成 (2026-08-11) — /imu/data が無いと odometry が進まないため
+# BNO086 込みで bringup する。
+IMU=true ./scripts/bringup3d.sh
 
 docker compose --profile glim up -d glim
 
