@@ -184,6 +184,8 @@ sequenceDiagram
 **slam_toolbox の scan queue full — 時刻待ちの行列が詰まる**
 
 - 一次資料: `docs/report/2026-05-26_slam_toolbox_scan_queue_full.md`
+- SLAM 側の視点 (採用ゲート・地図更新パイプライン) からの解剖:
+  [slam_toolbox 読本 事例A](../slam_toolbox/06_case_studies.md)
 
 ### 症状
 
