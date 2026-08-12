@@ -73,3 +73,4 @@ ROS 2 タイムスタンプ読本
 - `docs/report/2026-05-26_slam_toolbox_scan_queue_full.md` — 事例Dの事後報告
 - `docs/claude/PROJECT_STATE.md` タイムライン 08-11 (5) — 事例Aの修正記録
 - `docs/claude/knowledge/2026-08-11_ekf_odometry_code_walkthrough.md` — EKF/odometry 実装の解説 (本書第4章と相互補完)
+- [EKF センサ融合読本](../ekf_fusion/00_index.md) — 姉妹書 (2026-08-12)。本書が「時刻」、あちらが「値と不確かさ」を担当
