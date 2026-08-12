@@ -149,6 +149,9 @@ ros2 run glim_ros glim_rosbag /bags/<path/to/bag_dir> --ros-args -p config_path:
 | 同期コールバックが呼ばれない/変な組 | 入力 stamp の実在・間隔制限 | 事例C |
 | bag 再生でだけ全部壊れる | use_sim_time 忘れ | 4.6 |
 | EKF 出力が入力より遅れて振動する | センサ stamp の系統オフセット | 4.4 |
+| 速く走るほど 3D 地図だけがブレる (2D は正常) | 点群 stamp 残差の変動 (受信時刻基準) | 5.6 |
+| 週 1 回程度、1 フレームだけ点群が乱れる | GPS 週秒ロールオーバー | 5.6 |
+| ある時点から 3D 地図の質が急落 (点群は出続ける) | per-point time が全 0 に退化 | 5.6 |
 
 ---
 
