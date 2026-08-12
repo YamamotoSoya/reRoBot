@@ -94,15 +94,16 @@ while reader.has_next():
 ```
 
 ```bash
-# 4) per-point time の健全性 — ドライバ起動ログに 1 回だけ出る自己診断
-docker exec rerobot_env grep "per-point time span" /workspace/log/bringup3d.log
+# 4) per-point time の健全性 — ドライバ起動ログに 1 回だけ出る自己診断 (main コンテナ内)
+grep "per-point time span" /workspace/log/bringup3d.log
 # "per-point time span of first scan: 0.16 s (13035 points; expect ~1/rps)" なら OK
 # 0.0000 なら utcTime 不在 = deskew 不能 (LiDAR の時刻設定を確認)
 
-# 5) GLIM オフライン評価 (glim コンテナ。ファイル直読みなので use_sim_time 不要)
-docker exec -it glim_env /ros_entrypoint.sh \
-  ros2 run glim_ros glim_rosbag --ros-args -p config_path:=/glim_config \
-  -p bag_path:=/workspace/log/glim_test   # ← bag をコンテナから見える場所に置くこと
+# 5) GLIM オフライン評価 — glim コンテナに入って実行 (ファイル直読みなので use_sim_time 不要)
+#    入り方 (ホストで): docker exec -it glim_env /ros_entrypoint.sh bash
+#    bag パスは positional 引数 (ディレクトリ / .mcap / glob 可)。glim コンテナには
+#    リポジトリの bags/ が /bags としてマウントされている
+ros2 run glim_ros glim_rosbag /bags/<path/to/bag_dir> --ros-args -p config_path:=/glim_config
 ```
 
 ### 残留オフセットの微調整 (`imu_time_offset`)
