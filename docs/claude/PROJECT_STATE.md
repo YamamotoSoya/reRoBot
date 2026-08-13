@@ -185,6 +185,7 @@ EPOS4 ×2                     │
 8. **rfans_driver は LD_PRELOAD 必須** (08-01)。プリビルド `libstar.so` が古い C++ 例外ランタイムを export しており、素で起動すると同一ドメインに他ノードがいるだけで無言 SIGABRT する。launch 経由なら `additional_env` で自動適用済み — `ros2 run` で直接起動する時は手動で `LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libstdc++.so.6:/lib/x86_64-linux-gnu/libgcc_s.so.1` を付ける。launch 前に `./scripts/stop.sh` で残留ノードを掃除する習慣も予防になる。
 9. **BNO086 を fork+submodule 化するとき `firmware/COLCON_IGNORE` を fork 側にコミットし忘れると build.sh main が再び壊れる** (08-02)。vendored コピー内へのローカル追加はディレクトリ差し替えで消える。症状は「STM32 HAL/CMSIS がパッケージ誤認識 → colcon 全体停止」で、"前は動いてた" 形で再発する。
 10. **`scripts/build.sh` は端末なし (自動化・Claude) から呼ぶと `docker exec -it` が stdin エラーで失敗するのに exit 0 を返す** (08-02 発見)。何もビルドされずに成功に見える。非対話でビルドする時は `-it` を外した `docker exec` で colcon を直接叩く。
+11. **中国ベンダのソース (GBK/ISO-8859 エンコード) は grep がバイナリ扱いして黙って 0 件を返す** (08-14 に踏んだ: surestar_rfans_ros2 の ssFrameLib.h で構造体定義が「存在しない」と誤診し PROJECT_STATE に誤記録→撤回)。ベンダファイルを調べる時は先に `file <path>` でエンコード確認、grep には `-a` を付ける。「grep 0 件」は「無い」の証明にならない。
 
 ## 8. docs/ ディレクトリの地図
 
@@ -238,11 +239,11 @@ EPOS4 ×2                     │
    (✅ 08-14 実測確定: **gmReservedA = 0x5C = V6K-16G** — 実機 3 パケットとも payload[-2]=0x5C。
    新ドライバは無修正で正しいテーブルを選ぶ。**旧 SDK の「dataID 0x37」の正体は隣の payload[-1]=0x37
    (gmReservedB) を機種 ID として誤報告していたもの** — 0x37→0x57 remap ハックは SDK の読み違い補正だったと確定) →
-   (b) `surestar_rfans_ros2` の ROS2 移植 (⚠️ **前置タスク: USB zip はヘッダ欠損で素ではコンパイル不能** —
-   PACKET_ORI_S/SCDRFANS_BLOCK_S/UDP_DECBUFFER_S/RFANS_XYZ_S が未定義 (08-14 発見、USB の ssFrameLib.h は
-   定数のみの抜け殻)。補完源 = StarROS2 の `src/ssFrameLib.h` (同ベンダ系譜、PACKET_ORI_S 1406B 定義あり)。
-   なお同ヘッダの `RFANS_GM_16_FLAG=0x3732` から、SDK の「dataID 0x37」は機種 ID でなく GM フレームフラグ
-   上位バイトの疑い — 実機 gmReservedA は 0x5C の可能性が高い。
+   (b) `surestar_rfans_ros2` の ROS2 移植 (~~ヘッダ欠損でコンパイル不能~~ **← 誤診と判明・撤回 (08-14)**:
+   ssFrameLib.h は GBK+CRLF で grep がバイナリ扱い→構造体が「無い」ように見えただけ。`grep -a` で全構造体
+   (PACKET_ORI_S 等) の定義を確認、zip は自己完結している。§7-11 の罠参照。
+   参照実装 = 先輩の haruyama8940/rfans_driver_ros2 (同系コードの ROS2 移植、scratchpad に clone 済み —
+   ⚠️ 時刻まわりは 08-12 に懸念 4 件を指摘済みなので盲写しにしない)。
    移植レシピ = `docs/features/2026-06-13_rfans_driver_ros2_port.md` の
    対応表を流用。ROS 依存は薄い: calculation.cpp 0 / bufferDecode 13 / cloud_node 17 箇所。
    パッケージ名は旧 rfans_driver と重複禁止 — 新旧並存で同 bag A/B 比較するため) →
