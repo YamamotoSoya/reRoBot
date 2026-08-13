@@ -236,7 +236,12 @@ EPOS4 ×2                     │
    BNO086 repo が公開されたら fork + submodule 化 (⚠️ §7-9: COLCON_IGNORE を fork に含める)
 5. **R-Fans ドライバ刷新** (08-14 開始、タイムライン 08-14 (2)): (a) 実機 UDP の device ID バイト確認
    (tcpdump — 0x5C なら USB ドライバ素で対応、0x37 なら calculation の case 追加 1 行) →
-   (b) `surestar_rfans_ros2` の ROS2 移植 (レシピ = `docs/features/2026-06-13_rfans_driver_ros2_port.md` の
+   (b) `surestar_rfans_ros2` の ROS2 移植 (⚠️ **前置タスク: USB zip はヘッダ欠損で素ではコンパイル不能** —
+   PACKET_ORI_S/SCDRFANS_BLOCK_S/UDP_DECBUFFER_S/RFANS_XYZ_S が未定義 (08-14 発見、USB の ssFrameLib.h は
+   定数のみの抜け殻)。補完源 = StarROS2 の `src/ssFrameLib.h` (同ベンダ系譜、PACKET_ORI_S 1406B 定義あり)。
+   なお同ヘッダの `RFANS_GM_16_FLAG=0x3732` から、SDK の「dataID 0x37」は機種 ID でなく GM フレームフラグ
+   上位バイトの疑い — 実機 gmReservedA は 0x5C の可能性が高い。
+   移植レシピ = `docs/features/2026-06-13_rfans_driver_ros2_port.md` の
    対応表を流用。ROS 依存は薄い: calculation.cpp 0 / bufferDecode 13 / cloud_node 17 箇所。
    パッケージ名は旧 rfans_driver と重複禁止 — 新旧並存で同 bag A/B 比較するため) →
    (c) 実測縦角 (メモリ rfans16-vangle-table-mismatch 参照) を calculation.h テーブルへ反映 →
