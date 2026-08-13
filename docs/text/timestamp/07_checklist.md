@@ -159,4 +159,5 @@ ros2 run glim_ros glim_rosbag /bags/<path/to/bag_dir> --ros-args -p config_path:
 発火する (事例A・C)。新しい消費者 (SLAM・融合・可視化) を繋ぐたびに、この章の
 チェックリストへ戻ってくること。
 
-→ [目次に戻る](00_index.md)
+→ 補章として [第8章 巻き戻し誤差の解剖](08_rfans_rewind_anatomy.md) /
+[目次に戻る](00_index.md)

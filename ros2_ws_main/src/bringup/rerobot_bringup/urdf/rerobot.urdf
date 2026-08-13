@@ -83,7 +83,11 @@
 
   <!-- claude: 3D LiDAR (R-Fans-16, 簡易ジオメトリ)。link 名 rfans は
        rerobot_bringup.launch.py / params.yaml (rfans_driver.frame_id) と一致させること。
-       xyz はユーザ実測 (2026-08-10): 車軸中心の 7.5 cm 後方・0.725 m 上。 -->
+       xyz はユーザ実測 (2026-08-10): 車軸中心の 7.5 cm 後方・0.725 m 上。
+       向き rpy=0 は実測確認済み (2026-08-13, rviz で前方障害物が +X に出ることを確認):
+       この個体はケーブルコネクタ側 = センサ +X。現取付 (ケーブル前向き) が正。
+       ⚠️ 取付を回したら rpy と ros2_ws_glim/config/config_sensors.json の
+       T_lidar_imu を要再計算。 -->
   <link name="rfans">
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0"/>
