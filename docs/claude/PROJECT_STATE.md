@@ -88,7 +88,7 @@ EPOS4 ×2                     │
 - LIO-SAM: submodule として回収済み (07-11, ros2 branch, T13 解決)。ビルドは通るが **IMU 入手不可のため当面凍結**。
   `realsense_imu.launch.py` は IMU 再入手後の GLIM CPU (LIO) モード格上げ用に温存。
 - RViz での R-Fans 点群表示手順が未確立 (triage T12 に手順記載)。
-- **R-Fans ドライバ刷新 (08-14): ROS2 移植完了・実機で点群確認済み**。新 submodule `surestar_rfans_ros2` (公式オープンソース ROSDriver v2.3.18 ベース、pristine import 0dd574a から履歴で改造を追える)。実機 V6K-16G で 10 Hz/回転メッセージ・laserid 折り畳み済み・LD_PRELOAD 不要を確認 (タイムライン 08-14 (3))。残: timeflag→time リネーム (GLIM 対応)・実測縦角の反映判断・旧 StarROS2 との A/B 品質比較 → bringup 統合・置換判断。
+- **R-Fans ドライバ刷新 (08-14): 新ドライバ完成・実機検証済み・A/B で優位を定量確認 — 統合待ち**。新 submodule `surestar_rfans_ros2`。10 Hz/回転メッセージ・time 相対秒・stamp スキャン開始基準・laserid 折り畳み・LD_PRELOAD 不要。旧との A/B で fold16 破壊 (床が 2 高度) の解消を証明。残: bringup 統合・縦角再較正 (`vangle_override` へ)・縦角表不一致の根本解決。総括: `docs/issue/2026-08-14_rfans_driver_renewal.md`。
 - **BNO086 IMU** (08-02 統合 → 08-10 実機初疎通 OK): `/dev/ttyACM0` 開通、`/imu/data` publish 確認 (auto tare 発火も確認)。
   bringup への組み込みも完了 (`rerobot_bringup.launch.py imu:=true` / `_imu` 系ラッパ)。搭載位置は実測反映済み (0, 0, 0.64)。
   **取付向きは 08-11 の実走 bag で最終確定・URDF 反映済み**: rpy=(0,0,π/2) (正立+90°)。⚠️ 経緯 (2 転 3 転した):
@@ -115,6 +115,7 @@ EPOS4 ×2                     │
 | `2026-08-11_utm30lx_usb_instability.md` | **調査中**: UTM-30LX が同日 3 回自然断 → 現在 USB バス上に不在。次アクション = 本体電源 LED / 12 V 供給 / コネクタ点検 (ソフトでは復旧不可) |
 | `2026-08-12_glim_horizontal_drift.md` | **原因特定済み・根治未達**: GLIM(LIO) の 3D 地図が水平に塗れる。主犯 = 車輪 odom 不使用 × 廊下縮退。同環境撮り直しは効果なし (08-13) |
 | `2026-08-13_glim_param_tuning.md` | **実験完了 (2 ラウンド 12 run)**: 上記への対策候補 3 の掃引。推奨 = E11 (ivox 0.5 + downsample 0.5 + sub opt ON + global voxel 0.25 + sampling 0.5、塗れ −34.5%)。**repo config 未反映 (ユーザ判断待ち)**。屋外での評価は未実施 |
+| `2026-08-14_rfans_driver_renewal.md` | **新ドライバ完成・実機検証済み / 統合待ち**: R-Fans ドライバ刷新の総括 (旧 6 事件の年表・新旧比較表・0x37 謎解き・A/B 床メトリクス)。旧ドライバの fold16 破壊を bag で定量証明 (同一ビームの床が 2 高度)。**縦角表不一致は新旧共通で未解決** → `vangle_override` 受け口実装済み、新ドライバで再較正が次 |
 
 **優先度の要約**:
 1. 🔴 **安全系 (監査 Issue 1〜3)**: /robot_speed_cmd ウォッチドッグなし・Ctrl-C で disable 不達・速度平滑化なし。
@@ -166,6 +167,7 @@ EPOS4 ×2                     │
 | 08-14 | **生データ調査で床下ゴースト発見 = ワックス床の鏡面反射**。廊下の実勾配はユーザ確認で無し → bag 静止 2 s の生 /sdk_could (53.5 万点) を精査: **z<-1.0 の床下点が 9.4% (最深 -3.2 m)**、r-z 図で下向きビームが床交点で止まらずレイ延長線上に床下へ続く = **鏡面反射ゴースト** (床で鏡面反射→壁再入射→往復距離の偽点)。ゴースト率は r>23 m で 40-60%。逆に床帯の中央値は遠いほど「浮く」(-0.70→-0.45、斜入射で拡散反射が消え幅木等の低所物が残る)。ビーム別床読みも ±0.3-0.4 m ばらつく。**z 沈み機構の本命**: 本物の床アンカーは r<5 m のみ、外側は浮き沈み混合で前進とともに z が滑る (E9 悪化とも整合)。対策候補: E14 = preprocess cropbox で床下 z<-0.95 を除去 (未実施) / ドライバの intensity 除去 (要調査) / 斜め置き (斜入射自体を減らす)。図: `docs/issue/img/2026-08-13_glim_param_tuning/raw_floor_probe.png`、詳細は実験ログ doc |
 | 08-14 (2) | **R-Fans-16 付属 USB を発見 → ドライバ刷新プロジェクト開始**。箱の USB (`~/Documents/R-Fans_16/`) に公式 ROS1 ドライバ **ROSDriver v2.3.18 = 完全オープンソース** (bufferDecode.cpp 2,261 行 + calculation.cpp/h — クローズド libstar.so 不要) を発見。StarROS2 との決定差: ① **V6K-16G (0x5C) 明示対応** (USB フォルダ名「_GM格式 V6K-16G」= この個体の正確な素性)、② **laserid 0..31→0..15 折り畳みを公式実装** (08-14 の fold16 リバースエンジニアリングが正しかった裏付け)、③ per-point timestamp + パケット内方位角の時間補間が標準装備。**ただし 0x5C の縦角表は同じ VAngle_V6B_16G (±15°)** — 実測仰角との不一致問題 (メモリ rfans16-vangle-table-mismatch) は残るが、修正が XYZ 再投影ハック→テーブル 1 箇所書き換えの正攻法になる。付属マニュアル V4.3.10 に角度定義表・座標/時間計算式 (初の一次資料)、CtrlView (Windows 制御ソフト)・STEP モデルも同梱。**新リポジトリ `YamamotoSoya/surestar_rfans_ros2` を作成し `drivers/` に submodule 追加** (ユーザ)、pristine import (0dd574a) + COLCON_IGNORE (37e0d04) をコミット (Claude)・push (ユーザ、Claude は push 権限ブロック。認証は SSH 鍵が有効)。~~要検証: 実機 UDP の device ID バイト~~ → **同日実測で 0x5C = V6K-16G と確定** (raw ソケットで 3 パケット捕捉、payload=1206B、末尾 2B = `5c 37`。旧 SDK の「dataID 0x37」は隣の gmReservedB を誤読していたと証明 — §10-5 参照)。パッケージ名は旧 rfans_driver と重複させず A/B 比較可能にする方針 |
 | 08-14 (3) | **surestar_rfans_ros2 の ROS2 移植完了・実機点群確認**。コミット構成: エンコード正規化 (GBK→UTF-8, e0fc332 — ⚠️ GBK のままだと grep がバイナリ扱いで沈黙する罠 §7-11) → 移植本体 (b0057e4) → COLCON_IGNORE 撤去 (fc4329b)。移植は 06-13 レシピ準拠 (catkin→ament+rosidl / NodeHandle→declare_parameter / dynamic_reconfigure→param callback / InputPCAP スカラ化)。ROS1 特有の「グローバルパラメータサーバ越しの他ノード参照」(rps/model 等) は launch が両ノードに同値を配る方式に変換。**実機検証 (V6K-16G)**: コンテナ内ビルド一発成功・**LD_PRELOAD 不要**・`/rfans_driver/rfans_points` が **10 Hz = 1 回転 1 メッセージ** (旧 50ms バッチ 20 Hz より SLAM 向き)・30048 点/回転 全点有効・z −1.11〜+4.40 で幾何健全・**laserid 0..15 (公式デコードが折り畳み実装済み = fold16 問題は設計ごと消滅)**。既知の残件: mirrorid の PointField offset 誤記 (25、実体 28 — ベンダ由来・無害)・点群 time フィールド名が `timeflag` (GLIM 非認識 — 旧ドライバで踏んだのと同じ、要リネーム)・未移植ベンダツール 3 本 (dump_point_node 等、ビルド除外)。旧 StarROS2 とは UDP ポート排他なので同時起動不可 (A/B は pcap 再生か交互起動で) |
+| 08-14 (4) | **新ドライバ仕上げ + A/B 検証完了** (`docs/issue/2026-08-14_rfans_driver_renewal.md` に総括)。(1) 残修正 4 件: per-point 時刻を絶対 µs float32→相対秒 `time` 化 (実測 0〜0.104 s)・stamp をスキャン開始基準に巻き戻し (now−stamp=0.117 s で検証)・mirrorid offset 25→28・無データ 1 s で driver_node が退場するベンダループを実機モード継続に。(2) `vangle_override` パラメータ実装 (16 要素 deg、空=公式表)。(3) **A/B 床メトリクス**: 旧 (08-12 bag) は同一物理ビームの床が 2 高度 (id0 −0.69 vs 分身 id16 −1.13 = fold16 破壊の定量証拠)、新は分身消滅。**ビーム間の非平坦は新旧共通 = 縦角表不一致は独立の未解決問題** (逆算実角 ~−20° vs カタログ −15°、08-14 較正と同傾向。ただし旧較正値は fold16 汚染の疑い → 新ドライバで再較正してから override に入れる)。(4) 旧ドライバは同日ライブで decode 崩壊 (dataID=0x00, ~1 Hz — 新ドライバのレジスタ設定後の状態を旧 SDK が扱えない疑い。**新旧切替時はデバイス電源入れ直しが安全**) |
 | 08-13 (3) | **z 沈みの原因切り分け + E13 検証**。3D 断面図で見つけた「軌跡と床が廊下奥へ沈む」(E11 で −1.4 m/25 m) を診断: IMU 対重力 0.95°・LiDAR 対床 0.17° (どちらもほぼ水平=取付無罪)・IMU バイアス無罪・submap 姿勢は水平のまま原点 z だけ落ちる = **回転でなく z 並進の累積ドリフト** (床リング半径 ~2.7 m でレバーアーム不足、mm/フレームを飲み込む)。復路が同じ z(x) をなぞるのは地図整合の結果で原因ではない。**E13 = E11 + T_lidar_imu に実測相対ピッチ 0.94° を焼き込み → z 沈み −28% (予測 0.4 m 減と一致、外部パラメータの寄与を確定) だが occ30cm +18% 悪化 → 不採用、推奨は E11 のまま**。1 点静止 8 s の粗い較正では水平が犠牲 — 直すなら複数地点較正。残る沈みは奥半分 (x>13) に局在 — **要ユーザ確認: 廊下奥に実勾配は無いか**。無ければ斜め置き (対策候補 4) が z にも本命。診断詳細は実験ログ doc の z ドリフト節 |
 | 08-01 | **3D 点群不通の解決** (report 08-01)。`rfans_driver` が起動 ~90 ms で無言 SIGABRT。gdb で `libstar.so` (プリビルド blob) が `__cxa_throw` 等の古い例外ランタイムを export → FastDDS のポート衝突例外 (正常系) の unwind を横取りして abort と特定。発火条件は「同一ドメインに先住ノード」= コンテナ内の残留 RViz 等 (だから従来のまっさら起動では潜伏)。bringup_3d + StarROS2 の両 launch に `additional_env: LD_PRELOAD=libstdc++:libgcc_s` を追加して解消。tcpdump で LiDAR パケット到着 (192.168.0.3:2014, 1206 B) も確認し全経路開通。**未コミット** (StarROS2 submodule → 親 gitlink) |
 | 07-31 | **全モータ同時停止 ×2 の診断と対策**。ユーザが EPOS Studio でゲイン硬化 (キビキビ化) 後、joy 走行中に「動いて止まる + PDO 送信不能連発 + EPOS 赤ランプ」。1 回目は CANUSB の USB stall (`urb -32`) と同時刻に両モータ SDO timeout、2 回目は**最高速→ゼロ指令の瞬間に USB 無傷のまま**同症状 — 個別フォルトなら CAN 応答は残るので、ランプ無しステップ指令 → 制動電流/回生スパイク → 電源/CAN 巻き添えの signature と診断 (旧「ふにゃんふにゃん」ゲインが実質ランプとして働き隠れていた)。対策: **epos4_controller に slew rate limiter 実装** (`max_motor_accel/decel_rpm_per_s`=2000 rpm/s ≈ 3.1 m/s²、params_2d/3d に追加)。スクリーンショット (~/Pictures/epos4 setting) から EPOS 側 Max acceleration=0xFFFFFFFF (無制限)・Max output current=15 A (上限) と判明 → 0x60C5 有限化 (>2000 rpm/s) + 電流 8〜10 A + Save All Parameters を提案。EPOS Error History での確定 (0x3210 過電圧 / 0x2310 過電流 / 0x81FD bus-off) と浮かせ→接地検証が残 |
@@ -240,12 +242,13 @@ EPOS4 ×2                     │
    (✅ 08-14 実測確定: **gmReservedA = 0x5C = V6K-16G** — 実機 3 パケットとも payload[-2]=0x5C。
    新ドライバは無修正で正しいテーブルを選ぶ。**旧 SDK の「dataID 0x37」の正体は隣の payload[-1]=0x37
    (gmReservedB) を機種 ID として誤報告していたもの** — 0x37→0x57 remap ハックは SDK の読み違い補正だったと確定) →
-   (b) ~~ROS2 移植~~ (✅ 08-14 完了・実機点群確認済み — タイムライン 08-14 (3)。
-   途中「ヘッダ欠損」誤診→撤回あり: GBK+CRLF で grep がバイナリ扱いした §7-11 の罠) →
-   (c) 点群 time フィールドのリネーム (`timeflag`→`time`, GLIM 認識名) + mirrorid offset 誤記修正 →
-   (d) 実測縦角 (メモリ rfans16-vangle-table-mismatch 参照) を calculation.h テーブルへ反映するかの判断
-   (公式表 V6B_16G ±15° と実測 −22.6〜−9.6° の不一致は未解決のまま) →
-   (e) StarROS2 と点群品質を A/B 比較 (UDP ポート排他なので交互起動 or pcap 再生) → bringup 統合・置換判断
+   (b) ~~ROS2 移植~~ (✅ 08-14) → (c) ~~time リネーム + stamp 巻き戻し + mirrorid 修正~~ (✅ 08-14 (4)) →
+   (d) ~~A/B 比較~~ (✅ 08-14 (4): 旧の fold16 破壊を定量証明・新で解消。総括は
+   `docs/issue/2026-08-14_rfans_driver_renewal.md`) → **残: (e) bringup 統合**
+   (lidar_3d を新ドライバへ切替。topic 名 `/sdk_could` に合わせるか GLIM config_ros を追従させるか要決定。
+   切替時はデバイス電源入れ直し — 旧 SDK が新ドライバのレジスタ設定を扱えない) →
+   **(f) 縦角再較正** (新ドライバ出力でその場旋回較正をやり直し → `vangle_override` パラメータへ。
+   旧較正値は fold16 汚染の疑いで直接使わない) → (g) メーカー問い合わせ (任意、連絡先は issue doc §7)
 
 従来のトリアージ指示書 `docs/issue/2026-07-07_monthly_2026_6_todo_triage.prompt.md` は再編完了後に再開 (優先順・完了条件つき)。
 要約: A1 LiDAR FOV → A2 slam lifecycle → A3 rviz エラー確認 → A4 脱力モード修正 →
