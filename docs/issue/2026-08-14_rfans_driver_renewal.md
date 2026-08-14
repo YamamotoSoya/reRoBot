@@ -193,7 +193,21 @@ occ30cm (xy 1 m 格子ごとに床を推定してスライス)** を補助指標
         → 縦角再較正 (残タスク 2) が z ドリフト対策を兼ねる
 ```
 
-- 生成物: `bags/9goukan/2d3d_imu/offline/glim/exp_2026-08-14/{N0,N11}/` (dump + 画像 + 指標) +
-  `N_compare.png`。3D 4 面図は `docs/issue/img/2026-08-14_rfans_glim_eval/N{0,11}_3d.png`
+### 8-3. 密な地図 (N12 = N11 + 保存間引き 0.3→0.05 m, 08-13 の E12 相当)
+
+推定設定は N11 のまま `submap_downsample_resolution` だけ緩和した地図製品版。
+path 51.26 m = N11 (51.19 m) と一致し**推定は不変**、点数 50k → **178k (約 3.6 倍)**。
+
+![N12 密地図 上方ビュー](img/2026-08-14_rfans_glim_eval/N12_dense_top.png)
+*上方ビュー (高さ色付け・赤線 = 軌跡)。y=0 の廊下を軸に両側の部屋群・突き当り
+(x≈26 以降) まで、部屋の外周壁・什器の輪郭が判別できる。*
+
+![N12 密地図 3D 俯瞰](img/2026-08-14_rfans_glim_eval/N12_dense_3d.png)
+*3D 俯瞰。天井 (緑〜黄) と床 (紫) の 2 層の間に壁・柱が立つ。奥 (x 大) ほど
+全体が持ち上がる z 浮き (§8-2) もこの図で読める。*
+
+- 生成物: `bags/9goukan/2d3d_imu/offline/glim/exp_2026-08-14/{N0,N11,N12}/` (dump + 画像 + 指標)。
+  `N_compare.png`・3D 4 面図は `docs/issue/img/2026-08-14_rfans_glim_eval/N{0,11}_3d.png`。
+  密 PLY (外部ビューア用): `exp_2026-08-14/N12/N12_dense_map.ply`
 - 解析スクリプト: セッション scratchpad (`bag_probe.py` / `floor_probe.py` /
-  `local_floor_metrics.py` / `compare_n.py` + 08-13 の `analyze_dump.py` 系を再利用)
+  `local_floor_metrics.py` / `compare_n.py` / `render_dense.py` + 08-13 の `analyze_dump.py` 系を再利用)
