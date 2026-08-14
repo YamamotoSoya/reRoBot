@@ -2,7 +2,7 @@
 #   が両方常設 + BNO086 IMU 搭載予定のため、旧 rerobot_bringup_{2d,3d}.launch.py を
 #   1 本に統合し、起動するセンサドライバを boolean 引数で選ぶ方式にした。
 #     lidar_2d:=true/false  ... urg_node (HOKUYO, /scan)
-#     lidar_3d:=true/false  ... rfans_driver (R-Fans, /sdk_could)
+#     lidar_3d:=true/false  ... surestar_rfans_ros2 (R-Fans, /rfans_driver/rfans_points)
 #     imu:=true/false       ... bno086_imu_driver (/imu/data)
 #     ekf:=true/false       ... robot_localization EKF (車輪 odom + IMU 融合, 2026-08-11)。
 #                               true で /odometry/filtered + TF odom->base_link を EKF が
@@ -35,7 +35,7 @@ def generate_launch_description():
         description="Start urg_node (HOKUYO UTM-30LX, /scan)")
     lidar_3d_arg = DeclareLaunchArgument(
         "lidar_3d", default_value="true",
-        description="Start rfans_driver (R-Fans-16, /sdk_could)")
+        description="Start surestar_rfans_ros2 (R-Fans-16, /rfans_driver/rfans_points)")
     imu_arg = DeclareLaunchArgument(
         "imu", default_value="true",
         description="Start bno086_imu_driver (/imu/data)")
@@ -148,11 +148,15 @@ def generate_launch_description():
         output="screen",
     )
 
-    # claude: R-Fans 3D LiDAR driver。frame_id 等の静的 param は params.yaml
-    # (rfans_driver セクション) から読み、device_ip / rps / model のみ launch 引数で
-    # 上書きする (後勝ちで yaml の値を置き換え)。出力は PointCloud2 /sdk_could。
+    # claude: R-Fans 3D LiDAR driver (2026-08-14 に surestar_rfans_ros2 へ刷新 —
+    #   経緯と新旧比較は docs/issue/2026-08-14_rfans_driver_renewal.md)。
+    #   公式オープンソース実装の 2 ノード構成: driver_node (UDP→RfansPacket) +
+    #   calculation_node (→PointCloud2 /rfans_driver/rfans_points, frame_id rfans)。
+    #   旧 /sdk_could (typo topic) と LD_PRELOAD は刷新で廃止。静的 param は
+    #   params.yaml (rfans_driver / rfans_calculation セクション) から読み、
+    #   device_ip / rps / model のみ launch 引数で上書き (後勝ち)。
     rfans_node = Node(
-        package="rfans_driver",
+        package="surestar_rfans_ros2",
         executable="driver_node",
         name="rfans_driver",  # claude: params.yaml の key と一致必須
         condition=IfCondition(LaunchConfiguration("lidar_3d")),
@@ -164,14 +168,23 @@ def generate_launch_description():
                 "model": LaunchConfiguration("model"),
             },
         ],
-        # claude: libstar.so (ベンダー blob) が古い C++ 例外ランタイム (__cxa_throw 等) を
-        #   export しており、FastDDS がポート衝突時に投げる正常系例外の unwind を横取りして
-        #   SIGABRT で即死する (他ノードが同一ドメインにいると 100% 再現)。正規の
-        #   libstdc++/libgcc を先に解決させて無効化する (2026-08-01)。
-        additional_env={
-            "LD_PRELOAD": "/usr/lib/x86_64-linux-gnu/libstdc++.so.6:"
-                          "/lib/x86_64-linux-gnu/libgcc_s.so.1"
-        },
+        output="screen",
+    )
+
+    # claude: 新ドライバの点群組み立てノード (rfans_node とペア、lidar_3d 連動)
+    rfans_calc_node = Node(
+        package="surestar_rfans_ros2",
+        executable="calculation_node",
+        name="rfans_calculation",  # claude: params.yaml の key と一致必須
+        condition=IfCondition(LaunchConfiguration("lidar_3d")),
+        parameters=[
+            params_file,
+            {
+                "device_ip": LaunchConfiguration("device_ip"),
+                "rps": ParameterValue(LaunchConfiguration("rps"), value_type=int),
+                "model": LaunchConfiguration("model"),
+            },
+        ],
         output="screen",
     )
 
@@ -215,5 +228,6 @@ def generate_launch_description():
         robot_state_publisher_node,
         urg_node_node,
         rfans_node,
+        rfans_calc_node,
         imu_include,
     ])

@@ -36,47 +36,51 @@ epos4_odometry_node:
     pose_covariance_diagonal:  [0.001, 0.001, 1000000.0, 1000000.0, 1000000.0, 0.03]
     twist_covariance_diagonal: [0.001, 0.001, 1000000.0, 1000000.0, 1000000.0, 0.03]
 
-# claude: node 名 "rfans_driver" は rerobot_bringup.launch.py の Node(name=...) と一致必須
+# claude: R-Fans 新ドライバ surestar_rfans_ros2 (2026-08-14 刷新 —
+#   docs/issue/2026-08-14_rfans_driver_renewal.md)。旧 SDK 用の theta_remap 等は廃止。
+#   node 名 "rfans_driver" / "rfans_calculation" は rerobot_bringup.launch.py の
+#   Node(name=...) と一致必須。model / device_ip / rps は launch 引数で上書き可 (後勝ち)。
 rfans_driver:
   ros__parameters:
-    # デバイス機種。角度フィルタ選択と再生レート計算に使う。LED 数はパケットから自動検出
-    # 選択肢: R-Fans-32 / R-Fans-16 / R-Fans-V6K / C-Fans-128 / C-Fans-32
+    # デバイス機種。R-Fans-32 / R-Fans-16 / R-Fans-V6K / C-Fans-128 / C-Fans-32
     model: "R-Fans-16"
-    # LiDAR 実機の IP アドレス (UDP 受信先)。launch 引数 device_ip:= で上書き可
+    # LiDAR 実機の IP アドレス (UDP 受信元フィルタ)
     device_ip: "192.168.0.3"
     # LiDAR データ受信 UDP ポート
     device_port: 2014
-    # スキャン速度 [Hz / rps]。5 / 10 / 20 のいずれか。launch 引数 rps:= で上書き可
+    # スキャン速度 [Hz / rps]。5 / 10 / 20
     rps: 10
+    # データレベル (デバイスのレジスタに書き込む出力フォーマット)。実機フラッシュ既定と同じ 3
+    data_level: 3
+    # true でデュアルエコー (2 反射)
+    use_double_echo: false
+    # 生パケットトピック名の末尾 (実トピック: /rfans_driver/rfans_packets)
+    advertise_name: "rfans_packets"
+    # 制御サービス名の末尾 (実サービス: /rfans_driver/rfans_control)
+    control_name: "rfans_control"
+    # pcap 再生 (実機レス)。空文字なら実機 (UDP) モード
+    pcap: ""
+    read_once: false
+    read_fast: false
+    repeat_delay: 0.0
+
+rfans_calculation:
+  ros__parameters:
+    # 以下 4 つは rfans_driver 側と同値必須 (ROS2 にはグローバルパラメータが無いため両方に配る)
+    model: "R-Fans-16"
+    device_ip: "192.168.0.3"
+    rps: 10
+    data_level: 3
+    use_double_echo: false
+    # 点群トピック名の末尾 (実トピック: /rfans_driver/rfans_points)
+    advertise_name: "rfans_points"
+    subscribe_name: "rfans_packets"
     # 出力 PointCloud2 の header.frame_id。rerobot.urdf の rfans link 名と一致
     frame_id: "rfans"
-    # 生パケット用トピック名 (レガシー。現 publish 経路では未使用だが互換のため保持)
-    advertise_name: "rfans_packets"
-    # 制御サービス名の末尾。実サービスは /rfans_driver/rfans_control になる
-    control_name: "rfans_control"
-    # 再生ファイルのパス (.pcap / .isf)。空文字なら実機(UDP)モード
-    readfile_path: ""
-    # C-Fans 用の設定/補正 ini ファイルパス (空可。R-Fans では不要)
-    cfg_path: ""
-    # true で計算済み点群をファイルに書き出す (SDK の Export 経由)
-    save_xyz: false
-    # save_xyz=true のときの出力先ディレクトリ
-    OutExport_path: ""
-    # true でデュアルエコー (2 反射) データレベルを使う
-    use_double_echo: false
-    # true なら点群の time (旧 timeflag) の基準に GPS 時刻、false なら UTC(内部)時刻を使う
-    # (どちらでも出力はスキャン先頭からの相対秒。GLIM の deskew 用)
+    # 1 メッセージにまとめる回転角 [deg]。360 = 1 回転 1 メッセージ
+    angle_duration: 360.0
+    # true なら header.stamp にデバイス GPS 時刻 (通常 false = ROS 時刻を回転幅ぶん巻き戻し)
     use_gps: false
-    # 再生レート計算に使う角度範囲 [deg]。rate は cut_angle_range/360 で按分
-    cut_angle_range: 360.0
-    # true で再生時のレート制限を無効化し、できるだけ速く読み込む
-    read_fast: false
-    # true で再生ファイルを 1 回だけ読む。false ならループ再生
-    read_once: false
-    # ループ再生時、ファイル末尾でループし直すまでの待機秒数
-    repeat_delay: 0.0
-    # claude: z=0 回避用 dataID remap(10進)。R-Fans-16 GM の 0x37(=55) を
-    #   GM-16 縦角表へ分岐する 0x57(=87) に書き換える。_to=0 で remap 無効。
-    #   詳細は memory reference_rfans16_dataid_0x37 参照。
-    theta_remap_from: 55   # 0x37
-    theta_remap_to: 87     # 0x57
+    # 実測縦角オーバーライド [deg] (laserid 0..15 順、16 要素)。未設定 = 公式表 VAngle_V6B_16G。
+    # 新ドライバ出力での再較正後にここへ入れる (旧較正値は fold16 汚染の疑いで使わない):
+    # vangle_override: [-22.6, -21.0, -19.1, -18.5, -16.7, -15.7, -13.7, -13.0, -10.4, -9.6, ...]

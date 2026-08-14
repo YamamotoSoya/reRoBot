@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # claude: 3D SLAM (GLIM) の一括起動 = bringup3d (main, バックグラウンド)
 #         + glim_rosnode (glim コンテナ = koide3 公式イメージ, フォアグラウンド)。
-# GLIM は /sdk_could を購読する (config: ros2_ws_glim/config → /glim_config に mount)。
+# GLIM は /rfans_driver/rfans_points を購読する (2026-08-14 ドライバ刷新) (config: ros2_ws_glim/config → /glim_config に mount)。
 # 公式イメージ内の ROS 環境は /ros_entrypoint.sh 経由で source する (overlay の場所に依存しないため)。
 set -eu
 cd "$(dirname "$0")/.."
@@ -11,10 +11,10 @@ IMU=true ./scripts/bringup3d.sh
 
 docker compose --profile glim up -d glim
 
-echo "[glim3d] /sdk_could の点群を待っています (最大 30 秒)..."
+echo "[glim3d] /rfans_driver/rfans_points の点群を待っています (最大 30 秒)..."
 docker exec glim_env /ros_entrypoint.sh bash -c \
-  'timeout 30 bash -c "until ros2 topic list 2>/dev/null | grep -q sdk_could; do sleep 1; done"' || {
-  echo "[glim3d] ERROR: /sdk_could が見えません。bringup3d のログと R-Fans の接続を確認してください。"
+  'timeout 30 bash -c "until ros2 topic list 2>/dev/null | grep -q rfans_points; do sleep 1; done"' || {
+  echo "[glim3d] ERROR: /rfans_driver/rfans_points が見えません。bringup3d のログと R-Fans の接続を確認してください。"
   exit 1
 }
 

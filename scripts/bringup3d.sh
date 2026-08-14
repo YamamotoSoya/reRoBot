@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # claude: 3D bringup (CANopen bus + epos4 + robot_state_publisher + rfans_driver) を
-# main コンテナでバックグラウンド起動する。点群は /sdk_could (frame: rfans)。
+# main コンテナでバックグラウンド起動する。点群は /rfans_driver/rfans_points (frame: rfans, 2026-08-14 ドライバ刷新)。
 # ログ: docker exec rerobot_env tail -f /workspace/log/bringup3d.log
 # claude: IMU=true (env 変数) で BNO086 を同時起動する (GLIM の LIO 構成入力用, 2026-08-11)。
 #   例: IMU=true ./scripts/bringup3d.sh   (glim3d.sh はこの構成で呼ぶ)

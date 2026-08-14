@@ -78,7 +78,7 @@
     // claude: points は rfans_driver の出力。imu_topic は bno086_imu_driver の出力
     // (LIO 構成 2026-08-11 から実際に消費される。時刻ずれは imu_time_offset で微調整)
     "imu_topic": "/imu/data",
-    "points_topic": "/sdk_could",
+    "points_topic": "/rfans_driver/rfans_points",
     "image_topic": "/image",
     // QoS options
     "imu_qos": {

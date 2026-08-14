@@ -1,6 +1,6 @@
 # R-Fans-16 ドライバ刷新 — 旧 StarROS2 の問題総括と新 surestar_rfans_ros2 への移行
 
-- **ステータス (2026-08-14): 新ドライバ完成・実機検証済み。bringup 統合と縦角再較正が残**
+- **ステータス (2026-08-14): 統合完了 — bringup/GLIM/scripts を新ドライバへ全面切替済み (実機検証込み)。残は縦角再較正のみ**
 - 新リポジトリ: `YamamotoSoya/surestar_rfans_ros2` (submodule: `ros2_ws_main/src/drivers/surestar_rfans_ros2`)
 - 旧リポジトリ: `YamamotoSoya/StarROS2` (当面参照用に残置)
 - 関連: `docs/features/2026-06-13_rfans_driver_ros2_port.md` (旧移植)、`docs/text/timestamp/` 第5・8章、
@@ -134,9 +134,11 @@ ros2 param set /calculation_node max_range 50.0
 
 ## 7. 残タスク
 
-1. **bringup 統合**: `rerobot_bringup.launch.py` の lidar_3d を新ドライバに切替
-   (topic 名を `/sdk_could` に合わせるか GLIM 側 `config_ros.json` を追従させるか要決定)。
-   旧 StarROS2 は当面 submodule として残置、安定後に削除判断。
+1. ~~**bringup 統合**~~ (✅ 2026-08-14 同日完了): lidar_3d を新ドライバ 2 ノードに切替 (LD_PRELOAD 撤去)、
+   点群 topic は **`/rfans_driver/rfans_points` に統一** (typo 由来の `/sdk_could` は廃止し、GLIM
+   `config_ros.json` / scripts を追従)。params.yaml は `rfans_driver` + `rfans_calculation` の 2 セクション化
+   (theta_remap 廃止)。旧 StarROS2 は **COLCON_IGNORE 化して参照専用で残置** (コンテナ内の旧
+   build/install 残骸も削除済み)。実機検証: bringup_3d 経由で 10.1 Hz / frame `rfans` を確認。
 2. **縦角再較正**: 新ドライバ出力でその場旋回較正を再実施 → `vangle_override` に反映。
    床下ゴースト (08-14 の鏡面反射調査) の除去も preprocess 側で併せて検討。
 3. **メーカー問い合わせ (任意)**: 「V6K-16G GM 格式」+ シリアルで正式な縦角表を請求
