@@ -126,7 +126,7 @@ extension_modules
 ## 2.5 実行時に何が起きているか — dump という証拠
 
 GLIM は終了時 (または要求時) に推定結果一式を dump する。08-12 の実走 dump
-(`bags/9goukan/3d_imu/2026-08-12_glim_dump/`) の中身がそのまま 3 層構造の証拠になっている:
+(`bags/9goukan/3d_imu/offline/glim/2026-08-12_dump/`) の中身がそのまま 3 層構造の証拠になっている:
 
 ```
 dump の構造

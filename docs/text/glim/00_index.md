@@ -72,5 +72,5 @@ GLIM 読本
 - `docs/claude/PROJECT_STATE.md` — GLIM 導入年表 (07-26 採用 → 08-11 LIO 切替 → 08-12 初評価)
 - `docs/text/timestamp/04_time_consumers.md` §4.5 / `06_case_studies.md` 事例A・B — GLIM の時刻面
 - `docs/report/2026-08-01_rfans_driver_libstar_exception_runtime_sigabrt.md` ほか R-Fans 系 report — 入力側の経緯
-- `bags/9goukan/3d_imu/2026-08-12_glim_dump/` — 実行 dump の実物 (第 7 章で読み方)
+- `bags/9goukan/3d_imu/offline/glim/2026-08-12_dump/` — 実行 dump の実物 (第 7 章で読み方)
 - 上流: https://github.com/koide3/glim / ドキュメント https://koide3.github.io/glim/

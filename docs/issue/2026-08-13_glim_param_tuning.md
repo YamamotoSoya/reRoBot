@@ -2,7 +2,7 @@
 # GLIM パラメータ掃引実験 — 水平ドリフト対策候補 3 の検証
 
 - **ステータス: 実験完了 (2 ラウンド・計 12 run) / 推奨 = E11 (塗れ −34.5%)。repo config は未変更 — 反映はユーザ判断**
-- 実施: 2026-08-13 (9 号館 235 s bag `bags/9goukan/3d_imu/2026-08-12` でオフライン)
+- 実施: 2026-08-13 (9 号館 235 s bag `bags/9goukan/3d_imu/online/rosbag/2026-08-12` でオフライン)
 - 親 issue: `docs/issue/2026-08-12_glim_horizontal_drift.md` (対策候補 3「パラメータ調整」の実行)
 
 ## 目的
@@ -224,7 +224,7 @@ keyframe 整合が取り直され、壁の帯がわずかに薄くなる。*
 *E12 — 全景 (E11 と同じ 4 面構成)。147k 点。occ 系指標は密度が違うため E0〜E11 と
 比較不能な点に注意 (幾何は E11 と同一)。*
 
-- 密 PLY (外部ビューア用): `bags/9goukan/3d_imu/exp_2026-08-13/E12/E12_dense_map.ply`
+- 密 PLY (外部ビューア用): `bags/9goukan/3d_imu/offline/glim/exp_2026-08-13/E12/E12_dense_map.ply`
 - **運用ノート**: 地図を成果物として出すときだけ 0.05 に、通常の評価は 0.3 のままが
   無難 (dump サイズ・大域最適化の負荷が増えるため)
 
@@ -305,12 +305,18 @@ r < 5 m 程度だけで、その外側の地面付近は「浮いた低所オブ
    要調査
 3. 斜め置き (対策候補 4) は斜入射そのものを減らすので、この問題の根本にも効く
 
+**後日談 (2026-08-14 同日夕方, ドライバ刷新後)**: 新ドライバ bag では床下ゴーストが
+**9.4% → 0.02% にほぼ消滅**した。この節の床下点群の大部分は鏡面反射ではなく
+**fold16 破壊 (壊れた仰角) の産物**だったと判明 — 鏡面反射説は下方修正。同時に
+z ドリフトの「沈み」も消えた (符号反転 +0.8 m の「浮き」が残存、容疑は縦角表)。
+E14 (cropbox) は不要になった。詳細: `2026-08-14_rfans_driver_renewal.md` §8。
+
 ## 生成物
 
 - 画像 (トップビュー `EN_topview.png` / 立体・断面 `EN_3d.png` / 比較図 ×2)・
   ベースライン config: `docs/issue/img/2026-08-13_glim_param_tuning/`
 - 各 run の dump・指標 JSON: glim コンテナ `/tmp/exp/E{0..5}/` +
-  `bags/9goukan/3d_imu/exp_2026-08-13/` (git 管理外, root 所有)
+  `bags/9goukan/3d_imu/offline/glim/exp_2026-08-13/` (git 管理外, root 所有)
 - 解析スクリプト: セッション scratchpad (`analyze_dump.py` / `extra_metrics.py` /
   `compare_runs.py` / `compare_runs2.py` / `render3d.py` / `make_config.py` + spec_E*.json)
 
@@ -318,7 +324,7 @@ r < 5 m 程度だけで、その外側の地面付近は「浮いた低所オブ
 
 ```bash
 # glim コンテナ内。変異 config を /tmp/exp/EN/config に用意して:
-nice -n 10 ros2 run glim_ros glim_rosbag /bags/9goukan/3d_imu/2026-08-12 \
+nice -n 10 ros2 run glim_ros glim_rosbag /bags/9goukan/3d_imu/online/rosbag/2026-08-12 \
   --ros-args -p config_path:=/tmp/exp/EN/config \
   -p auto_quit:=true -p dump_path:=/tmp/exp/EN/dump -p playback_speed:=1.0
 # 解析 (dump → 地図再構成 + 指標 + トップビュー PNG):

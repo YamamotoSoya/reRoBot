@@ -2,7 +2,10 @@
 # GLIM (3D+IMU) の水平ドリフト — 原因切り分けと対策候補
 
 - **ステータス: 調査完了・根本原因を特定 / 対策候補 3 (パラメータ調整) を 2026-08-13 に 2 ラウンド実験済み — 塗れ −34.5% の推奨設定 E11 を提示 (`2026-08-13_glim_param_tuning.md`)。根治は未達**
-- 発覚: 2026-08-12 (9 号館 235 s bag `bags/9goukan/3d_imu/2026-08-12` の GLIM 評価中)
+- 2026-08-14 追記: ドライバ刷新後の新 bag 再評価 (`2026-08-14_rfans_driver_renewal.md` §8) で
+  fold16 破壊の除去による塗れ改善は約 −7% にとどまり、**本 issue の結論 (縮退 × 車輪 odom
+  不使用が主犯) は不変**。E11 の有効性も新ドライバで再現 (−14%)。z 沈みは消滅 (浮き +0.8 m に反転)。
+- 発覚: 2026-08-12 (9 号館 235 s bag `bags/9goukan/3d_imu/online/rosbag/2026-08-12` の GLIM 評価中)
 - 関連: PROJECT_STATE タイムライン 08-11 (GLIM LIO 切替) / 08-12 (5)〜(4)、
   `docs/text/timestamp/`(タイムスタンプ読本)、`docs/issue/2026-08-01_odometry_stop_wobble_zero_stamp_pairing.md`(車輪 odom stamp)
 
@@ -113,9 +116,9 @@ R-Fans データ品質・T_lidar_imu・deskew・IMU 経路はいずれも無罪�
 ## 生成物 (すべて git 管理外の作業ディレクトリ、本 doc の画像は docs にコピー済み)
 
 - 2D SLAM 地図: `maps/rfans2d_slam.png` / `maps/rfans2d_slam_imuyaw.png`
-- GLIM 地図比較: `bags/9goukan/3d_imu/_glim_lio_vs_cticp.png`
+- GLIM 地図比較: `bags/9goukan/3d_imu/offline/glim/2026-08-12_analysis/_glim_lio_vs_cticp.png`
 - 軌跡重ね: `maps/traj_overlay.png`
-- GLIM 点群: `bags/9goukan/3d_imu/2026-08-12_glim_map.ply` (LIO) /
+- GLIM 点群: `bags/9goukan/3d_imu/offline/glim/2026-08-12_analysis/2026-08-12_glim_map.ply` (LIO) /
   `2026-08-12_cticp_map.ply` (CT-ICP)
 - 解析スクリプト: セッション scratchpad (ring_probe / odom_accum / offset_sweep /
   hybrid_accum / pc2scan / imu_odom_tf / mapgrab / compare_maps / traj_overlay)
