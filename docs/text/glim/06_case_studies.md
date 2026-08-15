@@ -123,20 +123,23 @@ stamp をスキャン先頭基準に修正 + per-point time を相対化 + フ�
 
 **運用の罠 3 連発 — viewer とダンプの仕様**
 
-- 一次資料: `docs/claude/PROJECT_STATE.md` の 08-12 記録 (運用知見)
+- 一次資料: `docs/claude/PROJECT_STATE.md` の 08-12 記録 (運用知見)。
+  #1 の機構は `docs/issue/2026-08-15_offline_viewer_zenity_dialog_hang.md` で実証・精密化済み
 
 ### 症状と機構と対処 (3 件まとめて)
 
 | # | 症状 | 機構 | 対処 |
 |---|---|---|---|
-| 1 | offline_viewer が進捗 0% でハング | 内部で zenity の「Do optimization?」ダイアログを出そうとして環境に表示できず待ち続ける | `--export_path <out.ply>` を付けてダイアログをスキップし PLY 書き出しに直行 |
+| 1 | offline_viewer が進捗 0% でハング / Open New Map が無反応 | zenity の「Do optimization?」・フォルダ選択ダイアログは**起動して最前面にいるのに中身が描画されず不可視** (zenity 4 = GTK4 の GL 描画が CRD の X サーバ (DRI3 なし) で失敗)。pfd が回答待ちで永遠にブロック (2026-08-15 実証) | **`GSK_RENDERER=cairo` で解決済み** (compose の glim 環境変数、要コンテナ再作成)。非対話は従来通り `--export_path <out.ply>`。詳細: `docs/issue/2026-08-15_offline_viewer_zenity_dialog_hang.md` |
 | 2 | dump の values.bin が欠けて offline_viewer が読めない | glim_rosbag を Ctrl+C 連打で止めると dump 書き込みが中断される | `glim_rosbag ... --ros-args -p auto_quit:=true` で bag 末尾到達時に自動終了させる |
 | 3 | 走行中、古い場所の点群が薄く消えていくように見える | standard_viewer の**表示用間引き** (第4章 4.10)。カメラも機体追尾がデフォルト | 地図は消えていない。最終確認は dump を offline_viewer / PLY で見る |
 
 ### 教訓
 
-- 「ハング」に見えたら、まず**見えないダイアログ・見えないプロンプト**を疑う
-  (ヘッドレス環境と GUI ツールの相性問題の典型)
+- 「ハング」に見えたら、まず**見えないダイアログ・見えないプロンプト**を疑う。
+  切り分けの最短手は `ps -ef` のプロセスツリー — 入力待ちの zenity 子プロセスが
+  生きていれば確定 (2026-08-15 実証。ダイアログは「出ない」のではなく
+  「最前面にいるのに描画されず不可視」のこともある — 詳細は issue 2026-08-15)
 - 終了は必ず正規の経路で — 推定系のツールは終了時に成果物を書くことが多い
 - ビューアの見た目は推定状態の証拠にならない。証拠は dump (第7章 7.5)
 

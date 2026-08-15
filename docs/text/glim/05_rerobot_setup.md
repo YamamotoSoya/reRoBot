@@ -35,7 +35,7 @@ glim_env の特殊性 (docker-compose.yml:59-80 / docker/Dockerfile_glim)
 ├── なぜ別コンテナか: GTSAM 4.3a0 要求が apt の ros-jazzy-gtsam 4.2.0 と衝突
 │   └── 「依存の壁」で分割する方針の典型例 (LIO-SAM の GTSAM 事故が教訓)
 ├── mount: ./ros2_ws_glim/config → /glim_config (JSON のみ。colcon パッケージではない)
-│   └── ./maps → /maps, ./bags → /bags (オフライン評価用)
+│   └── ./maps → /workspace/maps, ./bags → /workspace/bags (オフライン評価用。2026-08-15 に他コンテナと統一)
 └── ROS 環境の source は /ros_entrypoint.sh 経由 (overlay の場所に依存しないため)
 ```
 

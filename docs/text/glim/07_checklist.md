@@ -45,8 +45,8 @@ docker exec -it rerobot_env bash -c \
 
 # GLIM で処理 (glim コンテナ。auto_quit を忘れない — 事例C-2)
 docker exec -it glim_env /ros_entrypoint.sh \
-  ros2 run glim_ros glim_rosbag /bags/<name> --ros-args \
-    -p config_path:=/glim_config -p auto_quit:=true -p dump_path:=/bags/<name>_dump
+  ros2 run glim_ros glim_rosbag /workspace/bags/<name> --ros-args \
+    -p config_path:=/glim_config -p auto_quit:=true -p dump_path:=/workspace/bags/<name>_dump
 ```
 
 ⚠️ `bags/` はコンテナ (root) 所有でホストから直接書けない。ホスト側で加工したければ
@@ -78,7 +78,14 @@ EOF
 
 # (b) 最終地図の PLY 書き出し (zenity ダイアログ回避つき — 事例C-1)
 docker exec -it glim_env /ros_entrypoint.sh \
-  ros2 run glim_ros offline_viewer /bags/<name>_dump --export_path /bags/<name>.ply
+  ros2 run glim_ros offline_viewer /workspace/bags/<name>_dump --export_path /workspace/bags/<name>.ply
+
+# (c) GUI で対話的に見る場合。「Do optimization?」やフォルダ選択の zenity ダイアログが
+#     不可視になり 0% 停止に見える問題は GSK_RENDERER=cairo (compose 設定済み) で解決済み —
+#     コンテナが古いままなら docker compose --profile glim up -d glim で再作成してから。
+#     (詳細: docs/issue/2026-08-15_offline_viewer_zenity_dialog_hang.md)
+docker exec -it glim_env /ros_entrypoint.sh \
+  ros2 run glim_ros offline_viewer /workspace/bags/<name>_dump
 ```
 
 `odom_*.txt` と `traj_*.txt` の差が「大域最適化が直した量」— 差が巨大なら①層 (odometry)
@@ -103,8 +110,8 @@ docker exec glim_env bash -c 'cp -r /glim_config /tmp/glim_ct'
 
 ```bash
 docker exec -it glim_env /ros_entrypoint.sh \
-  ros2 run glim_ros glim_rosbag /bags/<name> --ros-args \
-    -p config_path:=/tmp/glim_ct -p auto_quit:=true -p dump_path:=/bags/<name>_ct_dump
+  ros2 run glim_ros glim_rosbag /workspace/bags/<name> --ros-args \
+    -p config_path:=/tmp/glim_ct -p auto_quit:=true -p dump_path:=/workspace/bags/<name>_ct_dump
 ```
 
 ⚠️ `config.json` 内の古い「戻し手順」コメント (imu_frame_id: glim_base 云々) は
@@ -121,7 +128,7 @@ docker exec -it glim_env /ros_entrypoint.sh \
 | 床が傾く・z がドリフト | odometry 方式 | CT-ICP (重力基準なし) / IMU が実は使われていない | 第1章 1.2。enable_imu 3 点セット確認 (7.6) |
 | 水平に流れる (床は健全) | 環境の特徴量・経路 | 縮退 × 車輪 prior 不在 | 事例A。撮り直し / 融合 / 第4章 4.11 |
 | TF ツリーが壊れた (親二重) | `ros2 run tf2_tools view_frames` | publish_imu2lidar: true に戻した等 | 第5章 5.4 |
-| offline_viewer が 0% で止まる | — | zenity ダイアログ待ち | `--export_path` (事例C-1) |
+| offline_viewer が 0% で止まる | `ps -ef` で zenity 子プロセス | 不可視 zenity ダイアログの回答待ち (GTK4 GL × CRD) | `GSK_RENDERER=cairo` (compose 設定済み・要コンテナ再作成) / 非対話は `--export_path` (事例C-1、issue 2026-08-15) |
 | dump が読めない / values.bin 欠け | 終了のさせ方 | Ctrl+C 連打で dump 中断 | `-p auto_quit:=true` (事例C-2) |
 | 走行中に古い点群が消えて見える | — | viewer の表示間引き (仕様) | 事例C-3。証拠は dump で |
 | 処理が実時間に追いつかない | CPU 使用率 | CPU 版で点数過多 | 第4章 4.4 downsample↑ / num_threads↑ / smoother_lag↓ |
