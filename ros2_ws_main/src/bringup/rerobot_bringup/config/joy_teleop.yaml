@@ -27,11 +27,11 @@ teleop_twist_joy_node:
     # --- スケール (= 出力の最大値)。params.yaml 系の上限に合わせる ---
     #     通常時は控えめ、turbo ボタン押下で max まで出す
     scale_linear:
-      x: 0.2               # [m/s]  通常
+      x: 0.5               # [m/s]  通常
     scale_linear_turbo:
       x: 1.0               # [m/s]  turbo  (max_linear = 1.0 相当)
     scale_angular:
-      yaw: 0.5             # [rad/s] 通常
+      yaw: 0.6             # [rad/s] 通常
     scale_angular_turbo:
       yaw: 2.0             # [rad/s] turbo  (max_angular = 2.0 相当)
 
