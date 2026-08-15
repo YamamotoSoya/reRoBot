@@ -4,11 +4,10 @@
      1 本に統合した。起動するドライバは rerobot_bringup.launch.py の引数で選ぶ
      (URDF は常に全センサの TF を出す — 使わないセンサの静的 TF が残っても無害)。
      センサ位置はユーザ実測値 (2026-08-10 反映): laser (0.07, 0, 0.215) /
-     rfans (-0.02, 0, 0.75) / imu (0, 0, 0.64)。
-     rfans は 2026-08-15 に前傾 45° + ヨー 180° 取付へ変更 (rpy=(0,-pi/4,pi)、xyz も同日再実測
-     — 詳細は rfans_joint のコメント参照)。
+     rfans (-0.075, 0, 0.725) / imu (0, 0, 0.64)。
+     rfans は正立取付 (〜2026-08-15 の標準配置 — 詳細は rfans_joint のコメント参照)。
 
-     ⚠️ rfans 取付プリセット (2026-08-15 導入、丸ごとコピー方式): この内容 = tilted45。
+     ⚠️ rfans 取付プリセット (2026-08-15 導入、丸ごとコピー方式): この内容 = flat。
      プリセットは rerobot.{tilted45,tilted15,flat}.urdf。切替は必ず GLIM 側
      ros2_ws_glim/config/config_sensors.{tilted45,tilted15,flat}.json とセットで cp する:
        cp ros2_ws_main/src/bringup/rerobot_bringup/urdf/rerobot.<preset>.urdf \
@@ -94,9 +93,10 @@
 
   <!-- claude: 3D LiDAR (R-Fans-16, 簡易ジオメトリ)。link 名 rfans は
        rerobot_bringup.launch.py / params.yaml (rfans_driver.frame_id) と一致させること。
-       取付変更 (2026-08-15): 前方 45° 前傾 + センサ自体をヨー 180° (ケーブル側=センサ+X が後方上向き)。
-       物理合成 R = Ry(+45°)·Rz(180°) = Rz(180°)·Ry(-45°) → URDF rpy = (0, -pi/4, pi)。
-       xyz はユーザ実測 (2026-08-15): 車軸中心の 2 cm 後方・0.75 m 上 (傾斜マウント後に再実測)。
+       正立取付 (〜2026-08-15 の標準配置): xyz は 2026-08-10 実測 (車軸中心の 7.5 cm 後方・0.725 m 上)。
+       rpy=0 は 2026-08-13 に RViz で実測確認 (前方障害物が +X に出る。この個体は
+       ケーブルコネクタ側 = センサ +X で、ケーブル前向き取付が正)。
+       ⚠️ 物理的に正立へ戻す際は傾斜マウント撤去で位置が変わりうるため xyz 要再実測。
        ⚠️ rpy/xyz を変えたら ros2_ws_glim/config/config_sensors.json の T_lidar_imu を要再計算。 -->
   <link name="rfans">
     <visual>
@@ -113,7 +113,7 @@
   <joint name="rfans_joint" type="fixed">
     <parent link="base_link"/>
     <child  link="rfans"/>
-    <origin xyz="-0.02 0 0.75" rpy="0 -0.7853981634 3.1415926536"/>
+    <origin xyz="-0.075 0 0.725" rpy="0 0 0"/>
   </joint>
 
   <!-- claude: BNO086 IMU (bno086_imu_driver の frame_id 既定 imu_link と一致させる)。
