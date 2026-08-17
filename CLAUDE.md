@@ -38,7 +38,7 @@ docker compose up -d main
 - **並列度は控えめに** — このマシンは重いビルドで落ちる。make は `BUILD_JOBS` (既定 2)、colcon は 1 パッケージずつ、イメージビルドは 1 サービスずつ。`docker compose build` を引数なしで直接叩かない (3 イメージ並列になる)。
 
 git submodule は**各 workspace の src/ 直下に直接配置** (旧 symlink 方式は 2026-07-26 に撤廃):
-`ros2_ws_main/src/drivers/{epos4compact50-5can, surestar_rfans_ros2, StarROS2, realsense-ros}`, `ros2_ws_liosam/src/LIO-SAM`。
+`ros2_ws_main/src/drivers/{epos4compact50-5can, surestar_rfans_ros2, StarROS2, realsense-ros}`, `ros2_ws_liosam/src/LIO-SAM`。例外として ROS ws 外のツールは `tools/` 直下 (`tools/pointcloud_to_2dmap` — GLIM 3D 地図→2D 占有格子変換、glim コンテナでビルド。手順は `tools/README.md`、2026-08-17)。
 `ros2_ws_main/src/` は `app/` (自作 C++) / `bringup/` (launch 資産) / `drivers/` (submodule) の 3 グループ構成 (colcon は src を再帰探索するので階層はビルドに無影響)。
 旧モノリシック構成は `archive/monolithic` ブランチ + タグ `v1-monolithic` に恒久保存されている (参照専用 — 触るなら `git worktree` で別ツリーへ)。
 
@@ -93,6 +93,7 @@ ros2 launch rerobot_slamtoolbox slam.launch.py       # slamtoolbox コンテナ:
 ros2 launch rerobot_bringup nav2.launch.py           # main コンテナ: map_server + amcl + Nav2 (keepout 込み) + nav2.rviz
 ros2 launch rerobot_bringup joy_teleop.launch.py     # main コンテナ: Xbox pad (LB=deadman, RB=turbo)
 ros2 launch rerobot_bringup realsense_imu.launch.py  # main コンテナ: RealSense IMU → madgwick → /imu/data (LIO/GLIM 系入力用)
+ros2 launch rerobot_bringup rfans_scan.launch.py     # main コンテナ: R-Fans 点群 → /scan (GLIM 由来 3D 地図で Nav2 を回す用。urg_node と /scan 衝突するので lidar_2d:=false 前提。2026-08-17)
 ```
 
 (旧 `epos4_vel_ros2` の単体テストは 2026-07-26 に削除 — 必要なら `v1-monolithic` から復元)

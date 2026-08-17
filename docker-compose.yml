@@ -77,6 +77,7 @@ services:
       - ./ros2_ws_glim/config:/glim_config
       - ./maps:/workspace/maps # claude: 2026-08-15 他コンテナと同じ /workspace 配下に統一
       - ./bags:/workspace/bags # claude: glim_rosbag でのオフライン評価用
+      - ./tools:/workspace/tools # claude: 2026-08-17 pointcloud_to_2dmap (3D 地図→2D 占有格子変換) のビルド場所。成果物をホスト側に永続化
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
     command: bash
 

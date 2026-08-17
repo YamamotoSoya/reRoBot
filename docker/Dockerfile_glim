@@ -6,7 +6,11 @@ FROM koide3/glim_ros2:jazzy
 
 RUN apt-get update && apt-get install -y \
     ros-jazzy-rviz2 \
+    libpcl-dev \
+    pcl-tools \
     && rm -rf /var/lib/apt/lists/*
+# claude: libpcl-dev + pcl-tools は tools/pointcloud_to_2dmap (3D 地図→2D 占有格子) の
+# ビルドと pcl_ply2pcd (PLY→PCD 変換) 用 (2026-08-17 追加。稼働コンテナには apt 適用済み)
 
 # claude: 対話シェル用 (スクリプト経由の実行では /ros_entrypoint.sh + compose の environment が正)
 RUN echo "source /opt/ros/jazzy/setup.bash" >> ~/.bashrc && \

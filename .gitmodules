@@ -14,3 +14,7 @@
 [submodule "ros2_ws_main/src/drivers/surestar_rfans_ros2"]
 	path = ros2_ws_main/src/drivers/surestar_rfans_ros2
 	url = https://github.com/YamamotoSoya/surestar_rfans_ros2.git
+[submodule "tools/pointcloud_to_2dmap"]
+	path = tools/pointcloud_to_2dmap
+	url = https://github.com/koide3/pointcloud_to_2dmap
+	ignore = untracked
