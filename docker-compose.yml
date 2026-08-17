@@ -61,6 +61,8 @@ services:
     profiles: [glim]
     network_mode: host
     ipc: host
+    # claude: GPU 描画の有効化は docker-compose.override.yml (git 管理外、GPU 機のみに置く) で行う。
+    # ここに gpus: を直書きすると GPU なし PC で glim コンテナが作成不能になるため書かないこと (2026-08-17)
     # claude: koide3 公式イメージ (GLIM ビルド済み + GTSAM 4.3a0 同梱) ベースの薄い Dockerfile。
     # GLIM 本体はビルドしない。設定は ./ros2_ws_glim/config を bind mount し、glim_rosnode に config_path で渡す。
     build:

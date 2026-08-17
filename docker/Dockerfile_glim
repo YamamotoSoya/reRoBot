@@ -12,6 +12,17 @@ RUN apt-get update && apt-get install -y \
 # claude: libpcl-dev + pcl-tools は tools/pointcloud_to_2dmap (3D 地図→2D 占有格子) の
 # ビルドと pcl_ply2pcd (PLY→PCD 変換) 用 (2026-08-17 追加。稼働コンテナには apt 適用済み)
 
+# claude: VirtualGL (2026-08-17) — CRD のリモート X (:20, video ドライバ none) は GPU を持たず
+# 素の GLX は llvmpipe (CPU 描画) に落ちるため、GL 描画を EGL 経由で NVIDIA GPU に
+# オフスクリーン実行して結果画像だけ X に貼る。使い方: `vglrun -d egl0 <GUI コマンド>`。
+# 前提: GPU 機では docker-compose.override.yml (git 管理外) の gpus: all + nvidia-container-toolkit。
+# GPU なし PC でもインストール自体は無害 (vglrun を使わなければ従来どおり)。
+# mesa-utils は診断用 (glxinfo -B で renderer が NVIDIA か llvmpipe かを確認する)
+RUN apt-get update && apt-get install -y mesa-utils \
+    && curl -fsSL -o /tmp/vgl.deb https://github.com/VirtualGL/virtualgl/releases/download/3.1.5/virtualgl_3.1.5_amd64.deb \
+    && apt-get install -y /tmp/vgl.deb \
+    && rm /tmp/vgl.deb && rm -rf /var/lib/apt/lists/*
+
 # claude: 対話シェル用 (スクリプト経由の実行では /ros_entrypoint.sh + compose の environment が正)
 RUN echo "source /opt/ros/jazzy/setup.bash" >> ~/.bashrc && \
     echo "source /root/ros2_ws/install/setup.bash" >> ~/.bashrc && \

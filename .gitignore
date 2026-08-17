@@ -9,3 +9,6 @@ log/
 
 # ユーザ個人データ (知識レベルプロファイル) — GitHub に上げない
 docs/claude/USER_LEVEL.md
+
+# claude: マシン固有の compose 差分 (GPU 機の gpus 設定等)。GPU なし PC に配ると glim コンテナが作成不能になる
+docker-compose.override.yml
