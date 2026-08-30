@@ -37,6 +37,22 @@ docker exec glim_env bash -c "cd /workspace/maps/glim/<name>/nav2 &&
 # 5) 目視: my_map.png を開いて壁の輪郭を確認 (真っ白/真っ黒なら §7.4)
 ```
 
+### 7.1b z ドリフトのある地図 (屋外・長距離) — glim_dump_to_2dmap を使う
+
+遠方で壁が帯から外れる地図 (第3章 §3.3) は、PLY を経由せず **GLIM dump を直接**
+センサ相対スライスで変換する (第3章 §3.4。2026-08-20 追加、5号館 +4.9 m ドリフトで実証):
+
+```bash
+# 1) 床のセンサ相対 z を実測 (手順は第3章 §3.4。5号館 08-14 LC は -0.55)
+# 2) 変換 (帯 = 床相対値+0.3〜+1.5。dump 直読みなので PLY→PCD は不要)
+docker exec glim_env python3 /workspace/tools/glim_dump_to_2dmap/glim_dump_to_2dmap.py \
+  /workspace/bags/<dump_dir> /workspace/maps/glim/<name>/nav2 \
+  -r 0.05 --map_width 6144 --map_height 6144 \
+  --height_mode sensor --min_height -0.25 --max_height 0.95
+# 3) 出力は map.pgm + map.yaml (map_server は pgm も可)。規約名にするなら §7.1-4 と
+#    同様に mv + yaml の image 行を追従 (pgm のまま my_map.pgm で問題ない)
+```
+
 ## 7.2 走行 (main コンテナ、AMCL 通しは未検証 2026-08-17)
 
 ```bash
@@ -74,7 +90,8 @@ docker exec -it rerobot_env bash -c "source /opt/ros/jazzy/setup.bash && ros2 to
 | 症状 | 第一容疑 | 確認・対処 |
 |---|---|---|
 | 変換した地図が真っ白 | 高さ帯に点が無い (床 z の誤り / 帯が空中) | §7.1-2 で床 z を再実測。`--min/max_height` は**絶対 z** (床からの相対ではない) |
-| 変換した地図が真っ黒 | 帯に床点が混入 (帯下限が低すぎ / z ドリフト) | 下限を床+0.3 以上に。ドリフト地図なら第3章 §3.3 |
+| 変換した地図が真っ黒 | 帯に床点が混入 (帯下限が低すぎ / z ドリフト) | 下限を床+0.3 以上に。ドリフト地図なら §7.1b |
+| 遠方だけ壁が消える | z ドリフトで帯から壁が外れた (床が場所により滑る) | §7.1b の glim_dump_to_2dmap (センサ相対スライス) へ切替。機構は第3章 §3.4 |
 | 地図の一部が欠ける | `-w -h` が小さくはみ出し (無警告で捨てられる) | xy 実測値から再計算。max(絶対値)×2÷resolution 以上 |
 | 地図が歪む/中心ずれ | `-w` ≠ `-h` (y 中心計算の実装バグ) | 必ず同値にする (第3章 §3.2) |
 | map_server が起動失敗 | yaml の image 参照切れ (改名の追従漏れ) | §7.1-4 の sed を確認 |
@@ -96,7 +113,8 @@ docker exec -it rerobot_env bash -c "source /opt/ros/jazzy/setup.bash && ros2 to
 
 - [ ] AMCL 込みの通し検証: §7.2 の手順で 2D Pose Estimate → 収束 → Nav2 Goal
 - [ ] 傾け取付 (tilted45) での /scan カバレッジ確認 (後方が薄くないか RViz で)
-- [ ] 屋外地図での変換 (z ドリフトと帯の関係を実測 — 悪ければ自作変換へ切替判断)
+- [x] 屋外地図での変換 — 2026-08-20 実測完了。5号館 (344 m, ドリフト +4.9 m) で
+      絶対 z 方式は遠方の壁が全滅 → glim_dump_to_2dmap (センサ相対) へ切替 (§7.1b)
 - [ ] keepout マスクの作成 (未探索領域=自由の制約の運用面での補い)
 - [ ] 縦角再較正 (保留中の本命 — 地図品質と z ドリフトの根本対策)
 

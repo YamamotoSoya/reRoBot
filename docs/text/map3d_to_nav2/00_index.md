@@ -27,6 +27,7 @@ reRoBot では 2026-08-17 にこの接続層を実装した (実機での AMCL �
 │   ├── 高さスライスの機構 — なぜ全投影は失敗するか
 │   ├── pointcloud_to_2dmap の解剖 (点数→グレースケール式)
 │   ├── 床 z の実測手順 (GLIM 地図の床は z=0 ではない)
+│   ├── glim_dump_to_2dmap — z ドリフト地図はセンサ相対で切る (08-20 追加)
 │   └── 代替 3 経路 (octomap 連結 / bag 2D SLAM / 自作スクリプト) の得失
 ├── 第4章 /scan 化と AMCL .................. 04_scan_and_amcl.md
 │   ├── pointcloud_to_laserscan の機構 (TF 変換 → 高さ帯 → 方位ビン最短)
@@ -72,5 +73,7 @@ reRoBot では 2026-08-17 にこの接続層を実装した (実機での AMCL �
 - `docs/issue/2026-08-13_glim_param_tuning.md` — 床スライス評価手法の初出 (occ30cm 指標)
 - `docs/issue/2026-08-16_rfans_mount_angle_glim_z_collapse.md` — 地図品質の前提 (縦角再較正が保留中)
 - `docs/claude/PROJECT_STATE.md` タイムライン 08-12 (3) — 事例A (rfans2d_slam) の一次記録
+- `tools/README.md` / `bags/5goukan/2d3d_imu/offline/glim/2dmap_compare/compare_abs_vs_sensor.png`
+  — glim_dump_to_2dmap (第3章 §3.4) の使い方と絶対 z vs センサ相対の実測比較画像 (2026-08-20)
 
 → [第1章 Nav2 が要求する 3 つの入力](01_nav2_inputs.md) から読み始める
