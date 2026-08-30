@@ -33,9 +33,9 @@
 
 ## 未解決事項 (根本対策)
 
-- [ ] **EPOS Error History の確認** — 0x3210 (過電圧/回生) / 0x2310 (過電流) / 0x81FD (bus-off) のどれかで原因確定 (07-31 からの宿題)
-- [ ] EPOS 側ハードニング: Max acceleration 0x60C5 を 0xFFFFFFFF → 有限値 (ソフトリミッタ 2000 rpm/s より上、例 4000)、Max output current 15 A → 8〜10 A、**Save All Parameters**
-- [ ] ソフト側の追加候補: joy turbo スケール低減 / `max_motor_decel_rpm_per_s` 低減 (現 2000)
+- [ ] ~~**EPOS Error History の確認**~~ → **未確認のまま 2026-08-30 の設定作業を通過 (Clear された可能性あり) — 8/11 事故の履歴は失われた見込み**。原因確定 (0x3210 過電圧 / 0x2310 過電流 / 0x81FD bus-off) は次回再発時に**最優先で** Error History を読むこと
+- [x] **EPOS 側ハードニング適用済み (2026-08-30、EPOS Studio)**: Max acceleration 0x60C5 / Quick stop decel 0x6085 / Profile decel 0x6084 = **30000 rpm/s**、Max output current = **10 A** (連続 4260 mA は変更なし)。両ノードとも SDO 直読みで裏取り済み。値は同日の車体改修 (gear 92.25 / tire 0.25 m — 車体 1 m/s² ≈ 7047 rpm/s、30000 ≈ 4.3 m/s²) 基準で、ソフトリミッタ 15000 rpm/s の 2 倍 = 安全網役。⚠️ NVM 永続 (Save All) の効きは**次回電源再投入後の SDO 再読みで要確認**
+- [ ] ソフト側の追加候補: joy turbo スケール低減 / `max_motor_decel_rpm_per_s` 低減 (2026-08-30 車体改修で 2000 → 15000 に再換算済み — 車体加速度換算では 3.1 → 2.1 m/s² と実質強化。再発したらここをさらに絞る)
 - [ ] **ロボット運用中のノート PC サスペンド無効化** — 17:09 の xHC リセットは走行中なら can0 即死。電源設定で対策する
 
 ## 教訓

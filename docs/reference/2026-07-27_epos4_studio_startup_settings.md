@@ -66,9 +66,9 @@
 | 項目 | 設定値 | 備考 |
 |------|--------|------|
 | Max continuous current | 4260 mA (自動) | Nominal current 由来。EPOS4 Compact 50/5 の連続 5 A 以内 ✓ |
-| Max output current | 15000 mA | Compact 50/5 のピーク上限そのもの |
-| Max acceleration | **4294967295 rpm/s** | 0xFFFFFFFF※1 = 実質無制限 (工場デフォルト)。→ §2-3 |
-| Max profile velocity | 7720 rpm | 車輪換算 ≈ 12 m/s (ギヤ 5:1, タイヤ φ0.15 m) — 実用域 ~1.5 m/s に対し実質ノーガード。速度の安全は ROS 側実装頼み |
+| Max output current | ~~15000~~ → **10000 mA** | 2026-08-30 ハードニングで引き下げ (電流スパイク事故対策、docs/issue/2026-08-11 参照)。SDO 0x3001:02 で両ノード裏取り済み |
+| Max acceleration | ~~4294967295~~ → **30000 rpm/s** | 2026-08-30 有限化 (§2-3 の対応完了)。新チャシス (gear 92.25, tire 0.25 m) で車体 ≈ 4.3 m/s²。ソフトリミッタ 15000 rpm/s の 2 倍 = 安全網役。SDO 0x60C5 で両ノード裏取り済み |
+| Max profile velocity | 7720 rpm | 2026-08-30 車体改修 (ギヤ 92.25:1, タイヤ φ0.25 m) 後は車体換算 ≈ **1.10 m/s** = 物理上限そのもの。旧チャシス時代の「実質ノーガード」状態は解消 |
 | Following error window | 2000 inc | 速度制御運用では実質未使用 |
 | Software position limit | OFF | 移動ロボットなので妥当 |
 | Max temperature power stage | 105.0 °C | デフォルト |
@@ -84,8 +84,8 @@
 | Quick stop option code | Slow down on quick stop deceleration → quick stop active |
 | Fault reaction option code | Slow down on quick stop deceleration |
 | Abort connection option code | Quick stop command |
-| Profile deceleration | 10000 rpm/s |
-| Quick stop deceleration | 10000 rpm/s |
+| Profile deceleration | ~~10000~~ → **30000 rpm/s** (2026-08-30、0x6084。新チャシスで車体 ≈ 4.2 m/s²) |
+| Quick stop deceleration | ~~10000~~ → **30000 rpm/s** (2026-08-30、0x6085。同上) |
 
 ### Windows (Controller)
 
@@ -139,7 +139,7 @@ EPOS4 の工場デフォルト割当のまま。本機は配線されていな�
 ノイズや断線気味の配線が High に浮くと**該当方向の駆動が突然ブロック (quick stop)** され、
 原因究明が非常に困難な「時々止まる」症状になる。未使用なら **3 つとも None に変更推奨**。
 
-### 2-3. ⚠️ Max acceleration が無制限 (4294967295 rpm/s)
+### 2-3. ~~⚠️~~ ✅ Max acceleration が無制限 (4294967295 rpm/s) → 2026-08-30 に 30000 rpm/s へ有限化済み
 
 CSV モードでは `epos4_controller` が 100 Hz で階段状の速度目標を送るため、ドライバ側の加速度制限が
 唯一のランプ整形要素になる。無制限のままだと指令ジャンプがそのままトルク衝撃になり、
