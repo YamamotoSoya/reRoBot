@@ -1,6 +1,6 @@
 teleop_keyboard_node:
   ros__parameters:
-    tire_diam: 0.25           # [m] 2026-08-30 車体改修 (旧 0.15) # claude
+    tire_diam: 0.256          # [m] 2026-08-30 車体改修 (旧 0.15)、08-31 実測補正 (0.25 → 0.256) # claude
     gear_ratio: 92.25         # motor_rev / wheel_rev。2026-08-30 減速機交換 (旧 5.0)。モータ/エンコーダは同一個体 — bus.yml (2π/1024) は据え置き # claude
     invert_left: false
     invert_right: false

@@ -3,9 +3,9 @@
      が両方常設 + BNO086 IMU を搭載予定のため、旧 rerobot_2d.urdf / rerobot_3d.urdf を
      1 本に統合した。起動するドライバは rerobot_bringup.launch.py の引数で選ぶ
      (URDF は常に全センサの TF を出す — 使わないセンサの静的 TF が残っても無害)。
-     センサ位置はユーザ実測値 (2026-08-10 反映): laser (0.07, 0, 0.215) /
-     rfans (-0.075, 0, 0.725) / imu (0, 0, 0.64)。
-     rfans は正立取付 (〜2026-08-15 の標準配置 — 詳細は rfans_joint のコメント参照)。
+     センサ位置はユーザ実測値 (2026-08-31 車体改修後の再実測): laser (0.067, 0, 0.09406,
+     上下反転取付 = roll=pi) / rfans (0, 0, 0.80246) / imu (0, 0, 0.74196)。
+     rfans は正立取付 (詳細は rfans_joint のコメント参照)。
 
      ⚠️ rfans 取付プリセット (2026-08-15 導入、丸ごとコピー方式): この内容 = flat。
      プリセットは rerobot.{tilted45,tilted15,flat}.urdf。切替は必ず GLIM 側
@@ -33,7 +33,7 @@
     <visual>
       <origin xyz="0 0 0" rpy="1.5707963267948966 0 0"/>
       <geometry>
-        <cylinder radius="0.075" length="0.05"/>
+        <cylinder radius="0.128" length="0.05"/>
       </geometry>
       <material name="wheel_black">
         <color rgba="0.1 0.1 0.1 1.0"/>
@@ -45,7 +45,7 @@
     <visual>
       <origin xyz="0 0 0" rpy="1.5707963267948966 0 0"/>
       <geometry>
-        <cylinder radius="0.075" length="0.05"/>
+        <cylinder radius="0.128" length="0.05"/>
       </geometry>
       <material name="wheel_black">
         <color rgba="0.1 0.1 0.1 1.0"/>
@@ -58,21 +58,21 @@
   <joint name="m1_wheel" type="continuous">
     <parent link="base_link"/>
     <child  link="m1_wheel_link"/>
-    <origin xyz="0 0.205 0.075" rpy="0 0 0"/>
+    <origin xyz="0 0.2645 0.128" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
   </joint>
 
   <joint name="m2_wheel" type="continuous">
     <parent link="base_link"/>
     <child  link="m2_wheel_link"/>
-    <origin xyz="0 -0.205 0.075" rpy="0 0 0"/>
+    <origin xyz="0 -0.2645 0.128" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
   </joint>
 
-  <!-- claude: 2D LiDAR (HOKUYO UTM-30LX, 簡易ジオメトリ)。xyz はユーザ実測 (2026-08-10)。
-       ⚠️ rpy="0 0 0" = 正立取付。旧 URDF (〜08-10) は roll=π (上下逆さ補正) だった —
-       取付が本当に正立か実機の /scan で要確認 (逆さのままだと左右鏡像になり
-       slam/amcl が既存地図と合わなくなる)。逆さなら roll=π に戻す。 -->
+  <!-- claude: 2D LiDAR (HOKUYO UTM-30LX, 簡易ジオメトリ)。xyz はユーザ実測 (2026-08-31)。
+       2026-08-31: 車体改修で上下反転取付になった (ユーザ申告) → roll=π を設定。
+       ⚠️ 反転の軸 (roll=π か pitch=π か) で前方の向きが 180° 変わる — 実機 /scan で
+       「前方障害物が +X・左の物が +Y」に出るか要確認。180° ズレていたら pitch=π に変更。 -->
   <link name="laser">
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0"/>
@@ -88,15 +88,14 @@
   <joint name="laser_joint" type="fixed">
     <parent link="base_link"/>
     <child  link="laser"/>
-    <origin xyz="0.07 0 0.215" rpy="0 0 0"/>
+    <origin xyz="0.067 0 0.09406" rpy="3.141592653589793 0 0"/>
   </joint>
 
   <!-- claude: 3D LiDAR (R-Fans-16, 簡易ジオメトリ)。link 名 rfans は
        rerobot_bringup.launch.py / params.yaml (rfans_driver.frame_id) と一致させること。
-       正立取付 (〜2026-08-15 の標準配置): xyz は 2026-08-10 実測 (車軸中心の 7.5 cm 後方・0.725 m 上)。
-       rpy=0 は 2026-08-13 に RViz で実測確認 (前方障害物が +X に出る。この個体は
-       ケーブルコネクタ側 = センサ +X で、ケーブル前向き取付が正)。
-       ⚠️ 物理的に正立へ戻す際は傾斜マウント撤去で位置が変わりうるため xyz 要再実測。
+       正立取付: xyz は 2026-08-31 実測 (車体改修後、車軸中心の真上 0.80246 m)。
+       rpy=0 の根拠は 2026-08-13 に RViz で実測確認 (前方障害物が +X に出る。この個体は
+       ケーブルコネクタ側 = センサ +X で、ケーブル前向き取付が正) — 改修後も同じ向きか /rfans_points で要確認。
        ⚠️ rpy/xyz を変えたら ros2_ws_glim/config/config_sensors.json の T_lidar_imu を要再計算。 -->
   <link name="rfans">
     <visual>
@@ -113,7 +112,7 @@
   <joint name="rfans_joint" type="fixed">
     <parent link="base_link"/>
     <child  link="rfans"/>
-    <origin xyz="-0.075 0 0.725" rpy="0 0 0"/>
+    <origin xyz="0 0 0.80246" rpy="0 0 0"/>
   </joint>
 
   <!-- claude: BNO086 IMU (bno086_imu_driver の frame_id 既定 imu_link と一致させる)。
@@ -142,7 +141,7 @@
   <joint name="imu_joint" type="fixed">
     <parent link="base_link"/>
     <child  link="imu_link"/>
-    <origin xyz="0 0 0.64" rpy="0 0 1.5707963267948966"/>
+    <origin xyz="0 0 0.74196" rpy="0 0 1.5707963267948966"/>
   </joint>
 
 </robot>

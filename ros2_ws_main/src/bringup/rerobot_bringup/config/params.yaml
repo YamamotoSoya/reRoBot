@@ -6,24 +6,24 @@
 
 epos4_controller_node:
   ros__parameters:
-    tread_width: 0.41 #[m] ⚠️ TODO 2026-08-30: 車体改修でトレッド幅も変更 — 実測して更新すること # claude
-    tire_diam: 0.25   #[m] 2026-08-30 車体改修 (旧 0.15) # claude
+    tread_width: 0.529 #[m] 2026-08-31 実測 (旧 0.41) # claude
+    tire_diam: 0.256  #[m] 2026-08-30 車体改修 (旧 0.15)、08-31 実測補正 (0.25 → 0.256) # claude
     gear_ratio: 92.25 # motor_rev / wheel_rev。2026-08-30 減速機交換 (旧 5.0)。モータ/エンコーダは同一個体 — bus.yml (2π/1024) は据え置き # claude
     # ⚠️ TODO 2026-08-30: 減速機交換で出力軸の回転方向が反転している可能性 — 浮かせ teleop で要確認 # claude
     invert_left: true
     invert_right: true
     # claude: 0x60FF 指令の加減速ランプ上限 [モータ軸 rpm/s] (2026-07-31 追加)。
     #   ステップ指令(joy 離し等)による制動電流/回生スパイクで全モータ停止した対策。
-    #   換算 (tire 0.25 m, gear 92.25): 車体加速度 1 m/s² ≈ 7047 rpm/s。15000 ≈ 2.1 m/s²
-    #   (最高速 1.09 m/s = モータ 7720 rpm からの停止が約 0.5 s)。EPOS4 側
+    #   換算 (tire 0.256 m, gear 92.25): 車体加速度 1 m/s² ≈ 6882 rpm/s。15000 ≈ 2.2 m/s²
+    #   (最高速 1.12 m/s = モータ 7720 rpm からの停止が約 0.5 s)。EPOS4 側
     #   Max acceleration (0x60C5) = 30000 rpm/s (2026-08-30 設定) が安全網。
     max_motor_accel_rpm_per_s: 15000.0
     max_motor_decel_rpm_per_s: 15000.0
 
 epos4_odometry_node:
   ros__parameters:
-    tread_width: 0.41 #[m] ⚠️ TODO 2026-08-30: 車体改修でトレッド幅も変更 — 実測して更新すること # claude
-    tire_diam: 0.25   #[m] 2026-08-30 車体改修 (旧 0.15) # claude
+    tread_width: 0.529 #[m] 2026-08-31 実測 (旧 0.41) # claude
+    tire_diam: 0.256  #[m] 2026-08-30 車体改修 (旧 0.15)、08-31 実測補正 (0.25 → 0.256) # claude
     gear_ratio: 92.25 # motor_rev / wheel_rev。2026-08-30 減速機交換 (旧 5.0)。モータ/エンコーダは同一個体 — bus.yml (2π/1024) は据え置き # claude
     odom_frame_id: "odom"
     base_frame_id: "base_link"

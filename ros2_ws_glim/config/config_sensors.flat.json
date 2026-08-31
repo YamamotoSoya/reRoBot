@@ -50,10 +50,10 @@
     "imu_bias_noise": 1e-5,
     // LiDAR config
     "global_shutter_lidar": false,
-    // claude: reRoBot 実機値 — rfans 正立取付 (〜2026-08-15 の標準配置、2026-08-11 確定)。
+    // claude: reRoBot 実機値 — rfans 正立取付 (2026-08-31 車体改修後の実測で更新)。
     //   URDF rerobot.flat.urdf から算出:
-    //   base->rfans t=(-0.075, 0, 0.725) rpy=(0,0,0) / base->imu t=(0, 0, 0.64) rpy=(0, 0, pi/2)
-    //   => t_lidar_imu = (0.075, 0, -0.085), R = Rz(90deg)
+    //   base->rfans t=(0, 0, 0.80246) rpy=(0,0,0) / base->imu t=(0, 0, 0.74196) rpy=(0, 0, pi/2)
+    //   => t_lidar_imu = (0, 0, -0.0605), R = Rz(90deg)
     //   => q(x,y,z,w) = (0, 0, sqrt2/2, sqrt2/2)。imu_X->lidar_Y, imu_Y->-lidar_X, imu_Z->lidar_Z。
     //   フォーマットは [x, y, z, qx, qy, qz, qw]。URDF のセンサ位置/向きを変えたら要再計算。
     //   ⚠️ rfans 取付プリセット (2026-08-15 導入、丸ごとコピー方式): この内容 = flat。
@@ -61,9 +61,9 @@
     //   rerobot.{tilted45,tilted15,flat}.urdf とセットで cp する (コマンドは URDF 冒頭コメント参照)。
     //   T_lidar_imu 以外を編集したら同じ変更を全プリセットにも反映すること。
     "T_lidar_imu": [
-      0.075,
       0.0,
-      -0.085,
+      0.0,
+      -0.0605,
       0.0,
       0.0,
       0.7071067811865476,

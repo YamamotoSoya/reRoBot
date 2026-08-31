@@ -50,21 +50,22 @@
     "imu_bias_noise": 1e-5,
     // LiDAR config
     "global_shutter_lidar": false,
-    // claude: reRoBot 実機値 (2026-08-15, R-Fans 前傾 45° + ヨー 180° 取付へ変更、xyz は同日ユーザ再実測)。
-    //   URDF rerobot.urdf から算出:
-    //   base->rfans t=(-0.02, 0, 0.75) rpy=(0, -pi/4, pi) / base->imu t=(0, 0, 0.64) rpy=(0, 0, pi/2)
+    // claude: reRoBot 実機値 (R-Fans 前傾 45° + ヨー 180° 取付。2026-08-31 車体改修の実測反映
+    //   — ただし rfans xyz は flat 実測 + 旧オフセットの換算値、切替時は要再実測)。
+    //   URDF rerobot.tilted45.urdf から算出:
+    //   base->rfans t=(0.055, 0, 0.82746) rpy=(0, -pi/4, pi) / base->imu t=(0, 0, 0.74196) rpy=(0, 0, pi/2)
     //   T_lidar_imu = T_base_lidar^-1 * T_base_imu:
     //   => R_lidar_imu = Ry(45deg) * Rz(-90deg) => q(x,y,z,w) = (-0.2705981, 0.2705981, -0.6532815, 0.6532815)
-    //   => t_lidar_imu = Ry(45deg)*Rz(180deg)*(0.02, 0, -0.11) = (-0.0919239, 0, -0.0636396)
+    //   => t_lidar_imu = Ry(45deg)*Rz(180deg)*(-0.055, 0, -0.0855) = (-0.0215668, 0, -0.0993485)
     //   フォーマットは [x, y, z, qx, qy, qz, qw]。URDF のセンサ位置/向きを変えたら要再計算。
     //   ⚠️ rfans 取付プリセット (2026-08-15 導入、丸ごとコピー方式): この内容 = tilted45。
     //   プリセットは config_sensors.{tilted45,tilted15,flat}.json。切替は必ず URDF 側
     //   rerobot.{tilted45,tilted15,flat}.urdf とセットで cp する (コマンドは URDF 冒頭コメント参照)。
     //   T_lidar_imu 以外を編集したら同じ変更を全プリセットにも反映すること。
     "T_lidar_imu": [
-      -0.0919239,
+      -0.0215668,
       0.0,
-      -0.0636396,
+      -0.0993485,
       -0.2705981,
       0.2705981,
       -0.6532815,

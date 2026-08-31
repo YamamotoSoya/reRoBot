@@ -67,8 +67,8 @@
 |------|--------|------|
 | Max continuous current | 4260 mA (自動) | Nominal current 由来。EPOS4 Compact 50/5 の連続 5 A 以内 ✓ |
 | Max output current | ~~15000~~ → **10000 mA** | 2026-08-30 ハードニングで引き下げ (電流スパイク事故対策、docs/issue/2026-08-11 参照)。SDO 0x3001:02 で両ノード裏取り済み |
-| Max acceleration | ~~4294967295~~ → **30000 rpm/s** | 2026-08-30 有限化 (§2-3 の対応完了)。新チャシス (gear 92.25, tire 0.25 m) で車体 ≈ 4.3 m/s²。ソフトリミッタ 15000 rpm/s の 2 倍 = 安全網役。SDO 0x60C5 で両ノード裏取り済み |
-| Max profile velocity | 7720 rpm | 2026-08-30 車体改修 (ギヤ 92.25:1, タイヤ φ0.25 m) 後は車体換算 ≈ **1.10 m/s** = 物理上限そのもの。旧チャシス時代の「実質ノーガード」状態は解消 |
+| Max acceleration | ~~4294967295~~ → **30000 rpm/s** | 2026-08-30 有限化 (§2-3 の対応完了)。新チャシス (gear 92.25, tire 0.256 m) で車体 ≈ 4.4 m/s²。ソフトリミッタ 15000 rpm/s の 2 倍 = 安全網役。SDO 0x60C5 で両ノード裏取り済み |
+| Max profile velocity | 7720 rpm | 2026-08-30 車体改修 (ギヤ 92.25:1, タイヤ φ0.256 m) 後は車体換算 ≈ **1.12 m/s** = 物理上限そのもの。旧チャシス時代の「実質ノーガード」状態は解消 |
 | Following error window | 2000 inc | 速度制御運用では実質未使用 |
 | Software position limit | OFF | 移動ロボットなので妥当 |
 | Max temperature power stage | 105.0 °C | デフォルト |
