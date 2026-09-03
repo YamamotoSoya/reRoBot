@@ -80,6 +80,10 @@ rfans_calculation:
     frame_id: "rfans"
     # 1 メッセージにまとめる回転角 [deg]。360 = 1 回転 1 メッセージ
     angle_duration: 360.0
+    # 実回転数の監視 (2026-09-02 追加)。実測フレームレート (1 フレーム = 1 回転) が rps と
+    # 25% 超ズレたら driver の rfans_control service へ速度を再指令する。デバイスは電源
+    # 再投入で内部デフォルト 20 Hz に戻るため (起動時 1 発の指令は再送されない)、その対策。
+    rps_watchdog: true
     # true なら header.stamp にデバイス GPS 時刻 (通常 false = ROS 時刻を回転幅ぶん巻き戻し)
     use_gps: false
     # 実測縦角オーバーライド [deg] (laserid 0..15 順、16 要素)。未設定 = 公式表 VAngle_V6B_16G。

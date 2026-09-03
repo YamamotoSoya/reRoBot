@@ -27,13 +27,13 @@ teleop_twist_joy_node:
     # --- スケール (= 出力の最大値)。params.yaml 系の上限に合わせる ---
     #     通常時は控えめ、turbo ボタン押下で max まで出す
     scale_linear:
-      x: 0.5               # [m/s]  通常
+      x: 0.25              # [m/s]  通常   (2026-08-31 従来の 1/2 に減速) # claude
     scale_linear_turbo:
-      x: 1.0               # [m/s]  turbo  (max_linear = 1.0 相当)
+      x: 0.5               # [m/s]  turbo  (同上 1/2) # claude
     scale_angular:
-      yaw: 0.6             # [rad/s] 通常
+      yaw: 0.3             # [rad/s] 通常   (同上 1/2) # claude
     scale_angular_turbo:
-      yaw: 2.0             # [rad/s] turbo  (max_angular = 2.0 相当)
+      yaw: 1.0             # [rad/s] turbo  (同上 1/2) # claude
 
     # --- deadman（安全装置）: ボタンを押している間だけ Twist を出す ---
     enable_button: 4         # LB ボタン: これを押している間だけ走行
