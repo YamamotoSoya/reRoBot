@@ -118,4 +118,4 @@ docker exec -it rerobot_env bash -c "source /opt/ros/jazzy/setup.bash && ros2 to
 - [ ] keepout マスクの作成 (未探索領域=自由の制約の運用面での補い)
 - [ ] 縦角再較正 (保留中の本命 — 地図品質と z ドリフトの根本対策)
 
-→ [00_index に戻る](00_index.md)
+→ [第8章 手法カタログ](08_method_catalog.md)

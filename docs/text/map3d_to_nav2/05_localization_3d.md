@@ -54,6 +54,11 @@ AMCL との対比で本質が見える:
 - [lidar_localization_ros2](https://github.com/rsasaki0109/lidar_localization_ros2)
 - [pcl_localization_ros2](https://github.com/scav-project/pcl_localization_ros2)
 
+2026-09-03 の網羅調査で候補は大幅に増えた (3D MCL 系 / LIO 密結合系 / GLIM 作者の
+GLIL など)。全体比較表と「AbudoriLab が lidar_localization_ros2 + GLIM 地図で
+つくば全コースの定位に成功」という★推奨の裏付けは
+[第8章 手法カタログ](08_method_catalog.md) §8.4 を参照。
+
 ## 5.3 縮退という共通の弱点 — 車輪 odom という保険
 
 忘れてはならないのは、**scan matching は GLIM が苦しんだのと同じ理由で苦しむ**こと。
