@@ -70,6 +70,43 @@ z ドリフトに追従する。`glim_dump_to_2dmap` (第 3 章 §3.4) がこの
 - 弱点: 軌跡から遠い領域は最寄りキーフレーム高の外挿になる (土手の上下で誤る)。
   キーフレームのロール/ピッチ誤差がそのまま帯の傾きになる
 
+#### 2026-09-10 追補 — センサ相対の公開実装を探し直した結果
+
+「同じセンサ基準で切る既製ツールは無いのか」を再調査した (Web、2026-09-10)。結論は
+**GLIM 出力をオフラインで軌跡相対にスライスする単独ツールは依然として未確認**。ただし
+同じ思想の実装と、問題を SLAM 側で潰す別解が見つかった。
+
+| 実装 | 入力 | 高さ基準 | z ドリフト追従 | ROS 2 | 備考 |
+|---|---|---|---|---|---|
+| [RTAB-Map](https://index.ros.org/p/rtabmap_ros/) `Grid/*` | SLAM ノード毎の点群 | **ロボットフレーム相対** (`Grid/MaxGroundHeight` は "relative to the robot frame"、`Grid/NormalsSegmentation` 併用可) | ○ — ノード毎に局所格子を作り、最適化後の姿勢で合成 | Jazzy 0.23.7 | glim_dump_to_2dmap と設計思想が同じ唯一の既製品。ただしオンライン SLAM 内蔵で GLIM 地図には適用できない |
+| [glim_ext](https://github.com/koide3/glim_ext) `flat_earther` | GLIM 内部 (submap) | — (近接 submap の高さを揃える拘束) | **SLAM 側で z ドリフトを潰す** | GLIM 拡張 | 単一フロア前提。有効なら絶対 z スライス (I-1) がそのまま使える。**未検証 — 5号館 bag で試す価値あり** |
+| [LTU-RAI Map-Conversion](https://github.com/LTU-RAI/Map-Conversion-3D-Voxel-Map-to-2D-Occupancy-Map) | OctoMap/UFOMap | 自由空間から床高を推定 | ○ (床追従) | ROS 2 ブランチ | I-8。OctoMap 化が前段に要る |
+| octomap_server `filter_ground_plane` | PointCloud2 逐次 | 地面除去は base frame の RANSAC (センサ相対)、`projected_map` は絶対 z | 地面除去のみ ○ | Jazzy 2.3.1 | 投影が絶対 z なので目的には届かない |
+| [pcd2pgm](https://github.com/LihanChen2004/pcd2pgm) / [pointcloud_to_grid](https://github.com/jkk-research/pointcloud_to_grid) / [nav2-keepout-zone-map-creator](https://github.com/CyberAgentAILab/nav2-keepout-zone-map-creator) | PCD / PointCloud2 | 絶対 z | × | Humble 系 | I-1 の亜種。pcd2pgm は半径外れ値除去付き |
+| hdl_graph_slam / interactive_slam | — | 2D 出力なし | — | ROS 1 | [issue #219](https://github.com/koide3/hdl_graph_slam/issues/219) で「octomap 投影がループ閉じ後にずれる」が未解決のまま |
+
+読み取り:
+
+- 自作方式 (submap 原点相対) は RTAB-Map の「ノード毎ロボット相対格子 → 最適化姿勢で合成」と
+  一致しており、設計として妥当。オフライン版が公開されていないだけ
+- **問題を変換側でなく SLAM 側で消す**選択肢が glim_ext `flat_earther`。5号館の z ドーム
+  (+4.9 m) が「近接 submap の高さを揃える」拘束で潰れるなら、第 3 章 §3.4 の機構 (3)
+  (submap 姿勢の 4° ピッチ) も同時に軽くなる可能性がある。ただし坂のある屋外コースでは
+  単一フロア前提が破れるので、つくば本番向きではなく校内実験向き
+- 地面分割系 (Patchwork++ / linefit の ROS 2 移植) は**スキャン単位 (センサ中心) 前提**で、
+  蓄積済み地図にそのまま掛けられない。使うなら glim_dump_to_2dmap と同様に submap 単位で
+  回す設計になる (= 自作ツールの拡張として実装する形)
+
+#### 「VQ 圧縮」について (用語の整理)
+
+VQ (ベクトル量子化) は点群やその特徴をコードブック上の代表ベクトルの添字に置き換える
+**保存容量の圧縮**であり、学習ベース (3QNet 等) と古典系 (PCL `OctreePointCloudCompression`、
+Google Draco、MPEG G-PCC) がある。いずれも 3D→2D 変換 (本章の「圧縮」= 次元削減) とは
+別レイヤで、占有格子の作成には寄与しない (量子化で壁が太る/欠ける副作用はある)。
+ロボティクス文脈で「Voxel Quantization」という定訳は見つからず、GLIM が使う VGICP の
+ボクセル化か、submap の `submap_downsample_resolution` (ボクセルダウンサンプル) を指して
+いた可能性が高い。後者は第 3 章 §3.4 で見たとおり 2D 地図の濃さを直接支配している。
+
 ### I-3 OctoMap projected_map
 
 点群を確率的オクツリーに統合し、z 帯に占有ボクセルがあるセルを占有として

@@ -53,6 +53,10 @@ docker exec glim_env python3 /workspace/tools/glim_dump_to_2dmap/glim_dump_to_2d
   3D ローカライザ地図用)
 - 濃度変換 (`--min/max_points_in_pix`) と yaml 形式は既製ツール互換。画像は PGM
   (map_server は png/pgm どちらも可)
+- **解像度は `-r 0.10` を推奨** (2026-09-10 掃引)。dump の点は GLIM が 0.3 m ボクセルで
+  間引いており、5 cm 画素では 1 submap から 1 画素に 1〜2 点しか落ちず点数しきい値が
+  成立しない (壁が点線状・submap 間隔が開く区間で消える)。0.10 で右上 (最遠角) の占有
+  17 倍・ノイズ増なし。機構と掃引表は読本 `docs/text/map3d_to_nav2/03_map_conversion.md` §3.4
 - 絶対 z vs センサ相対の比較実測 (5号館 08-14 LC 地図、z ドリフト +4.9 m):
   `docs/text/map3d_to_nav2/img/2026-08-20_compare_abs_vs_sensor.png` (解説は読本 §3.4。
   元データ・両方式の map 出力は git 管理外の `bags/5goukan/2d3d_imu/offline/glim/2dmap_compare/`)

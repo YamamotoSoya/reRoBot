@@ -85,6 +85,9 @@ reRoBot では 2026-08-17 にこの接続層を実装した (実機での AMCL �
 - `tools/README.md` / `img/2026-08-20_compare_abs_vs_sensor.png` (第3章 §3.4 に埋込・解説あり。
   元データは git 管理外の `bags/5goukan/2d3d_imu/offline/glim/2dmap_compare/`)
   — glim_dump_to_2dmap の使い方と絶対 z vs センサ相対 (オドメトリ基準) の実測比較画像 (2026-08-20)
+- `img/2026-09-10_density_cause.png` / `img/2026-09-10_sweep_grid.png` — センサ相対地図の
+  「右上だけ薄い」機構解剖とパラメータ掃引 (第3章 §3.4、2026-09-10)。元データは
+  `bags/5goukan/2d3d_imu/offline/glim/2dmap_compare/sweep_2026-09-10/` (A〜I の map.pgm/yaml + 集計 json)
 - 第 8 章の出典は章内リンク (論文 arXiv / GitHub / つくばチャレンジ技術記事、2026-09-03 調査時点)
 
 → [第1章 Nav2 が要求する 3 つの入力](01_nav2_inputs.md) から読み始める
