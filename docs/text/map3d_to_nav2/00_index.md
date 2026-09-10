@@ -82,8 +82,9 @@ reRoBot では 2026-08-17 にこの接続層を実装した (実機での AMCL �
 - `docs/issue/2026-08-13_glim_param_tuning.md` — 床スライス評価手法の初出 (occ30cm 指標)
 - `docs/issue/2026-08-16_rfans_mount_angle_glim_z_collapse.md` — 地図品質の前提 (縦角再較正が保留中)
 - `docs/claude/PROJECT_STATE.md` タイムライン 08-12 (3) — 事例A (rfans2d_slam) の一次記録
-- `tools/README.md` / `bags/5goukan/2d3d_imu/offline/glim/2dmap_compare/compare_abs_vs_sensor.png`
-  — glim_dump_to_2dmap (第3章 §3.4) の使い方と絶対 z vs センサ相対の実測比較画像 (2026-08-20)
+- `tools/README.md` / `img/2026-08-20_compare_abs_vs_sensor.png` (第3章 §3.4 に埋込・解説あり。
+  元データは git 管理外の `bags/5goukan/2d3d_imu/offline/glim/2dmap_compare/`)
+  — glim_dump_to_2dmap の使い方と絶対 z vs センサ相対 (オドメトリ基準) の実測比較画像 (2026-08-20)
 - 第 8 章の出典は章内リンク (論文 arXiv / GitHub / つくばチャレンジ技術記事、2026-09-03 調査時点)
 
 → [第1章 Nav2 が要求する 3 つの入力](01_nav2_inputs.md) から読み始める

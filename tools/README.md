@@ -54,5 +54,6 @@ docker exec glim_env python3 /workspace/tools/glim_dump_to_2dmap/glim_dump_to_2d
 - 濃度変換 (`--min/max_points_in_pix`) と yaml 形式は既製ツール互換。画像は PGM
   (map_server は png/pgm どちらも可)
 - 絶対 z vs センサ相対の比較実測 (5号館 08-14 LC 地図、z ドリフト +4.9 m):
-  `bags/5goukan/2d3d_imu/offline/glim/2dmap_compare/compare_abs_vs_sensor.png`
+  `docs/text/map3d_to_nav2/img/2026-08-20_compare_abs_vs_sensor.png` (解説は読本 §3.4。
+  元データ・両方式の map 出力は git 管理外の `bags/5goukan/2d3d_imu/offline/glim/2dmap_compare/`)
   — 絶対 z はドリフト最大部で壁が全滅、センサ相対は全周で壁が残る
