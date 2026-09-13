@@ -173,7 +173,7 @@ is involved (the old `/robot_encoder_states` fan-in design is gone).
 | `docs/monthly/` | ユーザの月次ゼミ報告 | **Claude は編集禁止** (読み取り専用の入力) |
 | `docs/text/` | テーマ別の体系的解説書 (書籍形式の教材) | 1 テーマ = 1 ディレクトリ。作成・更新は `/textbook` skill |
 
-Project skills (`.claude/skills/`): `verify` (コンテナ `rerobot_env` 内でビルド+起動検証; 実機 can0 が無ければ vcan0 + fake-slaves), `stack-health` (稼働スタックの読み取り専用診断), `params-sync` (車体パラメータ 3 ファイルの整合検査), `debug-report` / `feature-doc` / `project-state` (docs 更新), `knowledge-check` (実装の理解確認 → `docs/claude/knowledge/`), `annotate` (返信中の用語注釈の基準・書式), `explain-edits` (ファイル変更前の説明の基準・書式), `user-level` (知識レベルプロファイル `docs/claude/USER_LEVEL.md` の再推定), `textbook` (docs/text/ にテーマ別解説書を書籍形式で作成 — 章構成の型・樹形図優先・事例解剖の型を持つ)。
+Project skills (`.claude/skills/`): `verify` (コンテナ `rerobot_env` 内でビルド+起動検証; 実機 can0 が無ければ vcan0 + fake-slaves), `stack-health` (稼働スタックの読み取り専用診断), `params-sync` (車体パラメータ 3 ファイルの整合検査), `debug-report` / `feature-doc` / `project-state` (docs 更新), `knowledge-check` (実装の理解確認 → `docs/claude/knowledge/`), `annotate` (返信中の用語注釈の基準・書式), `explain-edits` (ファイル変更前の説明の基準・書式), `user-level` (知識レベルプロファイル `docs/claude/USER_LEVEL.md` の再推定), `textbook` (docs/text/ にテーマ別解説書を書籍形式で作成 — 章構成の型・樹形図優先・事例解剖の型を持つ), `critic` (反証専任 subagent を起こして結論を崩しにかかる — 原因断定の前にデフォルトで実行)。Subagent 定義は `.claude/agents/` (`critic`)。
 
 MCP servers (`.mcp.json`): `context7` (ライブラリ最新ドキュメント), `playwright`, `memory` (`~/.claude/rerobot-mcp-memory.json`)。
 
@@ -184,3 +184,4 @@ MCP servers (`.mcp.json`): `context7` (ライブラリ最新ドキュメント),
 - ドキュメント・ユーザへの応答は日本語。説明は「なぜそうなるか」まで書く。
 - 返信中の発展的コマンド・専門用語には `※n` マーカー + 返信末尾の `📘 注釈` ブロックで注釈を付ける (1 返信最大 3 個)。レベル基準・書式・既知用語リストは `.claude/skills/annotate/SKILL.md` — 「それは知ってる」と言われた語は同ファイルの既知リストに追記し、以後注釈しない。
 - **ファイルを変更する (Edit/Write) 前に、その直前の本文で「どこを・何を・なぜ」を 1〜4 行で説明する** (2026-08-11 ユーザ指示、常時適用)。書式・粒度の基準は `.claude/skills/explain-edits/SKILL.md`。
+- **原因を断定する前に、反証専任の subagent `critic` (`.claude/agents/critic.md`) を必ず 1 体起こす** (2026-09-10 ユーザ指示、デフォルト適用・確認不要)。対象 = docs/issue のステータスを「原因特定済み / 本命 / 確定」にする時、PROJECT_STATE で原因判断に基づき優先度を動かす時、debug-report / feature-doc の原因・設計判断節、複数 docs が同じ原因を指すのを根拠に次の作業を決める時。critic の判定に合わせて表現を下げ、棄却できなかった代替仮説は同じ文書に列挙する。手順は `.claude/skills/critic/SKILL.md` (`/critic <結論>` で手動起動も可)。背景: 08-14〜16 の「縦角表が本命」が 3 文書で相互に根拠化され、09-10 の因果実験で棄却された (`docs/issue/2026-09-10_glim_z_drift_not_vangle.md`)。

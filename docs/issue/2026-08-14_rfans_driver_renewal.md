@@ -1,6 +1,7 @@
 # R-Fans-16 ドライバ刷新 — 旧 StarROS2 の問題総括と新 surestar_rfans_ros2 への移行
 
 - **ステータス (2026-08-14): 統合完了 — bringup/GLIM/scripts を新ドライバへ全面切替済み (実機検証込み)。残は縦角再較正のみ**
+- ⚠️ **2026-09-10 追記**: §8 で「z 浮きの容疑」とした縦角表の系統誤差は、因果実験 (縦角を補正して GLIM を再実行しても z_end が同 config の run 間ばらつき内) で **z ドリフトの主犯 (半分以上) ではない**と判定。≤30% の副次寄与は n=1 では区別できず未確定 (追加 run 中)。z ドリフトの正体は「単一の世界固定傾き + 一定沈降」で発生源は未特定 (時刻オフセット・extrinsic・初期整合が候補)。縦角のサブ度誤差自体は実在するが (09-02)、地図ずれ対策としての再較正は優先度を下げる。詳細 `2026-09-10_glim_z_drift_not_vangle.md` (§7 critic 査読込み)
 - 新リポジトリ: `YamamotoSoya/surestar_rfans_ros2` (submodule: `ros2_ws_main/src/drivers/surestar_rfans_ros2`)
 - 旧リポジトリ: `YamamotoSoya/StarROS2` (当面参照用に残置)
 - 関連: `docs/features/2026-06-13_rfans_driver_ros2_port.md` (旧移植)、`docs/text/timestamp/` 第5・8章、
