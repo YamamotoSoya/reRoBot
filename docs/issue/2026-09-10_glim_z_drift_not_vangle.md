@@ -451,3 +451,21 @@ LiDAR 座標系                                  IMU 座標系
 **判定 (新車体 V14)**: 0.15° の補正なので効果は小さい (rms 5.7 → 4.9、A 7.9 → 7.5、run 間ノイズと同程度)。**新車体の取付回転は名目値で既に ≤0.4° まで合っており、較正で詰める余地はほぼ無い**。残る A ≈ 5〜7.5° は登録側 (§2.3 の成分 2)。新車体で A が旧車体 (3°) より大きい候補: 08-31 の 5号館 bag は R-Fans が **20 Hz で回っていた** (`2026-09-02_rfans_scan_motor_dropout.md`) ため 1 回転の点数が半分 = 地面がさらに疎 (V4 で地面密度が A を最も動かした事実と整合)。未検証 — 10 Hz で撮り直した新車体 bag で A を比べれば分かる。
 
 **より良い較正へ** (必要になったら): ①水平が保証された床 (屋内) で車体を前後左右に少し傾けた 4〜6 姿勢を撮り、姿勢間で共通の相対回転を最小二乗で解く (地面勾配の影響を消す)。②yaw は走行中に IMU ヨー角速度の積分と LiDAR オドメトリのヨー差を回帰。③既存ツール (例: LiDAR–IMU 較正の公開実装) は GTSAM/依存の衝突を考えると glim コンテナ内で試す。
+
+## 10. 反映した校正値と、その置き場所 (2026-09-13)
+
+校正値は 3 系統のファイルに分かれて住む。今回、根拠が揃ったものだけを入れた。
+
+| 系統 | ファイル | キー | 反映 | 値・根拠 |
+|---|---|---|---|---|
+| GLIM (IMU) | `ros2_ws_glim/config/config_ros.json` | `acc_scale` | **入れた** | 0.0 (自動) → **0.9705** = 9.80665 / 10.105 (新車体 BNO086 の静止 \|g\| 8 窓平均、SD 0.024)。0106f で A 13→8°、終点 pitch −11.5→+0.6° (§2.4)。⚠️ 旧車体 bag を再処理するときは 0.0 に戻す |
+| GLIM (取付回転) | `ros2_ws_glim/config/config_sensors.json` (live = flat) | `T_lidar_imu` | **変更なし** | 新車体は静止較正で相対傾き ≤0.4°・向きが場所で変わる = 分解能以下 (§9.4)。V14 で効果もノイズ程度 |
+| GLIM (取付回転、旧車体) | `ros2_ws_glim/config/config_sensors.flat_oldchassis_cal.json` (**新規 preset**) | `T_lidar_imu` | **追加** | 並進は旧値 (0.075, 0, −0.085)、回転 = 名目ヨー 90° に実測 pitch +0.90° / roll −0.11° を合成 → quaternion (0.00487, 0.00623, 0.70709, 0.70708)。08-14〜15 の bag 再処理用。V13 で c −1.0→−0.73 |
+| GLIM (時刻) | `config_ros.json` | `points_time_offset` | 入れない | −15 ms で A −16% は n=1 (§2.2)。追加 run で確認してから |
+| ドライバ (縦角) | `ros2_ws_main/src/bringup/rerobot_bringup/config/params.yaml` → `rfans_calculation.vangle_override` | 16 要素 | **有効化** | リング 0〜5 = 09-02 実測 [−14.93, −12.97, −11.29, −9.26, −7.33, −5.49]、6〜15 = 公称。odometry 段 A −20% (3 run)、global は中立 (§2.2)。再ビルド不要 (params は起動時読み込み) |
+| URDF | `rerobot_bringup/urdf/rerobot.urdf` (+ presets) | `rfans_joint` / `imu_joint` の rpy | **変更なし** | 新車体は ≤0.4° で名目のまま。旧車体は物理的に LiDAR 側が 1.25° 前傾していた (§9.4) が、旧車体は現存しないので URDF 履歴には反映しない |
+
+運用メモ:
+- 旧車体 bag のオフライン再処理 = `cp config_sensors.flat_oldchassis_cal.json config_sensors.json` + `acc_scale: 0.0`。終わったら flat preset と 0.9705 に戻す。
+- IMU 側でスケールを直したら (較正 or ファーム設定)、`acc_scale` を 0.0 に戻し、静止 |g| が 9.8 付近になっていることを `imu_stats.py` で確認する。
+- 較正値を更新する手順: 静止 20 s 以上 × 場所 2〜3 箇所で bag → `static_extrinsic.py` → 再現する成分だけ採用 → preset に書く → 1 bag で GLIM 再実行して c/z_end を確認。

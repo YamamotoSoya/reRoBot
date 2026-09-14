@@ -52,7 +52,12 @@
     // IMU config
     "imu_time_offset": 0.0,
     "points_time_offset": 0.0,
-    "acc_scale": 0.0, // Auto-detect if zero
+    // claude (2026-09-13): 新車体 (08-30 改修後) の BNO086 は静止時 |g| = 10.105 m/s² (+3%、8 窓 SD 0.024) で
+    //   自動判定 (7〜12 → 1.0) ではそのまま入る。gtsam は g=9.80665 固定なので 0.29 m/s² の鉛直残差が
+    //   毎フレーム地面と衝突し、5号館 bag で傾き A 13°・終点 pitch −11.5° の破綻を起こしていた。
+    //   9.80665 / 10.105 = 0.9705 で A 8°・pitch +0.6° に回復 (docs/issue/2026-09-10_glim_z_drift_not_vangle.md §2.4/§9.4)。
+    //   ⚠️ 旧車体 bag (08-14〜15、|g| 9.838) を再処理するときは 0.0 (自動) に戻す。IMU 側でスケールを直したら 0.0 に戻す。
+    "acc_scale": 0.9705,
     // TF config
     // claude: IMU あり LIO 構成 (2026-08-11)。imu_frame_id は /imu/data の header
     // (imu_link) から自動検出させる。

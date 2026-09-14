@@ -1,0 +1,109 @@
+---
+config:
+  layout: fixed
+---
+flowchart TB
+ subgraph POWER["電源系"]
+        BAT["IDX198 DUO-C198<br>14.4 V / 13.2 Ah"]
+        n1["電源分岐<br>(24 V ライン)"]
+        n2["主電源スイッチ<br>(DC-DC系)"]
+        n22["主電源スイッチ<br>(モーター系)"]
+        n4["DC-DC コンバーター<br>Drok F36W12V5A4L<br>入力: 9–36 V / 出力: 12 V・5 A"]
+        n3["シャントレギュレータ 24 V<br>maxon DSR 50/5"]
+  end
+ subgraph DRIVE["駆動系"]
+        n7["EPOS4 Compact 50/5 CAN<br>(左)"]
+        n8["DCX35L<br>(左モーター)"]
+        n9["EPOS4 Compact 50/5 CAN<br>(右)"]
+        n10["DCX35L<br>(右モーター)"]
+        n13["CAN to USB"]
+  end
+ subgraph SENSORS["センサー系"]
+        n6["UTM-LX30 LiDAR"]
+        n5["R-Fans16 LiDAR"]
+        n14["BNO086 Module"]
+        n23["Ethernet to USB"]
+  end
+ subgraph COMPUTE["コンピューター・USB系"]
+        n12["USB Hub<br>UGREEN 4-Port USB 3.0 Hub"]
+        n11["ThinkPad T480s"]
+  end
+ subgraph GROUND["GND"]
+        n16["GND"]
+        n17["GND"]
+        n18["GND"]
+        n15["GND"]
+        n20["GND2"]
+        n19["GND2"]
+        n21["GND2"]
+  end
+    BAT --> n1 & n16
+    n1 -- 24 V ライン --> n2
+    n2 --> n4 & n22
+    n22 --> n3
+    n4 -- 12 V --> n6 & n5
+    n4 -- GND --> n15
+    n4 --> n19
+    n3 -- ロジック電源 --> n7 & n9
+    n3 -- モーター電源 --> n7 & n9
+    n7 --> n8 & n17
+    n7 -- CAN --> n9
+    n9 --> n10 & n18
+    n9 -- CAN --> n13
+    n6 -- USB --> n12
+    n6 --> n20
+    n5 -- Ethernet --> n23
+    n5 --> n21
+    n23 -- USB --> n12
+    n13 -- USB --> n12
+    n14 -- USB --> n12
+    n12 --> n11
+
+    n1@{ shape: rect}
+    n2@{ shape: rect}
+    n22@{ shape: rect}
+    n4@{ shape: rect}
+    n3@{ shape: rect}
+    n7@{ shape: rect}
+    n8@{ shape: rect}
+    n9@{ shape: rect}
+    n10@{ shape: rect}
+    n6@{ shape: rect}
+    n5@{ shape: rect}
+    n14@{ shape: rect}
+    n23@{ shape: rect}
+    n12@{ shape: rect}
+    n11@{ shape: rect}
+    n16@{ shape: tri}
+    n17@{ shape: tri}
+    n18@{ shape: tri}
+    n15@{ shape: tri}
+    n20@{ shape: tri}
+    n19@{ shape: tri}
+    n21@{ shape: tri}
+     BAT:::power
+     n1:::power
+     n2:::safety
+     n22:::safety
+     n4:::power
+     n3:::safety
+     n7:::actuator
+     n8:::actuator
+     n9:::actuator
+     n10:::actuator
+     n6:::sensor
+     n5:::sensor
+     n14:::sensor
+    classDef power fill:#fefce8,stroke:#facc15,stroke-width:2px,color:#1f2937
+    classDef safety fill:#fef2f2,stroke:#f87171,stroke-width:2px,color:#1f2937
+    classDef control fill:#eef2ff,stroke:#818cf8,stroke-width:2px,color:#1f2937
+    classDef sensor fill:#ecfeff,stroke:#22d3ee,stroke-width:2px,color:#1f2937
+    classDef actuator fill:#fff7ed,stroke:#fb923c,stroke-width:2px,color:#1f2937
+    classDef external fill:#f5f3ff,stroke:#a78bfa,stroke-width:2px,color:#1f2937
+    style n16 color:#000000,stroke:#616161
+    style n17 color:#000000,stroke:#616161
+    style n18 color:#000000,stroke:#616161
+    style n15 color:#000000,stroke:#616161
+    style n20 color:#000000,stroke:#616161
+    style n19 color:#000000,stroke:#616161
+    style n21 color:#000000,stroke:#616161

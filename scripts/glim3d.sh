@@ -7,7 +7,8 @@ set -eu
 cd "$(dirname "$0")/.."
 # claude: GLIM は LIO 構成 (2026-08-11) — /imu/data が無いと odometry が進まないため
 # BNO086 込みで bringup する。
-IMU=true ./scripts/bringup3d.sh
+# claude_imu_rate: LIO の deskew 精度のため IMU は 200 Hz (firmware 実用上限, 2026-09-13)。
+IMU=true IMU_RATE=200 ./scripts/bringup3d.sh
 
 docker compose --profile glim up -d glim
 
