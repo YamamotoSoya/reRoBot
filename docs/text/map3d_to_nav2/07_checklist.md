@@ -53,6 +53,20 @@ docker exec glim_env python3 /workspace/tools/glim_dump_to_2dmap/glim_dump_to_2d
 #    同様に mv + yaml の image 行を追従 (pgm のまま my_map.pgm で問題ない)
 ```
 
+**7.1c 生スキャン × 最適化軌跡で変換する** (第3章 §3.5。2026-09-14 追加。submap 版で壁が点線状に
+薄いとき・生密度が欲しいとき。bag と LC 後の dump の両方が要る):
+
+```bash
+# glim_env 内。dump は LC 後に保存したもの (traj_lidar.txt の終端 z が閉じているか確認)
+source /opt/ros/jazzy/setup.bash
+T=/workspace/tools/glim_traj_to_2dmap/glim_traj_to_2dmap.py
+python3 $T /workspace/bags/<bag_dir> /workspace/bags/<dump_dir> /workspace/maps/glim/<name>/nav2 \
+  -r 0.05 --map_width 6144 --map_height 6144 \
+  --height_frame ground --min_height 0.3 --max_height 1.5 --range_max 30 --deskew \
+  --min_points_in_pix 4 --max_points_in_pix 12
+# 0.10 m 格子が要るなら -r 0.10 --map_width 3072 --map_height 3072 --min_points_in_pix 8 --max_points_in_pix 24
+```
+
 ## 7.2 走行 (main コンテナ、AMCL 通しは未検証 2026-08-17)
 
 ```bash
@@ -93,6 +107,7 @@ docker exec -it rerobot_env bash -c "source /opt/ros/jazzy/setup.bash && ros2 to
 | 変換した地図が真っ黒 | 帯に床点が混入 (帯下限が低すぎ / z ドリフト) | 下限を床+0.3 以上に。ドリフト地図なら §7.1b |
 | 遠方だけ壁が消える | z ドリフトで帯から壁が外れた (床が場所により滑る) | §7.1b の glim_dump_to_2dmap (センサ相対スライス) へ切替。機構は第3章 §3.4 |
 | 壁が点線状に薄い・場所で濃さが違う | 濃さ = 重なった submap 数 (GLIM の 0.3 m 間引き × submap 間隔)。5 cm 画素は細かすぎ | `-r 0.10` (点数しきい値はそのまま) で右上占有 17 倍。機構と掃引は第3章 §3.4 (2026-09-10) |
+| 上の対策でも壁が薄い / 生密度の地図が欲しい | submap 点群は間引き済みで密度が戻らない | 生スキャン × `traj_lidar.txt` の再投影 `glim_traj_to_2dmap` (第3章 §3.5、2026-09-14)。推奨引数は §7.1c |
 | 地図の一部が欠ける | `-w -h` が小さくはみ出し (無警告で捨てられる) | xy 実測値から再計算。max(絶対値)×2÷resolution 以上 |
 | 地図が歪む/中心ずれ | `-w` ≠ `-h` (y 中心計算の実装バグ) | 必ず同値にする (第3章 §3.2) |
 | map_server が起動失敗 | yaml の image 参照切れ (改名の追従漏れ) | §7.1-4 の sed を確認 |
