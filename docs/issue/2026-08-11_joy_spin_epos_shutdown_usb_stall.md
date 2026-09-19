@@ -2,6 +2,7 @@
 # joy 操作中の急回転で EPOS 停止 + CANUSB が USB ストールする問題 (3 回目)
 
 - **ステータス: 未解決** (復旧手順は確立済み。根本対策 = EPOS 側ハードニングが未適用、原因フォルトコードも未確認)
+- **📌 09-19 追記 (critic 査読済み)**: 2026-09-19 15:35 に同じ kernel 署名 (`ftdi_sio ttyUSB0: urb stopped: -32` → `usb 1-2-port3: disabled by hub (EMI?)`) で EPOS ×2 が赤になり、初めてフォルトコードを取得 = **0x8250 RPDO timeout** (USB リンク喪失 → 同期 RPDO 途絶 → 補間周期 10 ms で EPOS が自衛停止、0x6007 = 3 quick stop)。本 issue の 3 事象も**同機構と類推**する (当時のコードは無いので確定ではない)。当時の診断「電流/回生スパイク → 電源・USB 巻き添え」は根拠が無かったので格下げ。**USB 喪失の原因 (GND ループ/EMI・コネクタ/ケーブルの機械的接触・ハブ) は今も未識別**。詳細と代替仮説は `docs/issue/2026-09-19_epos_stop_link_loss_rpdo_timeout_power.md` §4〜5。
 - 日付: 2026-08-11 (初発 2026-07-31 ×2 → 本件で 3 回目)
 - 環境: Docker `rerobot_env` / ROS 2 Jazzy / ros2_canopen / EPOS4 ×2 over can0 (LAWICEL CANUSB, slcand)
 - 関連ファイル:

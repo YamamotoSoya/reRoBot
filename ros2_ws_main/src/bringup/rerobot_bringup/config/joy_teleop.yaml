@@ -29,7 +29,7 @@ teleop_twist_joy_node:
     scale_linear:
       x: 0.5              # [m/s]  通常   (2026-08-31 従来の 1/2 に減速) # claude
     scale_linear_turbo:
-      x: 2.0               # [m/s]  turbo  (同上 1/2) # claude
+      x: 1.0               # [m/s]  turbo  (同上 1/2) # claude
     scale_angular:
       yaw: 0.3             # [rad/s] 通常   (同上 1/2) # claude
     scale_angular_turbo:
