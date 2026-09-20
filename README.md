@@ -73,12 +73,24 @@ BindsTo=dev-ttyCANUSB.device
 [Service]
 Type=oneshot
 RemainAfterExit=yes
+# 2026-09-19: USB 再列挙直後に自動起動した slcand が「can0 UP・送信可・受信ゼロ」の半死状態を
+# 作ることがある (同日 3 回: 15:35, 17:16, 17:59。手動 restart で毎回復帰)。sleep 2 を入れても
+# 17:59 に再発したので、待ち時間ではなく「起動後に受信を確認し、無ければ slcand をやり直す」で対処する。
+ExecStartPre=/bin/sleep 2
 ExecStart=/bin/bash -c 'slcand -o -c -s8 /dev/ttyCANUSB can0 && ip link set can0 up'
+# EPOS のロジック電源が入っていれば heartbeat (2 ノード × 0.5 Hz) が 4 s 以内に届く。届かなければ 1 回やり直す。
+ExecStartPost=/bin/bash -c 'sleep 4; [ "$(cat /sys/class/net/can0/statistics/rx_packets)" -gt 0 ] || { killall slcand; sleep 1; slcand -o -c -s8 /dev/ttyCANUSB can0 && ip link set can0 up; }'
 ExecStop=/bin/bash -c 'ip link set can0 down; killall slcand'
 
 [Install]
 WantedBy=dev-ttyCANUSB.device
 ```
+
+既にセットアップ済みのマシンで行を足すときは、上のファイルを編集してから
+`sudo systemctl daemon-reload` (アダプタの挿し直しで反映)。半死状態の検知と復旧は
+`./scripts/can_up.sh` でも行える (3 s 間 送信ありで受信ゼロなら service を再起動する)。
+⚠️ 再列挙のたびに can0 は作り直され、稼働中の ros2_canopen master は旧 can0 を掴んだままになる
+(`epos4_controller` が「can0 が作り直された … 再 launch が必要」を ERROR で出す) → `scripts/stop.sh` → 再 launch。
 
 5. 有効化と動作確認
 ```bash

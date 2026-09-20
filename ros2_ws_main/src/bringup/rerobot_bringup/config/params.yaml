@@ -19,6 +19,15 @@ epos4_controller_node:
     #   Max acceleration (0x60C5) = 30000 rpm/s (2026-08-30 設定) が安全網。
     max_motor_accel_rpm_per_s: 15000.0
     max_motor_decel_rpm_per_s: 15000.0
+    # claude_watchdog (2026-09-19): 通信/指令途絶で止まらない層の封鎖 + フォルトコードの記録。
+    #   背景: 09-19 14:57 の暴走 = master 受信側の喪失 + ゲームパッド USB 瞬断で最後の非ゼロ
+    #   Twist が保持され続けた。EPOS 側の 0x8250 (RPDO timeout) は PDO が届き続ける型には無効。
+    #   詳細 docs/issue/2026-09-19_epos_stop_link_loss_rpdo_timeout_power.md §6, §8。
+    cmd_timeout_s: 0.5          # /robot_speed_cmd がこの秒数途絶し目標が非ゼロなら 0 へランプ (0.0 で無効)。joy は autorepeat 20 Hz、keyboard は 20 Hz publish なので通常運転では発動しない
+    monitor_period_s: 0.5       # 監視ループの評価周期 [s]。statusword は ~/rpdo (TPDO1 の 0x6041) の購読で得る = SDO ポーリングなし・バス負荷なし
+    monitor_sdo_timeout_s: 0.5  # Fault 検知時にコード (0x603F/0x1003/0x2200:01) を読む SDO の待ち [s]。この時だけ driver の "SDO Read Call" INFO が数行出る
+    link_loss_timeout_s: 1.0    # 両ノードの PDO (statusword) がこの秒数途絶 → リンク喪失判定 → 目標 0。TPDO は 50 ms 周期なので 1.0 s は十分な余裕
+    can_interface: "can0"       # /sys/class/net/<if>/ifindex を監視。変化 = USB 再列挙で can0 が作り直された (master は旧 socket のまま → 再 launch 必須)
 
 epos4_odometry_node:
   ros__parameters:

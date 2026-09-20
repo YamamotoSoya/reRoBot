@@ -12,6 +12,7 @@ find_package(std_srvs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(canopen_interfaces REQUIRED)
+find_package(diagnostic_msgs REQUIRED)  # claude_watchdog
 find_package(nav_msgs REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
@@ -26,6 +27,7 @@ ament_target_dependencies(epos4_controller
   sensor_msgs
   geometry_msgs
   canopen_interfaces
+  diagnostic_msgs  # claude_watchdog
 )
 
 add_executable(epos4_odometry src/epos4_odometry.cpp)

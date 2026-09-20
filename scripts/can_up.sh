@@ -29,6 +29,28 @@ if ip link show can0 2>/dev/null | head -1 | grep -qE '[<,]UP[,>]'; then
     echo "[can_up] can0 re-attached (slcan, 1 Mbps)"
     exit 0
   fi
+  # claude_watchdog (2026-09-19): can0 UP・slcand も正しい tty でも、USB 再列挙の同一秒に slcand が
+  # 起動した場合はアダプタの CAN 側が開かず「送信は出るが受信ゼロ」の半死状態になる (同日 2 回再現、
+  # 15:35 / 17:16。手動 restart で毎回復帰)。EPOS の heartbeat (2 ノード × 0.5 Hz) を 3 s 待ち、
+  # 送信が出ているのに受信が 1 フレームも無ければ service を再起動する。
+  # EPOS のロジック電源が切れているときも同じ見え方になるので、その場合は再起動しても無害。
+  rx0="$(cat /sys/class/net/can0/statistics/rx_packets)"
+  tx0="$(cat /sys/class/net/can0/statistics/tx_packets)"
+  sleep 3
+  rx1="$(cat /sys/class/net/can0/statistics/rx_packets)"
+  tx1="$(cat /sys/class/net/can0/statistics/tx_packets)"
+  if [ "$rx1" -eq "$rx0" ] && [ "$tx1" -gt "$tx0" ]; then
+    echo "[can_up] ⚠️ can0 は UP だが 3 s 間 受信 0 フレーム (送信は ${tx0}→${tx1})。"
+    echo "[can_up]    アダプタの CAN 側が開いていない可能性 (USB 再列挙直後の slcand 起動競合) — canusb-up.service を再起動します (要 sudo)"
+    sudo systemctl restart canusb-up.service
+    sleep 3
+    echo "[can_up] rx_packets: $(cat /sys/class/net/can0/statistics/rx_packets) (0 のままなら EPOS のロジック電源か CAN 配線を確認)"
+    echo "[can_up] ⚠️ can0 の ifindex が変わったので、稼働中の ROS スタックは scripts/stop.sh → 再 launch が必要"
+    exit 0
+  fi
+  if [ "$rx1" -eq "$rx0" ]; then
+    echo "[can_up] ℹ️ 3 s 間 送受信ともフレーム無し (スタック停止中で EPOS も無応答?)。EPOS のロジック電源が入っていれば heartbeat が 2 s 周期で見えるはず"
+  fi
   echo "[can_up] can0 is already up (canusb-up.service による自動起動)"
   ip -details link show can0 | head -3
   exit 0

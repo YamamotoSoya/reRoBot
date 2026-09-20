@@ -1,15 +1,22 @@
-#include <atomic>  // claude
+#include <algorithm>  // claude_watchdog: std::min
+#include <atomic>     // claude
 #include <chrono>
 #include <cmath>
-#include <future>  // claude
+#include <cstdio>   // claude_watchdog: std::snprintf
+#include <fstream>  // claude_watchdog: /sys/class/net/<can>/ifindex 読み取り
+#include <future>   // claude
 #include <iostream>
+#include <map>  // claude_watchdog: EPOS4 エラーコード名テーブル
 #include <memory>
 #include <optional>  // claude
+#include <string>    // claude_watchdog
 #include <thread>
+#include <vector>  // claude_watchdog
 
 #include "canopen_interfaces/msg/co_data.hpp"
 #include "canopen_interfaces/srv/co_read.hpp"  // claude: SDO read for statusword/mode verification
 #include "canopen_interfaces/srv/co_target_double.hpp"
+#include "diagnostic_msgs/msg/diagnostic_array.hpp"  // claude_watchdog: フォルト/リンク状態を /diagnostics へ
 #include "geometry_msgs/msg/twist.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/joint_state.hpp"
@@ -92,6 +99,20 @@ public:
 
     // encoder_publisher_ = this->create_publisher<sensor_msgs::msg::JointState>("/robot_encoder_states", 10);
 
+    // claude_watchdog: フォルトコード・リンク状態を /diagnostics に出す (bag に残せる)。
+    diag_pub_ = this->create_publisher<diagnostic_msgs::msg::DiagnosticArray>("/diagnostics", 10);
+
+    // claude_watchdog: ros2_canopen の ProxyDriver は受信 PDO の各オブジェクトを ~/rpdo (COData)
+    // に流す。TPDO1 に載っている statusword (0x6041) をここから取れば SDO ポーリングが不要になり
+    // (sdo_read ごとに driver が INFO を出してユーザが「接続待ち」と誤認した 2026-09-19)、
+    // 受信時刻そのものが「PDO が流れているか」= リンク生存の指標になる。
+    m1_rpdo_sub_ = this->create_subscription<canopen_interfaces::msg::COData>(
+      "/motor1/cia402_device_1/rpdo", 50,
+      [this](const canopen_interfaces::msg::COData::SharedPtr msg) { on_rpdo(m1_rpdo_, *msg); });
+    m2_rpdo_sub_ = this->create_subscription<canopen_interfaces::msg::COData>(
+      "/motor2/cia402_device_2/rpdo", 50,
+      [this](const canopen_interfaces::msg::COData::SharedPtr msg) { on_rpdo(m2_rpdo_, *msg); });
+
     //YAMLparams
     declare_parameter("tread_width", 0.41);
     declare_parameter("tire_diam", 0.15);
@@ -113,6 +134,27 @@ public:
     // claude: 100 Hz タイマ 1 tick あたりの最大変化量 [rpm] に前計算しておく
     accel_step_ = get_parameter("max_motor_accel_rpm_per_s").as_double() * 0.01;
     decel_step_ = get_parameter("max_motor_decel_rpm_per_s").as_double() * 0.01;
+
+    // claude_watchdog (2026-09-19): 「通信は生きているのに指令が更新されない」型の暴走対策。
+    //   EPOS4 側は RPDO timeout (0x8250, 補間周期 10 ms) で PDO 途絶を自衛するが、
+    //   PDO が届き続ける形 (joy のデバイス喪失で teleop が publish 停止、master の受信側のみ
+    //   死亡) では最後の非ゼロ指令が無期限に送られ続ける (2026-09-19 14:57 の暴走)。
+    //   - cmd_timeout_s: /robot_speed_cmd がこの秒数途絶し目標が非ゼロなら 0 へランプ (0 で無効)
+    //   - monitor_period_s: 監視ループの評価周期 (statusword は ~/rpdo 購読で得るのでバス負荷なし)
+    //   - monitor_sdo_timeout_s: Fault 検知時にコードを読む SDO の待ち時間
+    //   - link_loss_timeout_s: 両ノードの PDO (statusword) がこの秒数途絶したらリンク喪失と判定して目標 0
+    //   - can_interface: /sys/class/net/<if>/ifindex を監視。値が変わる = can0 が作り直された
+    //     (USB 再列挙) が ros2_canopen master は旧 can0 を掴んだまま → スタック再起動が必要
+    declare_parameter("cmd_timeout_s", 0.5);
+    declare_parameter("monitor_period_s", 0.5);
+    declare_parameter("monitor_sdo_timeout_s", 0.5);
+    declare_parameter("link_loss_timeout_s", 1.0);
+    declare_parameter("can_interface", std::string("can0"));
+    cmd_timeout_s_ = get_parameter("cmd_timeout_s").as_double();
+    monitor_period_s_ = get_parameter("monitor_period_s").as_double();
+    monitor_sdo_timeout_s_ = get_parameter("monitor_sdo_timeout_s").as_double();
+    link_loss_timeout_s_ = get_parameter("link_loss_timeout_s").as_double();
+    can_interface_ = get_parameter("can_interface").as_string();
 
     // initializing and conection
     topic_timer_ =
@@ -223,6 +265,67 @@ private:
   double accel_step_;  // [rpm/tick] 加速側(|rpm| が増える向き)の上限
   double decel_step_;  // [rpm/tick] 減速側(0 へ向かう・符号反転を跨ぐ向き)の上限
 
+  // claude_watchdog: 指令ウォッチドッグ (executor スレッド専用)
+  double cmd_timeout_s_ = 0.5;
+  bool cmd_received_ = false;
+  std::atomic<bool> cmd_timed_out_{false};  // 途絶で 0 にした状態 (再受信で解除。監視スレッドが diagnostics に載せるため atomic)
+  std::chrono::steady_clock::time_point last_cmd_time_{};
+
+  // claude_watchdog: リンク喪失時に監視スレッドが立て、timer_callback が目標を 0 に落とす。
+  // 監視スレッドは m*_value_ を直接触らない (executor スレッドとのデータ競合を避ける)。
+  std::atomic<bool> force_zero_{false};
+
+  // claude_watchdog: 監視ループの設定と状態 (init_thread_ 上でのみ触る)
+  double monitor_period_s_ = 0.5;
+  double monitor_sdo_timeout_s_ = 0.5;
+  double link_loss_timeout_s_ = 1.0;
+  std::string can_interface_ = "can0";
+  rclcpp::Publisher<diagnostic_msgs::msg::DiagnosticArray>::SharedPtr diag_pub_;
+
+  // claude_watchdog: ~/rpdo から拾った statusword と受信時刻。executor が書き、監視スレッドが読む。
+  struct RpdoState
+  {
+    std::atomic<uint32_t> statusword{0};
+    std::atomic<int64_t> last_ns{0};  // steady_clock, 0 = 未受信
+  };
+  RpdoState m1_rpdo_;
+  RpdoState m2_rpdo_;
+  rclcpp::Subscription<canopen_interfaces::msg::COData>::SharedPtr m1_rpdo_sub_;
+  rclcpp::Subscription<canopen_interfaces::msg::COData>::SharedPtr m2_rpdo_sub_;
+
+  static void on_rpdo(RpdoState & st, const canopen_interfaces::msg::COData & msg)
+  {
+    if (msg.index != 0x6041) {
+      return;
+    }
+    st.statusword.store(msg.data);
+    st.last_ns.store(
+      std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::steady_clock::now().time_since_epoch())
+        .count());
+  }
+
+  struct MotorMonitor
+  {
+    MotorMonitor(
+      std::string n, std::string h, rclcpp::Client<canopen_interfaces::srv::CORead>::SharedPtr s,
+      RpdoState * r)
+    : name(std::move(n)), hardware_id(std::move(h)), sdo(std::move(s)), rpdo(r)
+    {
+    }
+    std::string name;
+    std::string hardware_id;
+    rclcpp::Client<canopen_interfaces::srv::CORead>::SharedPtr sdo;
+    RpdoState * rpdo;
+    double stale_s = 0.0;  // 最終 PDO からの経過 [s] (未受信なら大きな値)
+    bool alive = false;
+    bool fault_latched = false;
+    std::optional<uint32_t> statusword;
+    uint32_t error_code = 0;
+    std::vector<uint32_t> history;
+    double supply_v = 0.0;
+  };
+
   void shutdown_node()
   {
     m1_value_ = 0.0;
@@ -252,6 +355,28 @@ private:
 
   void timer_callback()
   {
+    // claude_watchdog: (a) 監視スレッドがリンク喪失を検知していれば目標を 0 に固定。
+    //   PDO が届く経路が生きていれば EPOS はこの 0 を受けて止まる。届かなければ
+    //   EPOS 側の 0x8250 が止める (二重防御)。
+    if (force_zero_.load()) {
+      m1_value_ = 0.0;
+      m2_value_ = 0.0;
+    } else if (cmd_timeout_s_ > 0.0 && cmd_received_) {
+      // (b) 指令途絶: 最後の Twist から cmd_timeout_s 経過し、目標が非ゼロなら 0 へ。
+      //   teleop が LB 離しでゼロを出して沈黙する通常運用では目標が既に 0 なので何もしない。
+      const double since_cmd =
+        std::chrono::duration<double>(std::chrono::steady_clock::now() - last_cmd_time_).count();
+      if (since_cmd > cmd_timeout_s_ && (m1_value_ != 0.0 || m2_value_ != 0.0)) {
+        RCLCPP_WARN(
+          get_logger(),
+          "指令ウォッチドッグ: /robot_speed_cmd が %.2f s 途絶 (最後の目標 m1=%.0f m2=%.0f rpm) → 0 へランプ",
+          since_cmd, m1_value_, m2_value_);
+        m1_value_ = 0.0;
+        m2_value_ = 0.0;
+        cmd_timed_out_ = true;
+      }
+    }
+
     // claude: 要求ターゲットへランプしながら追従(急変指令をここで滑らかにする)
     m1_cmd_ = ramp_toward(m1_cmd_, m1_value_);
     m2_cmd_ = ramp_toward(m2_cmd_, m2_value_);
@@ -289,6 +414,13 @@ private:
 
   void cmdSpeedCallback(const geometry_msgs::msg::Twist::SharedPtr msg)
   {
+    // claude_watchdog: 受信時刻を記録 (途絶判定の基準)。途絶から復帰したら 1 行だけ知らせる。
+    last_cmd_time_ = std::chrono::steady_clock::now();
+    cmd_received_ = true;
+    if (cmd_timed_out_) {
+      RCLCPP_INFO(get_logger(), "指令ウォッチドッグ: /robot_speed_cmd の受信が再開");
+      cmd_timed_out_ = false;
+    }
     // claude: 脱力中は速度指令を一切反映しない(ターゲットは 0 のまま)。
     if (free_mode_) {
       return;
@@ -369,18 +501,20 @@ private:
     return future.get()->success;
   }
 
-  // claude: blocking SDO upload (read) of a 16-bit object, returns nullopt on failure.
+  // claude: blocking SDO upload (read) of an object, returns nullopt on failure.
+  // claude_watchdog: subindex と待ち時間を引数化 (0x1003:01〜05 の履歴読み、監視用の短い待ち)。
   std::optional<uint32_t> read_sdo(
-    rclcpp::Client<canopen_interfaces::srv::CORead>::SharedPtr client, uint16_t index)
+    rclcpp::Client<canopen_interfaces::srv::CORead>::SharedPtr client, uint16_t index,
+    uint8_t subindex = 0, std::chrono::milliseconds timeout = 2000ms)
   {
-    if (!client->wait_for_service(2s)) {
+    if (!client->wait_for_service(timeout)) {
       return std::nullopt;
     }
     auto request = std::make_shared<canopen_interfaces::srv::CORead::Request>();
     request->index = index;
-    request->subindex = 0;
+    request->subindex = subindex;
     auto future = client->async_send_request(request);
-    if (future.wait_for(2s) != std::future_status::ready) {
+    if (future.wait_for(timeout) != std::future_status::ready) {
       return std::nullopt;
     }
     auto response = future.get();
@@ -456,16 +590,248 @@ private:
     // device_manager advertises the lifecycle services only once both drivers
     // have booted; wait for that instead of racing it.
     if (!m1_client_driver_init_->wait_for_service(20s)) {
-      RCLCPP_ERROR(get_logger(), "motor1 init service never appeared; aborting auto-init");
+      // claude_watchdog: init は諦めるが、監視ループは回す (EPOS 電源 OFF・boot 失敗でも
+      // リンク状態と後からの復帰を /diagnostics に出せるように)。
+      RCLCPP_ERROR(
+        get_logger(), "motor1 init service never appeared; aborting auto-init (監視のみ継続)");
+    } else {
+      init_motor(
+        "motor1(left)", m1_client_driver_init_, m1_client_driver_enable_,
+        m1_client_driver_csv_mode_, m1_client_driver_recover_, m1_client_sdo_read_);
+      init_motor(
+        "motor2(right)", m2_client_driver_init_, m2_client_driver_enable_,
+        m2_client_driver_csv_mode_, m2_client_driver_recover_, m2_client_sdo_read_);
+      RCLCPP_INFO(get_logger(), "EPOS4 auto-init complete.");
+    }
+
+    // claude_watchdog: 初期化が終わったら同じスレッドで監視ループに入る
+    run_monitor_loop();
+  }
+
+  // claude_watchdog: EPOS4 Firmware Specification §7.2 のエラーコード名 (主要なもの)。
+  static const char * epos4_error_name(uint32_t code)
+  {
+    static const std::map<uint32_t, const char *> names = {
+      {0x0000, "No error"},
+      {0x1000, "Generic error"},
+      {0x2310, "Overcurrent"},
+      {0x2320, "Power stage protection"},
+      {0x3210, "Overvoltage (power supply)"},
+      {0x3220, "Undervoltage (power supply cannot supply acceleration current / +Vcc lost)"},
+      {0x4210, "Thermal overload (power stage)"},
+      {0x4380, "Thermal motor overload"},
+      {0x5113, "Logic supply voltage too low"},
+      {0x5280, "Hardware defect"},
+      {0x6320, "Software parameter error"},
+      {0x7320, "Position sensor error"},
+      {0x8110, "CAN overrun (objects lost)"},
+      {0x8120, "CAN passive mode"},
+      {0x8130, "Heartbeat error"},
+      {0x81FD, "CAN bus off"},
+      {0x81FE, "CAN Rx queue overflow"},
+      {0x81FF, "CAN Tx queue overflow"},
+      {0x8250, "RPDO timeout (no target PDO within interpolation period = master/link lost)"},
+      {0x8611, "Following error"},
+    };
+    auto it = names.find(code & 0xFFFF);
+    return it == names.end() ? "(unknown, see EPOS4 Firmware Spec §7.2)" : it->second;
+  }
+
+  // claude_watchdog: /sys/class/net/<if>/ifindex を読む。無ければ -1 (インタフェース消滅)。
+  int read_can_ifindex() const
+  {
+    std::ifstream f("/sys/class/net/" + can_interface_ + "/ifindex");
+    int idx = -1;
+    if (!(f >> idx)) {
+      return -1;
+    }
+    return idx;
+  }
+
+  // claude_watchdog: 1 ノード分の状態評価とフォルト時のコード即読み。
+  // statusword は ~/rpdo 購読 (TPDO1) から取る (SDO ポーリングなし)。Fault ビット (bit 3) の
+  // 立ち上がりでだけ SDO で 0x603F / 0x1003:00〜05 / 0x2200:01 を読み、電源を切る前にコードを
+  // ログへ残す (0x1003 は揮発、ros2_canopen は EMCY をログに出さない)。
+  void poll_motor(MotorMonitor & m)
+  {
+    const auto to = std::chrono::milliseconds(static_cast<int>(monitor_sdo_timeout_s_ * 1000.0));
+    const int64_t last = m.rpdo->last_ns.load();
+    if (last == 0) {
+      m.stale_s = 1e9;  // 一度も PDO を受けていない
+      m.alive = false;
+      m.statusword.reset();
       return;
     }
-    init_motor(
-      "motor1(left)", m1_client_driver_init_, m1_client_driver_enable_, m1_client_driver_csv_mode_,
-      m1_client_driver_recover_, m1_client_sdo_read_);
-    init_motor(
-      "motor2(right)", m2_client_driver_init_, m2_client_driver_enable_, m2_client_driver_csv_mode_,
-      m2_client_driver_recover_, m2_client_sdo_read_);
-    RCLCPP_INFO(get_logger(), "EPOS4 auto-init complete.");
+    const int64_t now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                             std::chrono::steady_clock::now().time_since_epoch())
+                             .count();
+    m.stale_s = static_cast<double>(now_ns - last) * 1e-9;
+    m.alive = (m.stale_s <= link_loss_timeout_s_);
+    m.statusword = m.rpdo->statusword.load();
+    if (!m.alive) {
+      return;  // 古い statusword で Fault 判定はしない
+    }
+    const bool fault = (m.statusword.value() & 0x0008) != 0;
+    if (fault && !m.fault_latched) {
+      m.fault_latched = true;
+      m.error_code = read_sdo(m.sdo, 0x603F, 0, to).value_or(0);
+      m.history.clear();
+      const uint32_t n = read_sdo(m.sdo, 0x1003, 0, to).value_or(0);
+      for (uint32_t i = 1; i <= std::min<uint32_t>(n, 5); ++i) {
+        m.history.push_back(read_sdo(m.sdo, 0x1003, static_cast<uint8_t>(i), to).value_or(0) & 0xFFFF);
+      }
+      m.supply_v = read_sdo(m.sdo, 0x2200, 1, to).value_or(0) / 10.0;
+      std::string hist;
+      for (auto h : m.history) {
+        char buf[16];
+        std::snprintf(buf, sizeof(buf), " 0x%04X", h);
+        hist += buf;
+      }
+      RCLCPP_ERROR(
+        get_logger(),
+        "%s FAULT: statusword=0x%04X error=0x%04X (%s) history[%u]=[%s ] Vcc=%.1f V "
+        "— コードは記録済み。復帰は recover/再起動、原因は docs/issue 参照",
+        m.name.c_str(), m.statusword.value(), m.error_code, epos4_error_name(m.error_code), n,
+        hist.c_str(), m.supply_v);
+    } else if (!fault && m.fault_latched) {
+      m.fault_latched = false;
+      RCLCPP_INFO(get_logger(), "%s: Fault cleared (statusword=0x%04X)", m.name.c_str(),
+                  m.statusword.value());
+    }
+  }
+
+  // claude_watchdog: 監視ループ (init_thread_ 上)。
+  //   1. can0 の ifindex 監視: 変化 = USB 再列挙で can0 が作り直された。ros2_canopen master は
+  //      旧 socket を掴んだままなので通信は二度と戻らない → ERROR で再起動を促し目標を 0 に。
+  //   2. 両ノードの PDO (statusword) が link_loss_timeout_s 途絶 = PC↔CAN リンク喪失 → 目標を 0 に
+  //      (送信経路だけ生きていれば EPOS はこの 0 を受けて止まる)。
+  //   3. 各ノードのフォルト検知とコード記録 (poll_motor)。
+  //   4. 以上を /diagnostics に流す (bag に残る)。
+  void run_monitor_loop()
+  {
+    MotorMonitor m1{"motor1(right)", "EPOS4 node 1", m1_client_sdo_read_, &m1_rpdo_};
+    MotorMonitor m2{"motor2(left)", "EPOS4 node 2", m2_client_sdo_read_, &m2_rpdo_};
+    const int ifindex_at_start = read_can_ifindex();
+    bool link_lost_prev = false;
+    auto last_link_log = std::chrono::steady_clock::now() - 10s;
+    RCLCPP_INFO(
+      get_logger(),
+      "監視ループ開始: %s ifindex=%d, period=%.2f s, cmd_timeout=%.2f s, link_loss_timeout=%.2f s "
+      "(statusword は ~/rpdo 購読、SDO は Fault 時のみ)",
+      can_interface_.c_str(), ifindex_at_start, monitor_period_s_, cmd_timeout_s_,
+      link_loss_timeout_s_);
+
+    while (!stop_init_.load() && rclcpp::ok()) {
+      std::this_thread::sleep_for(
+        std::chrono::milliseconds(static_cast<int>(monitor_period_s_ * 1000.0)));
+      if (stop_init_.load() || !rclcpp::ok()) {
+        break;
+      }
+
+      const int ifindex_now = read_can_ifindex();
+      const bool can_gone = (ifindex_now < 0);
+      const bool can_recreated =
+        (ifindex_at_start > 0 && ifindex_now > 0 && ifindex_now != ifindex_at_start);
+
+      poll_motor(m1);
+      poll_motor(m2);
+      const bool pdo_dead = (!m1.alive && !m2.alive);
+
+      const bool link_lost = can_gone || can_recreated || pdo_dead;
+      force_zero_.store(link_lost);
+
+      std::string reason;
+      if (can_gone) {
+        reason = can_interface_ + " が消滅 (USB アダプタ切断?)";
+      } else if (can_recreated) {
+        reason = can_interface_ + " が作り直された (ifindex " + std::to_string(ifindex_at_start) +
+                 " → " + std::to_string(ifindex_now) +
+                 "): master は旧 socket のまま → scripts/stop.sh → 再 launch が必要";
+      } else if (pdo_dead) {
+        char buf[96];
+        std::snprintf(
+          buf, sizeof(buf), "両ノードの PDO が途絶 (m1 %.1f s / m2 %.1f s > %.1f s)",
+          std::min(m1.stale_s, 1e6), std::min(m2.stale_s, 1e6), link_loss_timeout_s_);
+        reason = std::string(buf) + " (CANUSB ストール / CAN 配線 / EPOS 電源断 / ドライバ未 activate)";
+      }
+
+      const auto now = std::chrono::steady_clock::now();
+      if (link_lost && (!link_lost_prev || now - last_link_log > 2s)) {
+        RCLCPP_ERROR(
+          get_logger(), "CAN リンク喪失: %s → 目標速度を 0 に固定 (EPOS 側は 0x8250 で自衛)",
+          reason.c_str());
+        last_link_log = now;
+      } else if (!link_lost && link_lost_prev) {
+        RCLCPP_WARN(get_logger(), "CAN リンク復帰 (SDO 応答あり)。目標 0 から再開");
+      }
+      link_lost_prev = link_lost;
+
+      publish_diagnostics(m1, m2, link_lost, reason, ifindex_now);
+    }
+  }
+
+  void publish_diagnostics(
+    const MotorMonitor & m1, const MotorMonitor & m2, bool link_lost, const std::string & reason,
+    int ifindex_now)
+  {
+    using diagnostic_msgs::msg::DiagnosticStatus;
+    using diagnostic_msgs::msg::KeyValue;
+    auto kv = [](const std::string & k, const std::string & v) {
+      KeyValue x;
+      x.key = k;
+      x.value = v;
+      return x;
+    };
+    auto hex = [](uint32_t v) {
+      char buf[16];
+      std::snprintf(buf, sizeof(buf), "0x%04X", v & 0xFFFF);
+      return std::string(buf);
+    };
+
+    diagnostic_msgs::msg::DiagnosticArray arr;
+    arr.header.stamp = this->now();
+
+    DiagnosticStatus link;
+    link.name = "epos4_controller/can_link";
+    link.hardware_id = can_interface_;
+    link.level = link_lost ? DiagnosticStatus::ERROR : DiagnosticStatus::OK;
+    link.message = link_lost ? reason : "OK";
+    link.values.push_back(kv("ifindex", std::to_string(ifindex_now)));
+    link.values.push_back(kv("force_zero", force_zero_.load() ? "true" : "false"));
+    link.values.push_back(kv("cmd_timed_out", cmd_timed_out_ ? "true" : "false"));
+    arr.status.push_back(link);
+
+    for (const MotorMonitor * m : {&m1, &m2}) {
+      DiagnosticStatus s;
+      s.name = "epos4_controller/" + m->name;
+      s.hardware_id = m->hardware_id;
+      if (!m->alive) {
+        s.level = DiagnosticStatus::STALE;
+        s.message = (m->rpdo->last_ns.load() == 0)
+                      ? "PDO 未受信 (ドライバ未 activate / EPOS 無応答)"
+                      : "PDO 途絶 " + std::to_string(m->stale_s).substr(0, 5) + " s";
+      } else if (m->fault_latched) {
+        s.level = DiagnosticStatus::ERROR;
+        s.message = "FAULT " + hex(m->error_code) + " " + epos4_error_name(m->error_code);
+      } else {
+        s.level = DiagnosticStatus::OK;
+        s.message = "statusword " + hex(m->statusword.value());
+      }
+      if (m->statusword.has_value()) {
+        s.values.push_back(kv("statusword", hex(m->statusword.value())));
+      }
+      if (m->fault_latched) {
+        s.values.push_back(kv("error_code", hex(m->error_code)));
+        std::string hist;
+        for (auto h : m->history) {
+          hist += hex(h) + " ";
+        }
+        s.values.push_back(kv("error_history", hist));
+        s.values.push_back(kv("supply_voltage_V", std::to_string(m->supply_v)));
+      }
+      arr.status.push_back(s);
+    }
+    diag_pub_->publish(arr);
   }
 
   // claude: /robot_free_mode の受信ハンドラ。data=true で脱力 ON、false で復帰。
