@@ -775,3 +775,28 @@ critic の判定: 「形は k で決まる」= 確定寄り、「GPU 版でも�
 **ハード**: この PC (T480s) には NVIDIA GeForce MX150 (2 GB, compute 6.1) があり `/dev/nvidia0` も存在。`nvidia-smi` は「Driver/library version mismatch」(lib 580.178) で不一致 → 再起動かドライバ整合で復旧し得る。現 `rerobot-glim` image に `libodometry_estimation_gpu.so` は無い (koide3 は `glim_ros2:jazzy_cuda12.2` を配布)。
 
 **次の一手**: (1) GPU 版を実際に流す (再起動 → nvidia-smi → cuda image pull + nvidia-container-toolkit → 同 bag を k10 / k20 で各 1 run、sub/global は CPU config のまま)。k10 で A ≈5〜6 なら「GPU でも直らない」が確定、2 台に落ちれば H1/H2/H3 のいずれか (H2 を最初に疑う)。(2) GPU 不可なら、source と target の k を別々に振る patch (`update_target` 挿入前に target の covs だけ再推定、20〜30 行 + 再ビルド) で「どちら側の共分散か」を識別。
+
+### 12.10 live config を k=20 に変更 (ユーザ、2026-09-21) — 2 周 bag の再実行結果: 山は半分、周間オフセットと global 段の上振れが残る
+
+ユーザが `ros2_ws_glim/config/config_preprocess.json` の `k_correspondences` を 10 → **20** に変更し、9/18 2 周 bag を再実行 (`2026-09-180915_k20_dump`、config 差分は k のみ)。ユーザ所感「歪みは小さくなったが完全には治っていない」を数値化 (`analysis_0918/k20_2lap.py`、図 25):
+
+| 段 | 指標 | k=10 | **k=20** |
+|---|---|---|---|
+| odom | 1 周目 z_max / 周末 z | +11.3 / −4.3 | **+5.9 / +0.6** |
+| odom | 2 周目 z_max / 周末 z | +17.0 / −7.0 | **+9.9 / +0.4** |
+| odom | A [°] / rms | 8.90 / 7.35 | **4.00 / 4.34** |
+| traj (viewer) | 1 周目 z_max / 周末 z | +11.2 / −1.6 | +5.0 / **+2.8** |
+| traj | 2 周目 z_max / 周末 z | +14.8 / −0.5 | +8.6 / **+6.3** |
+| traj | 同一周内の遠方観測 − 近傍地面 (\|.\| 中央値) | 1.38 m (前方 +1.4 / 振り返り −0.3) | **0.66 m** (前方 +0.62 / 振り返り +0.64、符号反転が消えた) |
+| traj | 再訪問対の \|Δz\| 中央値 / 4 m セル周間 \|Δz\| | 2.59 / 2.65 m | 2.70 / **3.63 m** (悪化) |
+| graph | 非近接因子 | 0 | 3 (86-91, 87-92, 186-191 = 近接、閉合ではない) |
+
+![k10 vs k20 2 周](img/2026-09-10_glim_z_drift_not_vangle/25_0918_k10_vs_k20_two_laps.png)
+
+読み方:
+1. **odometry 段は予測どおり半減**し、周収支 (周末 z) は −4〜−7 → ±0.6 m でほぼゼロに。同一周内の壁抜け (i) も半減し、「振り返りが下に出る」符号反転が消えた (残りは前方観測 +0.6 m の pitch 誤差型)。
+2. **global mapping 段が新たに上振れ**: odom では周末 +0.4 なのに traj は 1 周目 +2.8 → 2 周目 +6.3 m と周ごとに +3 m 積む (traj−odom は s=300 で +2.1、600 で +5.1、662 で +6.0)。k=10 では global 段は逆に z_end を縮めていた (−7.0 → −0.5)。run 間ノイズ ±1.5 m (§11.4) を超える。critic H4 (global 段では IMU の重力拘束が 0.1 s の endpoint 因子だけで、submap 間 VGICP/between に負ける) の現れと整合するが未検証。
+3. **周間オフセットは残る** (2. により 3 m 級)。閉合因子は依然ゼロなので、2 周 bag の 2D 地図化は手動閉合 (§12.7) か 1 周目のみが必要。
+4. 残る同一周内の山 5.9 m (odom) は §11.3 の「k で縛れない残り半分」で、機構未特定 (A1 状態持ち越し / A2 経路差 / heading 符号の仕組み)。
+
+次の一手 (安い順): (a) global 段の上振れの切り分け — `config_global_mapping_pose_graph.json` (submap 間の再登録なし、pose graph のみ) で同 bag 1 run (~11 分): traj が odom に張り付けば global 段の VGICP 再登録が +3 m/周の犯人。(b) 2 周目開始で切った bag の 1 run (A1/A2、§12.4)。(c) k=20 の live 反映に伴う CLAUDE.md / PROJECT_STATE の「live 未変更・推奨 k=20」記述の更新 — 本節で済。
