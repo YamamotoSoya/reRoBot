@@ -1,6 +1,6 @@
-<!-- claude: 運用手引き 第4章 テンプレ (2026-09-22) -->
+<!-- claude: 運用手引き 第5章 テンプレ (2026-09-22) -->
 
-# 第4章 bag記録
+# 第5章 bag記録
 
 ---
 ### 記録対象topic
@@ -21,12 +21,12 @@
 |---|---|---|
 | **`/odometry/filtered`** | `nav_msgs/Odometry` | EKF が車輪 odom と IMU を融合した結果 (`ekf:=true` 時のみ)。Nav2 が読んでいる odom はこちらなので、Nav2 の挙動を追うなら記録する |
 | **`/motor1/cia402_device_1/joint_states`**<br>**`/motor2/cia402_device_2/joint_states`** | `sensor_msgs/JointState` | 各モータの生のシャフト角 (rad)。odometry 自体を疑うときの一次データ |
-| **`/robot_speed_cmd`** | `geometry_msgs/Twist` | teleop / Nav2 が出した速度指令。指令と実速度のずれを見るとき |
+| **`/robot_speed_cmd`** | `geometry_msgs/Twist` | teleop / Nav2 が出した速度指令。指令と実速度のずれを見るとき。**R-Fans 瞬停 (回転ディップ) の調査中は常に含める** — 事象直前の減速が指令かモータの負けかを判別する材料 (`docs/issue/2026-09-02_rfans_scan_motor_dropout.md`) |
 
 ### 参考：すべての対象topicを記録
 ```
-ros2 bag record -s mcap -o /workspace/bags/5goukan/2d3dimu/online/rosbag/$(date +%F%H%M) /rfans_driver/rfans_points /scan /imu/data /odom /tf /tf_static /diagnostics
+ros2 bag record -s mcap -o /workspace/bags/5goukan/2d3dimu/online/rosbag/$(date +%F%H%M) /rfans_driver/rfans_points /scan /imu/data /odom /tf /tf_static /diagnostics /robot_speed_cmd
 ```
 
 
-← [第3章 起動と手動操作](03_startup_teleop.md) | → [第5章 SLAM_toolbox](05_slam_toolbox.md)
+← [第4章 起動と手動操作](04_startup_teleop.md) | → [第6章 SLAM_toolbox](06_slam_toolbox.md)

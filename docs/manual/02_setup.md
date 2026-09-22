@@ -4,4 +4,4 @@
 
 ---
 
-← [第1章 全体像](01_overview.md) | → [第3章 起動と手動操作](03_startup_teleop.md)
+← [第1章 全体像](01_overview.md) | → [第3章 基本パラメータ](03_parameters.md)

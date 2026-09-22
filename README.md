@@ -2,7 +2,7 @@
 Autonomous navigation robot for the Tsukuba Challenge
 
 ## Documentation
-- **[運用手引き (詳細版 README)](docs/manual/00_index.md)** — 全体像・セットアップ・起動と手動操作・bag 記録・SLAM (slam_toolbox / GLIM / LIO-SAM)・2D 地図変換・Nav2 / amcl・つくチャレ当日手順・トラブルシューティング
+- **[運用手引き (詳細版 README)](docs/manual/00_index.md)** — 全体像・セットアップ・基本パラメータ・起動と手動操作・bag 記録・SLAM (slam_toolbox / GLIM / LIO-SAM)・2D 地図変換・Nav2 / amcl・つくチャレ当日手順・トラブルシューティング
 - [CLAUDE.md](CLAUDE.md) — 開発規約・ビルド規則・アーキテクチャ要約
 - [docs/text/](docs/text/) — テーマ別解説書
 
