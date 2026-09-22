@@ -212,3 +212,7 @@ path 51.26 m = N11 (51.19 m) と一致し**推定は不変**、点数 50k → **
   密 PLY (外部ビューア用): `exp_2026-08-14/N12/N12_dense_map.ply`
 - 解析スクリプト: セッション scratchpad (`bag_probe.py` / `floor_probe.py` /
   `local_floor_metrics.py` / `compare_n.py` / `render_dense.py` + 08-13 の `analyze_dump.py` 系を再利用)
+
+## 2026-09-22 追記: `calculation_node` の終了時 segfault (5 回、すべて SIGINT 直後)
+
+kernel log (`journalctl -k | grep segfault`) に `calculation_nod[...]: segfault at 0x10 / 0x548 ... in libc.so.6` が 09-19 21:40:44、09-20 08:59 / 09:11、09-22 16:19:38、09-22 20:53:27 の 5 回。すべて launch / node を Ctrl-C (SIGINT) した直後で、動作中のクラッシュは 0。終了シーケンスでスレッド (heartbeat / UDP 受信) が解放済みオブジェクトに触っている疑い。動作には影響しないが、`ros2 launch` の終了ログを汚す + 09-22 夜の時系列復元で「Ctrl-C の印」として役立った副作用あり。修正するなら `cloud_node.cpp` のデストラクタでスレッド join 順を見直す。
