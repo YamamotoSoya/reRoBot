@@ -1,0 +1,6 @@
+# claude: 2026-09-23 WITmotion WT901C-TTL 付属の USB-TTL 変換 (Prolific PL2303, 067b:23a3) に
+# 安定名 /dev/ttyUSB-wt901 を与える。導入:
+#   sudo cp tools/99-wt901.rules /etc/udev/rules.d/ && sudo udevadm control --reload-rules && sudo udevadm trigger
+# ⚠️ 067b:23a3 は PL2303 の汎用 ID。同型の変換器を 2 本挿すと両方に付くので、その場合は
+#    ATTRS{serial} (udevadm info -a -n /dev/ttyUSB0 | grep serial) で絞る。
+SUBSYSTEM=="tty", ATTRS{idVendor}=="067b", ATTRS{idProduct}=="23a3", SYMLINK+="ttyUSB-wt901", MODE="0666"

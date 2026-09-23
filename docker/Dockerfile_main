@@ -63,6 +63,9 @@ RUN apt-get update && apt-get install -y \
     ros-jazzy-imu-filter-madgwick \
     # --- BNO086 IMU driver (bno086_imu_driver) の実行時依存 (pyserial) --- # claude
     python3-serial \
+    # --- 比較用 IMU WITmotion WT901C-TTL (witmotion_ros, Qt5 SerialPort 依存) 2026-09-23 --- # claude
+    qtbase5-dev \
+    libqt5serialport5-dev \
     # -----------------------------------
     && rm -rf /var/lib/apt/lists/*
 

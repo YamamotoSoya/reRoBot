@@ -1,0 +1,55 @@
+# claude: 2026-09-23 比較用 IMU WITmotion WT901C-TTL (witmotion_ros, ElettraSciComp ros2 branch) の設定。
+# BNO086 (/imu/data, imu_link) と同時に流すため topic / frame_id を別名にしている。
+# ⚠️ use_native_orientation は必ず false。WT901C の既定出力は acc/gyro/angle/mag で quaternion
+#    (0x59) を出さないため、true にするとドライバは「orientation 未到着」と判断し続けて
+#    IMU メッセージを 1 件も publish しない (上流 issue #42/#48/#49 の「topic が空」の正体)。
+# ⚠️ polling_interval はドライバがシリアルを読む周期で、1 回の読出しで届いた全フレームに
+#    同じ受信時刻 (now()) を刻む。50 ms (既定) だと 200 Hz の 10 サンプルが同一 stamp になる
+#    ので 5 ms にしている。stamp は受信時刻 = BNO086 側 (デバイス時計→ROS 時刻変換) より
+#    遅延・ジッタが乗る点は比較時に考慮する。
+witmotion:
+  ros__parameters:
+    port: ttyUSB-wt901          # udev rule (tools/99-wt901.rules) 未導入なら ttyUSB0
+    baud_rate: 115200           # Windows 公式ソフトで 9600 → 115200 に変更済み (2026-09-23)
+    polling_interval: 5         # ms
+    timeout_ms: 1000            # ms。0 で無効
+    restart_service_name: /restart_imu_wit
+    imu_publisher:
+      topic_name: /imu_wit/data
+      frame_id: imu_wit_link
+      use_native_orientation: false   # Euler(0x53) → quaternion 合成
+      measurements:
+        acceleration:
+          enabled: true
+          covariance: [0.0364, 0.0, 0.0, 0.0, 0.0048, 0.0, 0.0, 0.0, 0.0796]  # 上流 wt901.yml の値
+        angular_velocity:
+          enabled: true
+          covariance: [0.0663, 0.0, 0.0, 0.0, 0.1453, 0.0, 0.0, 0.0, 0.0378]
+        orientation:
+          enabled: true
+          covariance: [0.0479, 0.0, 0.0, 0.0, 0.0207, 0.0, 0.0, 0.0, 0.0041]
+    temperature_publisher:
+      enabled: true
+      topic_name: /imu_wit/temperature
+      frame_id: imu_wit_link
+      from_message: magnetometer
+      variance: 0.01829
+      coefficient: 1.0
+      addition: 0.0
+    magnetometer_publisher:
+      enabled: true
+      topic_name: /imu_wit/mag
+      frame_id: imu_wit_link
+      coefficient: 0.00000001
+      addition: 0.0
+      covariance: [0.000000187123, 0.0, 0.0, 0.0, 0.000000105373, 0.0, 0.0, 0.0, 0.000000165816]
+    barometer_publisher:
+      enabled: false
+    altimeter_publisher:
+      enabled: false
+    orientation_publisher:
+      enabled: false
+    gps_publisher:
+      enabled: false
+    rtc_publisher:
+      enabled: false

@@ -18,3 +18,7 @@
 	path = tools/pointcloud_to_2dmap
 	url = https://github.com/koide3/pointcloud_to_2dmap
 	ignore = untracked
+[submodule "ros2_ws_main/src/drivers/witmotion_ros"]
+	path = ros2_ws_main/src/drivers/witmotion_ros
+	url = https://github.com/ElettraSciComp/witmotion_IMU_ros.git
+	branch = ros2

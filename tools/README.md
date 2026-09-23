@@ -126,3 +126,11 @@ python3 $T $B $D /workspace/maps/glim/<name>/nav2 \
 - ⚠️ dump は **LC 後に保存したもの**を渡す (`traj_lidar.txt` の終端 z が閉じているか確認。
   5号館は `glim_5goukan_lc_2026-08-14_0919/` が LC 後、`2026-08-14_0919_dump/` は LC 前)
 - 処理時間: 全 6,989 スキャン (5.8 GB mcap) で 25〜45 s (glim_env、deskew 込みで 45 s)
+
+## 99-wt901.rules (2026-09-23)
+
+<!-- claude: 2026-09-23 追加 -->
+比較用 IMU WITmotion WT901C-TTL の USB-TTL 変換 (Prolific 067b:23a3) に udev 安定名
+`/dev/ttyUSB-wt901` を与える rule。導入コマンドはファイル冒頭、手順全体は
+`docs/features/2026-09-23_wt901c_comparison_imu.md`。センサ本体の設定 (115200 / 200 Hz) は
+Windows 公式ソフトで行った (Linux 用の設定スクリプトは検証後に不要となり削除)。
