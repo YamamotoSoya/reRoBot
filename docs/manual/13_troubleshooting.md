@@ -4,4 +4,7 @@
 
 ---
 
+## (GLIM) IMU-RFans間の相対位置補正
+GLIMにはIMUの姿勢より3DLidarの姿勢を求めるための変換行列の値を設定するファイルがある。
+
 ← [第12章 つくチャレ当日の実行手順](12_challenge_day.md) | ↑ [目次](00_index.md)
