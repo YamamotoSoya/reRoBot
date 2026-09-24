@@ -57,7 +57,7 @@ def generate_launch_description():
     # 地図一式の親ディレクトリ。別の計測日に切り替えるときはここだけ差し替える。
     map_dir_arg = DeclareLaunchArgument(
         "map_dir",
-        default_value="/workspace/maps/slam_toolbox/2026_6_9__22:00",
+        default_value="/workspace/maps/2d/slam_toolbox/2026_6_9__22:00",
         description="地図一式 (nav2/, keep_out/) を含む親ディレクトリ。",
     )
 

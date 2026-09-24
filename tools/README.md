@@ -42,7 +42,7 @@ Python ツール (依存 numpy のみ、ビルド不要)。既製 pointcloud_to_
 # 例: 5号館 LC 地図 (帯はセンサ相対。床は同梱手順で実測 → 床+0.3〜1.5 に相当する値を指定)
 docker exec glim_env python3 /workspace/tools/glim_dump_to_2dmap/glim_dump_to_2dmap.py \
   /workspace/bags/5goukan/2d3d_imu/offline/glim/glim_5goukan_lc_2026-08-14_0919 \
-  /workspace/maps/glim/<name>/nav2 \
+  /workspace/maps/2d/glim/<name>/nav2 \
   -r 0.05 --map_width 6144 --map_height 6144 \
   --height_mode sensor --min_height -0.25 --max_height 0.95
 ```
@@ -95,7 +95,7 @@ D=/workspace/bags/5goukan/2d3d_imu/offline/glim/glim_5goukan_lc_2026-08-14_0919 
 python3 $T $B $D /tmp/x --floor_probe --skip 10
 
 # 2) 変換 (全 6,989 スキャンで約 2.5 分)
-python3 $T $B $D /workspace/maps/glim/<name>/nav2 \
+python3 $T $B $D /workspace/maps/2d/glim/<name>/nav2 \
   -r 0.05 --map_width 6144 --map_height 6144 \
   --height_frame sensor --min_height -0.35 --max_height 0.85 \
   --min_points_in_pix 2 --max_points_in_pix 5

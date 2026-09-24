@@ -7,7 +7,7 @@
 #   - 速度司令は epos4_controller が /robot_speed_cmd (素の geometry_msgs/Twist) で待ち受ける。
 #     → nav2.launch.py 側で cmd_vel->robot_speed_cmd へリマップし、stamped を無効化する。
 #   - LiDAR は /scan (HOKUYO UTM-30LX, frame_id=laser, FOV ±90deg)。
-#   - 地図は maps/my_map.{yaml,pgm} (コンテナ内 /workspace/maps/...)。
+#   - 地図は maps/2d/<src>/<name>/nav2/my_map.{yaml,pgm} (コンテナ内 /workspace/maps/2d/...)。
 
 # ============================================================================
 # map_server : 保存済みの占有格子地図 (.pgm + .yaml) を読み込み /map に配信する。
@@ -16,7 +16,7 @@
 map_server:
   ros__parameters:
     # 読み込む地図 yaml のパス (nav2.launch.py の map 引数で上書きされる)
-    yaml_filename: "/workspace/maps/slam_toolbox/2026_6_9__22:00/nav2/my_map.yaml"
+    yaml_filename: "/workspace/maps/2d/slam_toolbox/2026_6_9__22:00/nav2/my_map.yaml"
 
 # ============================================================================
 # filter_mask_server : keepout (進入禁止帯) のマスク画像を OccupancyGrid として
@@ -26,7 +26,7 @@ map_server:
 filter_mask_server:
   ros__parameters:
     # keepout マスク yaml のパス。黒 (occupied) セルが進入禁止帯になる。
-    yaml_filename: "/workspace/maps/slam_toolbox/2026_6_9__22:00/keep_out/keep_out.yaml"
+    yaml_filename: "/workspace/maps/2d/slam_toolbox/2026_6_9__22:00/keep_out/keep_out.yaml"
     topic_name: "/keepout_filter_mask"  # 本体地図(/map)と分離した配信トピック
     frame_id: "map"                     # マスクを表現するフレーム
 

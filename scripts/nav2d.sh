@@ -11,7 +11,7 @@ IMU=true EKF=true ./scripts/bringup2d.sh
 
 echo "[nav2d] Nav2 + RViz を起動します (Ctrl-C で Nav2 のみ終了)"
 # claude: スクリプト引数を launch にそのまま渡す。
-#   例: ./scripts/nav2d.sh map_yaml:=/workspace/maps/slam_toolbox/2026_8_11__18-20.yaml use_keepout:=false
+#   例: ./scripts/nav2d.sh map_yaml:=/workspace/maps/2d/slam_toolbox/2026_8_11__18-20.yaml use_keepout:=false
 docker exec -it rerobot_env bash -c \
   'source /opt/ros/jazzy/setup.bash && source /workspace/install/setup.bash && \
    ros2 launch rerobot_bringup nav2.launch.py "$@"' _ "$@"

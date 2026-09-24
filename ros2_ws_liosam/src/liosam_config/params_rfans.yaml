@@ -33,7 +33,7 @@
 
     # Export settings — 保存は /lio_sam/save_map サービスで行う
     savePCD: false
-    savePCDDirectory: "/workspace/maps/liosam/"
+    savePCDDirectory: "/workspace/maps/3d/liosam/"
 
     # Sensor Settings
     sensor: velodyne                             # ring + time(相対秒 float) を持つ velodyne 形式に変換済み

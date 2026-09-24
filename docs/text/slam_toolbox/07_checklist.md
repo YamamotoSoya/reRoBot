@@ -43,7 +43,7 @@ docker exec slamtoolbox_env bash -c 'source /opt/ros/jazzy/setup.bash && \
 # slam_toolbox 自身の save_map サービスを使う (map_saver_cli 不要)
 docker exec slamtoolbox_env bash -c 'source /opt/ros/jazzy/setup.bash && \
    ros2 service call /slam_toolbox/save_map slam_toolbox/srv/SaveMap \
-   "{name: {data: /workspace/maps/slam_toolbox/$(date +%Y_%m_%d__%H-%M)}}"'
+   "{name: {data: /workspace/maps/2d/slam_toolbox/$(date +%Y_%m_%d__%H-%M)}}"'
 ```
 
 Nav2 側 (main コンテナ) に nav2_map_server が入っているので、map_saver_cli でも保存できる:
@@ -52,7 +52,7 @@ Nav2 側 (main コンテナ) に nav2_map_server が入っているので、map_
 docker exec rerobot_env bash -c \
   'source /opt/ros/jazzy/setup.bash && source /workspace/install/setup.bash && \
    ros2 run nav2_map_server map_saver_cli \
-     -f /workspace/maps/slam_toolbox/$(date +%Y_%m_%d__%H-%M) --ros-args -p save_map_timeout:=10.0'
+     -f /workspace/maps/2d/slam_toolbox/$(date +%Y_%m_%d__%H-%M) --ros-args -p save_map_timeout:=10.0'
 ```
 
 ### (b) .posegraph — 続きから作図 / localization モード用
@@ -60,7 +60,7 @@ docker exec rerobot_env bash -c \
 ```bash
 docker exec slamtoolbox_env bash -c 'source /opt/ros/jazzy/setup.bash && \
    ros2 service call /slam_toolbox/serialize_map slam_toolbox/srv/SerializePoseGraph \
-   "{filename: /workspace/maps/slam_toolbox/$(date +%Y_%m_%d__%H-%M)}"'
+   "{filename: /workspace/maps/2d/slam_toolbox/$(date +%Y_%m_%d__%H-%M)}"'
 ```
 
 再開するときは yaml の `map_file_name` + `map_start_pose` (または
@@ -69,7 +69,7 @@ docker exec slamtoolbox_env bash -c 'source /opt/ros/jazzy/setup.bash && \
 ### 保存後の確認
 
 ```bash
-ls -l maps/slam_toolbox/          # ホスト側に .pgm/.yaml (と .posegraph/.data) があること
+ls -l maps/2d/slam_toolbox/          # ホスト側に .pgm/.yaml (と .posegraph/.data) があること
 ```
 
 ⚠️ パスを `/workspace/maps` 以外にするとコンテナ内に保存され、ホストから見えず
