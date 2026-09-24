@@ -6,9 +6,10 @@
 #   例: IMU=true EKF=true ./scripts/bringup2d.sh   (nav2d.sh はこの構成で呼ぶ)
 set -eu
 cd "$(dirname "$0")/.."
-IMU="${IMU:-false}"
-# claude_imu_rate: IMU_RATE (env, 既定 100) で BNO086 の報告レート [Hz] を指定。実用上限 200 (2026-09-13)。
-IMU_RATE="${IMU_RATE:-100}"
+IMU="${IMU:-true}"   # claude: 2026-09-24 既定 true (BNO086 常設化。外すときは IMU=false)
+# claude_imu_rate: IMU_RATE (env) で BNO086 の報告レート [Hz] を指定。実用上限 200 (2026-09-13)。
+#   2026-09-24 既定を 100 → 200 に変更 (GLIM 用 bag が主用途。EKF/Nav2 は 30 Hz 間引きで差なし)。
+IMU_RATE="${IMU_RATE:-200}"
 EKF="${EKF:-false}"
 docker compose up -d main
 

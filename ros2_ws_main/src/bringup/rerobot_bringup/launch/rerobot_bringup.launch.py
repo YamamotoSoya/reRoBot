@@ -73,8 +73,9 @@ def generate_launch_description():
     # 200 Hz (README 実測: 200 Hz 要求→192 Hz・全項目揃い 99.7 %。250 Hz 以上は SHTP 取得が
     # 飽和して逆に落ちる)。EKF は 30 Hz で間引くので 100 のまま、GLIM (LIO) の deskew 用に
     # glim3d.sh が 200 を渡す。
+    # claude: 2026-09-24 既定を 100 → 200 に変更 (BNO086 常設・GLIM 用 bag が主用途)。
     imu_rate_arg = DeclareLaunchArgument(
-        "imu_rate", default_value="100.0",
+        "imu_rate", default_value="200.0",
         description="BNO086 IMU report rate [Hz] (firmware practical max 200)")
 
     with open(urdf_file, "r") as f:
@@ -209,6 +210,11 @@ def generate_launch_description():
         condition=IfCondition(LaunchConfiguration("imu")),
         launch_arguments={
             "port": LaunchConfiguration("imu_port"),
+            # claude_auto_tare: ドライバ既定 yaml は auto_tare: all で、accel/gyro が起動時姿勢の
+            # 座標に回される (2026-09-24 発覚、docs/issue/2026-09-24_bno086_auto_tare_rotates_motion_outputs.md)。
+            # off にした本リポの yaml を params_file で渡す。
+            "params_file": os.path.join(
+                get_package_share_directory("rerobot_bringup"), "config", "bno086.yaml"),
             # claude_imu_rate: 基板 launch は imu_rate_hz を double で declare するため、
             # "200" (整数) のまま渡すと rclpy が型不一致で落ちる。float 文字列に強制する。
             "imu_rate_hz": PythonExpression(

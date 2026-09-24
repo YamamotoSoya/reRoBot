@@ -4,7 +4,7 @@
      1 本に統合した。起動するドライバは rerobot_bringup.launch.py の引数で選ぶ
      (URDF は常に全センサの TF を出す — 使わないセンサの静的 TF が残っても無害)。
      センサ位置はユーザ実測値 (2026-08-31 車体改修後の再実測): laser (0.067, 0, 0.09406,
-     上下反転取付 = roll=pi) / rfans (0, 0, 0.80246) / imu (0, 0, 0.74196)。
+     上下反転取付 = roll=pi) / rfans (0, 0, 0.80246) / imu (0, 0, 0.74196, **上下逆 + yaw −93° = rpy (pi,0,−1.6257)、2026-09-24 実測**) / imu_wit (−0.065, 0, 0.57746, 上下逆 roll=pi — 2026-09-24 比較用)。
      rfans は正立取付 (詳細は rfans_joint のコメント参照)。
 
      ⚠️ rfans 取付プリセット (2026-08-15 導入、丸ごとコピー方式): この内容 = flat。
@@ -138,10 +138,46 @@
     </visual>
   </link>
 
+  <!-- claude: 2026-09-24 実測で rpy を (0,0,+pi/2) → (pi, 0, -1.625736) に修正。
+       BNO086 は **上下逆 (部品面が下) + yaw -93.15°** で取り付いている。従来の「正立 +90°」は
+       ドライバ既定 auto_tare: all が accel/gyro を起動時姿勢の座標へ回していたため見えなかった
+       (08-11 の 3 証拠は全て tare 後の値。docs/issue/2026-09-24_bno086_auto_tare_rotates_motion_outputs.md)。
+       根拠: auto_tare off + reset で accel z=-9.9 / 前上げ→sensor -y・左上げ→sensor -x (事前予測的中) /
+       CCW 旋回で gyro_z 負 (WT901C と大きさ一致 -84.9 vs -85.1°)。yaw は WT901C 相対の 3 姿勢 Kabsch、不確かさ ±2.5°
+       (WT 側 yaw 未較正込み)。roll/pitch は名目 (pi, 0) — 残差 <1° は WT 基準の誤差内。
+       ⚠️ accel に見える sensor-x 6.6° の傾きは **加速度計バイアス +1.12 m/s² で回転ではない** (旋回ジャイロ比 ≈0
+       で識別、critic 査読) → URDF に入れない。⚠️ 前提: bno086.yaml の mount_yaw_deg: 180 と auto_tare: off。
+       ~/tare・~/tare_yaw サービス (persist) を呼んだら再測定。tare-all 時代 (〜2026-09-23) の bag には
+       この rpy を使わない (旧 Rz(90°) + bag ごとの yaw 補正。GLIM 側は config_sensors.flat_tareall_legacy.json)。
+       ⚠️ 変えたら ros2_ws_glim/config/config_sensors*.json の T_lidar_imu も要再計算。 -->
   <joint name="imu_joint" type="fixed">
     <parent link="base_link"/>
     <child  link="imu_link"/>
-    <origin xyz="0 0 0.74196" rpy="0 0 1.5707963267948966"/>
+    <origin xyz="0 0 0.74196" rpy="3.141592653589793 0 -1.625736"/>
+  </joint>
+
+  <!-- claude: 比較用 IMU WITmotion WT901C-TTL (witmotion_ros の frame_id imu_wit_link と一致)。2026-09-24 追加。
+       xyz はユーザ実測 (x −65 mm, y 0, z 577.46 mm、ケース中心)。
+       rpy: 静置重力 (z=−9.86) + ノーズアップで x>0 + 手回転で gyro_z 符号反転 の 3 証拠から
+       「x 前向き・上下逆 = roll=pi」で確定 (2026-09-24)。yaw は暫定 0 — BNO086 との 24° 差の原因が
+       未識別 (取付 / BNO086 auto_tare / WT 側) のため、決着後に必要なら更新する。
+       ⚠️ 他プリセット (rerobot.{tilted45,tilted15,flat}.urdf) にも同じ記述あり — 変更は 4 ファイル同時に。 -->
+  <link name="imu_wit_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.05 0.035 0.015"/>
+      </geometry>
+      <material name="imu_wit_orange">
+        <color rgba="0.9 0.5 0.1 1.0"/>
+      </material>
+    </visual>
+  </link>
+
+  <joint name="imu_wit_joint" type="fixed">
+    <parent link="base_link"/>
+    <child  link="imu_wit_link"/>
+    <origin xyz="-0.065 0 0.57746" rpy="3.141592653589793 0 0"/>
   </joint>
 
 </robot>

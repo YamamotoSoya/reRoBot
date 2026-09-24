@@ -1,0 +1,67 @@
+# claude: 2026-09-24 reRoBot 用 BNO086 ドライバ設定。ドライバ同梱の既定 yaml
+# (drivers/BNO086_ROS2Board-main/.../config/bno086.yaml) のコピーで、変更点は auto_tare だけ。
+#
+# ⚠️ auto_tare は必ず off。既定 all は起動 2 秒後に全軸 Tare Now を送り、BNO086 は
+#    accel / gyro を含む全モーション出力に「その時の姿勢を原点とする定数回転」を掛ける
+#    (yaw 成分は起動時の方位と磁北の差 = 起動ごとに任意値)。結果、/imu/data は物理センサ
+#    座標でなくなり、GLIM の T_lidar_imu が bag ごとに未知量ずれる。EKF は相対 yaw 設定で
+#    無影響、GLIM は orientation を使わないので off の副作用は RViz の初期 yaw が 0 で
+#    ないことだけ。経緯・因果実験は docs/issue/2026-09-24_bno086_auto_tare_rotates_motion_outputs.md。
+#    yaw のみの tare でも heading をゼロ化するので同じ問題が起きる (off 以外は不可)。
+# port / imu_rate_hz は rerobot_bringup.launch.py の引数が上書きする。
+/**:
+  ros__parameters:
+    # USB CDC firmware enumerates as /dev/ttyACM*; the UART build needs the
+    # /dev/ttyUSB* of whatever adapter is plugged into J4.
+    port: /dev/ttyACM0
+    baudrate: 921600          # ignored by USB CDC, used by the UART build
+
+    frame_id: imu_link
+    parent_frame: odom
+    publish_tf: false
+
+    # Timestamp samples with the board's own microsecond clock (mapped onto
+    # ROS time) rather than the arrival time. Much lower jitter over USB.
+    use_device_time: true
+
+    imu_rate_hz: 100.0
+    mag_rate_hz: 25.0
+
+    # Per-axis noise, used to fill the covariance matrices. Measure these on
+    # a stationary board and replace the defaults.
+    angular_velocity_stddev: 0.005      # rad/s
+    linear_acceleration_stddev: 0.05    # m/s^2
+    magnetic_field_stddev: 0.5          # microtesla
+
+    # Floor for the orientation covariance; the sensor's own accuracy
+    # estimate is used when it is larger than this.
+    min_orientation_stddev: 0.01        # rad
+
+    # Publish orientation even before the fusion has converged. Leave false
+    # to have uncalibrated orientation marked invalid instead.
+    require_calibrated_orientation: false
+
+    # false: rotation vector referenced to magnetic north. yaw is an absolute
+    #        heading, so it does not return to 0 after a reset - use the tare
+    #        service for that. Nearby motors, magnets or steel corrupt it;
+    #        watch |B| on /imu/mag, which should sit near 50 uT.
+    # true:  game rotation vector, gyro + accelerometer only. Immune to
+    #        magnetic disturbance, but the tare service has no effect on it
+    #        (see the known issues in the README).
+    # Measured stationary indoors: both drift under 0.5 deg/min at high
+    # accuracy, so the default is fine unless the magnetometer is disturbed.
+    use_game_rotation_vector: false
+
+    # Make the board's current pose the origin whenever the stream comes up
+    # (node start, board reset via S1, or the reset service).
+    #   off - publish the sensor's own reference
+    #   yaw - zero the heading only; roll and pitch stay gravity-referenced
+    #   all - zero all three axes, so the current pose reads (0, 0, 0)
+    # Note: the tare has no effect when use_game_rotation_vector is true.
+    # U4 (BNO086) is placed at 180 deg on this PCB, so the chip's +X/+Y point
+    # along the board's -X/-Y. This rotates the published data about Z into
+    # the board frame. Set 0.0 to publish the raw sensor frame instead.
+    mount_yaw_deg: 180.0
+
+    auto_tare: off
+    auto_tare_delay: 2.0    # seconds to let the fusion settle first

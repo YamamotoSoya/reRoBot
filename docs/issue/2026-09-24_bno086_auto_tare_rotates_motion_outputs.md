@@ -1,0 +1,111 @@
+<!-- claude: docs/issue — 未解決問題の調査記録。解決したらステータスを更新すること。2026-09-24 作成。 -->
+# BNO086 ドライバ既定 `auto_tare: all` が accel/gyro を起動時姿勢の座標に回している — `/imu/data` は物理センサ座標ではない
+
+- **ステータス: 原因特定済み・対策適用済み・物理向き実測済み (09-24、因果実験 4 本 + critic 査読 ×2)。** `auto_tare: off` (`rerobot_bringup/config/bno086.yaml`)、URDF `imu_joint` を **上下逆 + yaw −93° = rpy (π,0,−1.625736)** に更新、GLIM `T_lidar_imu` 4 preset 再計算、旧値は `config_sensors.flat_tareall_legacy.json`。副産物: **BNO086 加速度計 x バイアス +1.12 m/s²** (§2.5、未対処)。残: LiDAR 地面法線基準の R_lidar_imu 精密化 / 加速度計バイアスの対処 / 過去 bag の yaw 補正可否 / §15.2 ジャイロ誤差との関係確認。
+- 日付: 2026-09-24。比較用 IMU WITmotion WT901C-TTL の取付向き確認 (`docs/features/2026-09-23_wt901c_comparison_imu.md`) の副産物として発覚。
+- 環境: `bno086_imu_driver` (ros2_ws_main/src/drivers/BNO086_ROS2Board-main、config `bno086.yaml` の `auto_tare: all`、`auto_tare_delay: 2.0`)、`rerobot_bringup.launch.py` は port / imu_rate_hz しか上書きしない → 既定 all のまま運用されてきた。
+- 関連: `docs/issue/2026-09-10_glim_z_drift_not_vangle.md` (IMU extrinsic 回転 c 成分・§9.3 静止較正・§15 ジャイロ旋回同期誤差)、`docs/issue/2026-08-30_chassis_rework_followup.md` L25 (「rpy (0,0,π/2) は不変」と仮定)、`ros2_ws_glim/config/config_sensors.json` (T_lidar_imu)。
+
+## 1. 発端
+
+WT901C を機体に載せ、BNO086 と同時に静置・手傾けで比較したところ、**2 方向の傾けで両 IMU の傾き量は一致 (13.6/13.3°、10.3/10.9°) するのに、水平面内の傾き方向が 22〜26° 一定にずれた** (BNO086 が URDF yaw 90° を戻した車体座標で時計回り側)。当初は「BNO086 の URDF yaw が実際は ≈114°」と読みかけたが、critic が「ドライバの auto_tare が全モーション出力を再配向している可能性 (BNO08x データシート §4.1.1: "This orientation will then be applied to all motion outputs")」を提示し、以下の因果実験で確定。
+
+## 2. 因果実験 (09-24、モータ非通電、機体は接地)
+
+### 2.1 傾けたまま reset → auto_tare 発火
+
+機体の前を 14.5° 持ち上げて保持したまま `ros2 service call /bno086_imu_driver/reset std_srvs/srv/Trigger` (2 s 後に auto_tare が発火)。
+
+| | reset 前 (傾け 14.5°) | reset + auto_tare 後 (同じ姿勢) |
+|---|---|---|
+| BNO086 accel (センサ座標) | (−1.018, −2.301, +9.681) → 傾き 14.57° | **(+0.002, +0.002, +10.002) → 傾き 0.02°** |
+| WT901C accel (対照) | 傾き 14.46° | 傾き 14.45° |
+
+→ tare は accel を「今の姿勢 = 原点」の座標に書き直す。物理的な傾きが出力から消えた。
+
+### 2.2 水平に戻す → 焼き付いた回転が残る
+
+真の水平 (地面接地。⚠️ それ以前の「水平」は台車上でキャスタが沈んでおり厳密でない) に戻すと BNO086 は **14.78° 傾いて見える** (後ろ下がり方向 = 2.1 の傾けの逆)。WT901C は 0.8°。→ tare の回転は発火時だけでなく以後**固定で**掛かり続ける。
+
+### 2.3 その場で ≈90° 回す → 回転は車体固定
+
+回転後も BNO086 accel は (−0.022, +2.555, +9.669) で 2.2 の (+0.041, +2.549, +9.664) とセンサ座標で不変 (orientation yaw は 158° → −98° と動いた)。→ **tare の回転 R_tare はセンサ座標に固定された定数** (世界固定ではない)。
+
+### 2.4 auto_tare off でチップ reset → 「上下逆 + 6.6°」が現れる (対策適用後の初観測)
+
+`rerobot_bringup/config/bno086.yaml` (auto_tare: off) でドライバを再起動しただけでは 14.8° の焼き付きが残った
+(チップは電源が入ったままで Tare Now が生きている)。`~/reset` でチップを再起動すると:
+
+| | 真の水平・tare なし |
+|---|---|
+| BNO086 accel (センサ座標) | **(+1.144, +0.155, −9.935)** → z 負 = 上下逆から 6.6° (pitch −6.57°) |
+| WT901C | (−0.136, −0.052, −9.868) → 上下逆 (既知 roll=π) 0.8° |
+
+→ これまで accel z が常に +9.8 だったのは auto_tare が「上下逆 + 任意 yaw + 起動時傾き」を毎回打ち消していたため。
+**08-11 の「正立確定」3 証拠は全て tare 後のデータで、物理向きの証拠ではなかった。08-11 朝のユーザ目視「裏返し」が正しかった可能性が高い。**
+⚠️ 別解: フラッシュの永続 tare (`~/tare` サービス persist=True、基板作者の検証手順 README L464 に含まれる) が残っていれば
+reset でも消えない → 「上下逆 + 6.6°」が物理か永続 tare かは目視で決める (firmware に永続 tare のクリアは未実装:
+`firmware/App/host_link.c` HL_MSG_TARE は Tare Now と Persist のみ)。
+
+### 2.5 tare off での物理向き実測 → 上下逆 + yaw −93° を確定、6.6° は加速度計バイアス (critic 査読 ×2)
+
+tare off・reset 後に 3 姿勢 (水平 / 前上げ 5° / 左上げ 6°) + CCW 手回転 85° を WT901C と同時計測:
+
+| 動作 | BNO086 (センサ座標) | WT901C (センサ座標、roll=π 取付) | 判定 |
+|---|---|---|---|
+| 前上げ Δaccel | (−0.11, **−0.99**, +0.03) | (**+1.01**, −0.07, +0.04) | 車体 +x = sensor −y (事前予測的中) |
+| 左上げ Δaccel | (**−1.10**, −0.02, +0.05) | (+0.10, **−1.06**, +0.07) | 車体 +y = sensor −x (事前予測的中) |
+| CCW 旋回 Σgyro (x,y,z) | (+0.1, +0.6, **−84.9**)° | (−1.3, −1.2, **−85.1**)° | gyro_z 負 = 上下逆。大きさ 0.2° 差 |
+| 水平 accel | (+1.144, +0.155, −9.935) | (−0.136, −0.052, −9.868) | BNO は sensor x に 6.6° 相当の余分 |
+
+- **R_base_imu**: 上下逆 (roll π) + yaw **−93.15°** (WT901C 相対の Kabsch、姿勢差ベクトル 2 本 + ジャイロ軸で解いた
+  バイアス非依存解。不確かさ ±2.5° = WT 側 yaw 未較正込み)。名目 (π, 0, −π/2) との差 3.2°。旧 URDF (0,0,+π/2) との差 173°。
+  → URDF `imu_joint` を **rpy=(π, 0, −1.625736)** に更新 (4 ファイル)。GLIM `T_lidar_imu` を再計算 (live/flat/tilted15/tilted45)。
+- **6.6° の正体 = 加速度計バイアス**: accel だけで解くと「sensor pitch −6.8° (= 車体 roll)」の回転に見えるが (Kabsch 残差 0.1°)、
+  回転なら旋回時に gyro_x に Σgyro_z × 0.119 ≈ +10° が漏れるはず → 実測 +0.1° (比 ≈ −0.001)。critic が事前に「回転 −0.120 / バイアス ≈0
+  で 100 倍の判別力」と設計した実験で**バイアス側に確定**。推定値 b = (+1.124, −0.052, −0.070) m/s² (センサ座標、|b| 1.13 m/s² ≈ 0.115 g)。
+  BNO08x の zero-g offset 仕様上限級 → DCD (動的較正) の不良を疑う。バイアス除去後の 3 姿勢は WT901C と 0.3° 以内で一致。
+- **§15.2 の「旋回同期 6〜7°/90° ジャイロ誤差」との関係 (仮説、要 bag 確認)**: tare-all 時代は fusion がこのバイアスを「基板 6.6° 傾き」と
+  誤認し、tare がその分 gyro 軸も回していた (今日 tare-all 状態での手回転で gyro x/y に (+8.2, −4.9)° = 9.6°/86° ≈ 6.4° 軸傾きが出た。
+  tare off では 0.1/0.6°)。→ 09-24 別セッションが「生ジャイロの実誤差」とした成分は **tare + accel バイアスの合作**の可能性が高い。
+
+## 3. 機構 (確定部分と推定部分)
+
+```
+BNO086 出力 (/imu/data の accel・gyro) = R_tare · (物理センサ座標の accel・gyro)
+├── R_tare は起動 2 秒後 (+ reset / S1 / USB 再接続後の再武装) の姿勢で決まり、以後定数      ← 確定 (2.1〜2.3)
+│   ├── roll/pitch 成分 = その時の機体の傾き (平地なら小、台車上・坡なら数°)                   ← 確定 (2.1, 2.2)
+│   └── yaw 成分       = その時の機体方位と磁北基準 (RV_MAGNETIC) の差 → 起動ごとに任意値       ← 推定 (データシート「tare-all は tilt と heading を解く」+ 今日の 24°)
+└── orientation は tare 後の姿勢が (0,0,0) から始まる (これが auto_tare の本来の目的)
+```
+
+yaw 成分の「起動ごとに変わる」は今日 1 起動 (24°) しか観測していない。別方位で起動した bag で値が違うことの直接確認は未 (§6)。
+
+## 4. 影響
+
+| 対象 | 影響 |
+|---|---|
+| EKF (`ekf.yaml`) | ほぼ無し。gyro_z は Rz で不変、yaw は `imu0_relative: true`。roll/pitch 成分 (起動時傾き) だけ微小に混入 |
+| **GLIM (LIO)** | **bag ごとに `T_lidar_imu` の yaw が未知量ずれる** (URDF 名目 90° と実出力座標の差 = R_tare の yaw + 物理取付誤差)。accel 3 軸・gyro 3 軸を使うため、水平加速度の向き・roll/pitch レートの混合 (sin 24° ≈ 0.4) が入る。z ドリフト A が bag 間で 3° / 6〜7° / 13° とばらつく一因候補。`T_lidar_imu is not accurate` 警告は平地で gyro_z 不変のため出ない → 警告 0 件は yaw 正しさの根拠にならない |
+| 09-13 §9.3 静止較正 (pitch +0.9°) | tare 込みの残差を測っていた (起動時傾きがゼロ化された後の値)。物理 extrinsic ではない |
+| 08-11 の向き確定 (rpy=(0,0,π/2)) | 3 証拠 (accel z 符号・gyro_z 符号・EKF yaw 鏡像) は全て Rz 不変量 → **yaw は一度も測られていない**。90° は 08-10 目視の名目値 |
+| 走行中の USB 再接続 | `_maintain_connection` が auto_tare を再武装 → **run の途中で R_tare が変わる**可能性。bag の `/diagnostics` (device_resets) で要確認 |
+| BNO086 |g| | 9.986〜10.00 (今日) / 9.95〜9.97 (09-22 bag) / 10.1 (09-13) とセッション間で動く。`acc_scale: 0.9705` 固定は bag ごとに見直し要 (critic 指摘、本件とは別機構) |
+
+## 5. 対策
+
+1. ✅ **`auto_tare: off`** — `rerobot_bringup/config/bno086.yaml` (ドライバ既定のコピー、auto_tare のみ off) を `rerobot_bringup.launch.py` の include に `params_file` で渡す (09-24 適用、ユーザ承認)。orientation は磁北基準の絶対 yaw になる (EKF は相対設定で無影響、GLIM は orientation 不使用)。⚠️ ドライバ再起動だけでは チップ内の Tare Now が残る → 電源断か `~/reset` が必要。
+2. ✅ off で傾けテスト → **rpy (π, 0, −1.625736)** を URDF 4 ファイルへ、GLIM `T_lidar_imu` を live/flat/tilted15/tilted45 で再計算 (§2.5)。精度: yaw ±2.5°、roll/pitch ±1° (WT901C 基準の相対較正)。**精密化は LiDAR 地面法線基準の 3 姿勢 Kabsch** (critic 推奨: 静止 60 s → 旋回 CCW/CW 2 回転ずつ → 前上げ・左上げ 10〜15° 各 15 s の 4 分 bag、`static_extrinsic.py` の地面フィット流用)。
+3. 過去 bag (〜09-23、tare-all): R_tare は bag 内で定数なので、直進区間の水平 accel 方向と車輪 odom の x を比べて bag ごとの yaw を推定すれば補正可能 (オフライン)。**新 URDF/T_lidar_imu は使わない** (gyro_z が反転して即破綻) — `config_sensors.flat_tareall_legacy.json` (旧 Rz 90°) を使う。走行中 USB 再接続で R_tare が変わっていないか `/diagnostics` device_resets を先に確認。
+4. **加速度計バイアス +1.12 m/s² (sensor x) の対処** — 未着手。候補: (a) BNO086 の動的較正をやり直して `~/save_calibration` (基板を複数姿勢に置く必要があり車載のままでは難しい)、(b) ドライバ/GLIM 側でバイアス補正 (GLIM は acc bias を状態として推定するが 1.1 m/s² は prior から遠い)、(c) 放置して GLIM の推定に任せる (要検証)。
+
+## 6. 未確認・残る不確かさ
+
+- yaw 成分が「起動方位で変わる」ことの直接確認 (別方位で 2 回起動して傾けテスト)。
+- gyro にも同じ R_tare が掛かるかの直接確認 (データシート上は "all motion outputs"。今日の手回転で gyro_z 大きさは両 IMU 一致、x/y 積分の差 (+8.2°, −4.9°) vs (−0.5°, −1.4°) は Rz では説明できず、§15 の旋回同期誤差と同種の別問題として扱う)。
+- `~/tare` サービス (persist=True、FRS System Orientation) を過去に誰かが呼んでいれば、reset でも消えない永続回転が別に乗っている可能性 (基板作者の検証手順に含まれる)。off にしても定数差が残ればこれか物理取付。
+
+## 7. 計測メモ (09-24、WT901C 側)
+
+- 真の水平で WT901C: roll +0.55° / pitch +0.57° (取付面の傾き、物理)。|g| = 9.862 (+0.6%)。
+- WT901C の取付: x 前向き・上下逆 (roll=π)、xyz = (−0.065, 0, 0.57746) ユーザ実測 → URDF `imu_wit_link` 登録済み。yaw 暫定 0。
