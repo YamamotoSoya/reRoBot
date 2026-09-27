@@ -7,12 +7,12 @@
 ## GLIM 各操作
 ### CPU mode
 
-② **GLIM オンライン** → online/glim/<日付_時分>/
+② **GLIM オンライン** → bags/glim/<日付_時分>_<場所>_live/
 
 ```
   ros2 run glim_ros glim_rosnode --ros-args \
     -p config_path:=/glim_config \
-    -p dump_path:=/bags/9goukan/2d3d_imu/online/glim/$(date +%F_%H%M)
+    -p dump_path:=/bags/glim/$(TZ=Asia/Tokyo date +%F_%H%M)_<場所>_live
 ```
 
 - 終了は Ctrl-C を 1 回だけ。保存処理は終了時に走るので、連打すると 08-12 に踏んだ「values.bin 欠け」が再発します。

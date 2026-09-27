@@ -25,7 +25,7 @@ ros2 topic list
 ## 2. bagの記録
 <<<リンク　05>>>
 ```
-ros2 bag record -s mcap -o /workspace/bags/5goukan/2d3dimu/online/rosbag/$(date +%F_%H%M) /rfans_driver/rfans_points /rfans_driver/rfans_packets /scan /imu/data /imu_wit/data /imu_wit/mag /odom /tf /tf_static /diagnostics /robot_speed_cmd
+ros2 bag record -s mcap -o /workspace/bags/raw/$(TZ=Asia/Tokyo date +%F_%H%M)_<場所> /rfans_driver/rfans_points /rfans_driver/rfans_packets /scan /imu/data /imu_wit/data /imu_wit/mag /odom /tf /tf_static /diagnostics /robot_speed_cmd
 ```
 
 ## 3. 3D SLAM

@@ -1,7 +1,7 @@
 <!-- claude: docs/issue — 未解決問題の調査記録。解決したらステータスを更新すること。2026-09-24 作成。 -->
 # BNO086 ドライバ既定 `auto_tare: all` が accel/gyro を起動時姿勢の座標に回している — `/imu/data` は物理センサ座標ではない
 
-- **ステータス: 原因特定済み・対策適用済み・物理向き実測済み (09-24、因果実験 4 本 + critic 査読 ×2)。** `auto_tare: off` (`rerobot_bringup/config/bno086.yaml`)、URDF `imu_joint` を **上下逆 + yaw −93° = rpy (π,0,−1.625736)** に更新、GLIM `T_lidar_imu` 4 preset 再計算、旧値は `config_sensors.flat_tareall_legacy.json`。副産物: **BNO086 加速度計 x バイアス +1.12 m/s²** (§2.5、未対処)。残: LiDAR 地面法線基準の R_lidar_imu 精密化 / 加速度計バイアスの対処 / 過去 bag の yaw 補正可否 / §15.2 ジャイロ誤差との関係確認。
+- **ステータス: 原因特定済み・対策適用済み・物理向き実測済み (09-24) → GLIM への影響を同一 bag 実験 14 run で定量 (09-26、critic 査読 ×4)。結論: GLIM の A に効くのは accel 静止方向のずれ θ (≈θ を世界固定で加算、確定)、gyro 軸傾きの寄与 ≤0.9° (確定)。tare は accel を鉛直化してバイアスを隠していたため tare 時代の A は LiDAR 側そのもの。現 live の 0751 A 1.0° は LiDAR 側 6.5° と accel バイアス 5° の偶然の相殺 (確定) → accel バイアス対処が最優先 (§2.9)。** `auto_tare: off` (`rerobot_bringup/config/bno086.yaml`)、URDF `imu_joint` を **上下逆 + yaw −93° = rpy (π,0,−1.625736)** に更新、GLIM `T_lidar_imu` 4 preset 再計算、旧値は `config_sensors.flat_tareall_legacy.json`。副産物: **BNO086 加速度計 x バイアス +1.12 m/s²** (§2.5、未対処)。残: LiDAR 地面法線基準の R_lidar_imu 精密化 / 加速度計バイアスの対処 / 過去 bag の yaw 補正可否 / §15.2 ジャイロ誤差との関係確認。
 - 日付: 2026-09-24。比較用 IMU WITmotion WT901C-TTL の取付向き確認 (`docs/features/2026-09-23_wt901c_comparison_imu.md`) の副産物として発覚。
 - 環境: `bno086_imu_driver` (ros2_ws_main/src/drivers/BNO086_ROS2Board-main、config `bno086.yaml` の `auto_tare: all`、`auto_tare_delay: 2.0`)、`rerobot_bringup.launch.py` は port / imu_rate_hz しか上書きしない → 既定 all のまま運用されてきた。
 - 関連: `docs/issue/2026-09-10_glim_z_drift_not_vangle.md` (IMU extrinsic 回転 c 成分・§9.3 静止較正・§15 ジャイロ旋回同期誤差)、`docs/issue/2026-08-30_chassis_rework_followup.md` L25 (「rpy (0,0,π/2) は不変」と仮定)、`ros2_ws_glim/config/config_sensors.json` (T_lidar_imu)。
@@ -120,8 +120,72 @@ tare off・reset 後に 3 姿勢 (水平 / 前上げ 5° / 左上げ 6°) + CCW 
 
 - **BNO086 (tare off) の方が GLIM 入力として明確に良い**。WT901C 版は走り出しから単調に z 上昇、並進/速度の IMU 予測が 9 割で LiDAR 単独より悪い。時刻オフセット ±20 ms で不変 → 時刻合わせは原因でない (GLIM は `stamp + imu_time_offset`、ソース確認済み)。候補 (未識別): WT 内部 98 Hz ローパスの位相遅れ、GLIM の IMU ノイズ設定が BNO086 向け、生値分解能。
 - BNO086 側: 回転予測は 86% 優位 (ジャイロ健全 = tare off の効果)、**並進予測 34% は加速度計バイアス 0.8〜1.1 m/s² が吸収されていない疑い** → §5.4 の対処は (a) 再較正が有力。
-- **z ドリフト A は IMU 座標 173° 修正後も残る** (679 m で +20.7 m、500 m 以降に集中。末尾はタイヤ脱落区間を含む) → 「A の源は LiDAR 登録側」(09-10 issue §11) と整合。
+- ⚠️ **上表の z は global mapping 段 (traj_lidar.txt) の値** (09-26 critic 指摘で判明。当初「odometry 段」と誤記)。**odometry 段 (odom_lidar.txt) では bno_live の z_end は +0.2 m、heading 依存坡 A = 1.0° (R² 0.06)** — ただしこれは LiDAR 側 6.5° と accel バイアス 5° の偶然の相殺で「改善」ではない (§2.9 判定 4)。global 段が +20 m 足すのは 09-10 issue §14.4 の submap ブロック傾斜と同型の別機構。→ 「A は IMU 座標修正後も残る」は odom 段には当たらない。§2.9 参照。
 - 図 `z_profile.png`、比較スクリプトは `/tmp/glim_ab.py` 相当 (traj_lidar.txt + run.log の IMU validation ブロック)。
+
+### 2.9 GLIM への影響の同一 bag 実験 (09-26、計 14 run、critic 査読 ×4) — **効いているのは accel 静止方向のずれ、gyro 軸傾きではない**
+
+実験セット (`exp_2026-09-25_tareoff_0751/`、スクリプト `synth_tare_bag.py` / `untilt_bag.py` / `debias_bag.py` / `glim_ab.py`。A = odom 段 5 m 窓勾配の c + A·cos(h−h0) フィット。run 間ノイズ床 = A 位相子で ±0.4〜0.6°、odom z_end ±4 m、global ±6 m):
+
+| run | bag | gyro 軸 | accel 静止方向 | extrinsic | k | odom A (h0) / z_max | global z_end | IMU 優位率 rot/trans/vel |
+|---|---|---|---|---|---|---|---|---|
+| bno_live | 0751 (tare off, 200 Hz) | 正 | **バイアス 5.0° (走行中平均、末尾 6.8°)** | 正 (実測 URDF) | 20 | **1.04° (+40) / +4.5** | +20.7 | 0.86 / 0.34 / 0.71 |
+| **bno_live_debias** (判定 run) | 0751 | 正 | **正 (水平バイアス (0.857, 0.156) を減算)** | 正 | 20 | **6.54° (+69) / +23.6** | +99.9 | 0.80 / 0.10 / 0.25 |
+| synthtilt_legacy | 0751 | 6.8° 傾き (tare 再現) | 鉛直化 (tare 再現) | legacy Rz90 | 20 | 6.63° (+67) / +26.5 | +88.2 | 0.78 / 0.09 / 0.21 |
+| synthtare_legacy (E2) | 0751 | 6.8° 傾き | 鉛直化 | legacy + yaw 24° | 20 | 8.19° (+74) / +28.6 | +112.4 | 0.77 / 0.08 / 0.19 |
+| synthtilt_correctT (E0) | 0751 | 6.8° 傾き | 鉛直化 | 傾き込みの正 | 20 | 1.06° (+19) / +2.9 | +14.2 | 0.85 / 0.31 / 0.69 |
+| synthtilt_legacy_pg (E3) | 0751 | 6.8° 傾き | 鉛直化 | legacy | 20 | 7.13° (+64) / +26.6 | **+8.6** (=odom) | — |
+| imu100 (H3) | 0751 IMU 100 Hz 間引き | 正 | バイアス | 正 | 20 | 1.39° (+35) / +2.9 | +13.6 | 0.85 / 0.33 / 0.71 |
+| restamp | 0751 stamp 修正版 | 正 | バイアス | 正 | 20 | 1.46° (−12) / +2.0 | +13.2 | 0.89 / 0.28 / 0.68 |
+| wit | 0751 WT901C | 正 (0.8°) | 正 | Rx(π) | 20 | 5.39° (+68) / +21.7 | +65.2 | 0.81 / 0.10 / 0.23 |
+| baseline_0918_k20 | 0918 (tare-all, 100 Hz) | 7.3° 傾き | 鉛直化 | legacy | 20 | 4.05° (+50) / +9.9 | +6.3 | — |
+| **e1_untilt** | 0918 逆回転 | 正 | **バイアス 7.3° 再露出** | legacy | 20 | 4.43° (−81) / +4.2 | −3.0 | 0.88 / 0.27 / 0.57 |
+| **e1b_untilt_debias** | 0918 逆回転 + accel 減算 | 正 | 正 | legacy | 20 | **4.25° (+40) / +10.8 ≈ baseline** | +5.4 | 0.90 / 0.32 / 0.74 |
+| baseline_0918_k10 | 0918 | 傾き | 鉛直化 | legacy | 10 | 8.78° (+26) / +17.0 | — | — |
+| e1_untilt_k10 | 0918 逆回転 | 正 | バイアス再露出 | legacy | 10 | 7.59° (−34) / +10.7 | — | — |
+
+**critic 最終判定 (H-F、全 14 run と整合)**:
+1. **GLIM の odom 段 A に効くのは「accel の静止方向 (重力 + バイアス) と LiDAR 鉛直のずれ θ」で、A に ≈θ (方位 = バイアス方位、世界固定) が加算され 2 周走っても消えない** (E1 vs E1b: 差 7.55°@+70、周別 7.47/7.64 で減衰なし。0751 debias: 1.04 → 6.54。**確定**)。GLIM の acc bias 推定 (imu_bias_noise 1e-5) は 660 m / 2 周で 1.2 m/s² を吸収しない。
+2. **gyro 軸 7.3° 傾き自体の A 寄与は ≤0.9°** (baseline vs E1b: 0.78°@150、ノイズ床内。**確定**)。ただし IMU 並進/速度予測の優位率は落とす (0.34/0.71 → 0.09/0.21、WT も同水準) = IMU 因子の質は悪化させる。
+3. **tare-all は accel を鉛直化 = バイアスを隠していた → tare 時代 bag の A は LiDAR 側そのもの** (0918 k20: 4.05〜4.25°@+40〜50、IMU 構成に不感。**確定寄り**)。「tilt 量と A が単調でない」は当然 (無関係)。
+4. **tare-off + 実測 URDF の現 live 構成で 0751 の A が 1.0° なのは、LiDAR 側 ≈6.5°@+69 と accel バイアス由来 ≈5°@−107 の偶然の相殺** (判定 run で **確定**)。バイアスは車体固定、LiDAR 側 h0 は世界固定なので、**別の方位から走り出す bag では相殺せず tare 時代より悪く出得る**。
+5. 0751 synth で 1.0 → 6.6 になったのは gyro を傾けたからではなく、accel を鉛直化して相殺項を消したから。IMU レート (100/200 Hz) は無関係 (H3、確定)。yaw ε 24° は +1.6° の上乗せ。global 段の +88〜100 m は再登録の増幅 (pose-graph で odom と同値)。
+6. 撤回 (09-26 の途中経過で書いた文): 「tare は A に定数ベクトル ≈7.3° を線形加算」「0918 では tare 成分と残差が相殺」「残差 4.4°@−81 は LiDAR 側」「k 効果は残差ベースで −28〜−42%」「2 周目成長は見かけ」— いずれも gyro 傾きと accel バイアスが構成上ちょうど対蹠で E1b 以外では識別不能だったことによる誤読。**k10→20 の −54% (8.78 → 4.05) は LiDAR 側の効果として復活、§12.4 の 2 周目成長 (E1b lap1 3.19 → lap2 5.32) も実在**。
+
+**GLIM 運用への含意**: (a) 現 live 構成の低い A は偶然で、**accel バイアス (0.8〜1.1 m/s²、日内変動) の対処は k=20 と並ぶ最優先** (再較正 or GLIM 側で初期 bias / `imu_bias_noise` を上げて吸収させる。ただし正しく取ると LiDAR 側 A ≈6.5° が素通しになるので、z が良くなるわけではない — 正しい入力にしてから LiDAR 側を詰める順序)。(b) tare 時代 bag は accel が鉛直化されているため **A の解析には legacy 設定のまま使ってよい** (逆回転しない)。(c) **LiDAR 側 A の機構 (車体は水平のまま座標だけ坡になる世界固定の並進ドリフト) は依然未説明** — 09-10 issue の本題に戻る。
+
+### 2.10 stamp 修正版 bag (09-26、`bno_live_restamp_0751`、R-Fans issue 09-26 §4 の効果測定)
+
+0751 の packets + IMU を 1 倍速再生 → frame-stamp anchor 修正版ノードで点群を録り直し (14,129 フレーム、先頭 1 フレームは再生日 stamp のフォールバック混入で除外) → live config。結果: odom A 1.46° (−12) / z_end −8.0、global z_end +13.2 / A 0.11°、IMU 優位率 rot 0.89 (全 run 最高)、**「imu_rate stamp does not cover the scan duration range」警告 1,597 → 0**。z はノイズ床内〜やや良化で、stamp ±20 ms は 0751 の A のレバーではない (時刻整合の警告源としては完全解消)。
+
+### 2.11 (b) GLIM 側で accel バイアスを吸収させる試み (09-26、ユーザ判断「(b) を試してだめなら (a)」、critic 査読) — **不成立、(a) 再較正へ**
+
+| run (0751, 正 T, k20) | 設定 | odom A (h0) / z_end | global z_end | odom 段 LiDAR z 軸の車体固定傾き | GLIM 推定 bias |
+|---|---|---|---|---|---|
+| live | LOOSE, noise 1e-5 | 1.04 (+40) / +0.2 | +20.7 | **4.42°** (バイアス 5.0° の 88%) | ≈0 (凍結) |
+| debias (データ減算、参照) | 同上 | 6.54 (+69) / +9.0 | +99.9 | 1.22° | ≈0 |
+| b1 | LOOSE + `imu_bias` 初期値 | 1.04 (+47) | +16.1 | 4.44° | **無視された** (LOOSE は自前推定 ≈0) |
+| b1n | NAIVE + `imu_bias` 初期値 (noise 1e-5) | 2.12 (−108) / −7.9 | +27.1 | 0.75° | 0.82 保持 |
+| b2 | LOOSE + `imu_bias_noise_acc` 1e-2 | 1.27 (+54) / +1.7 | **+2.3** | **4.54°** (不変) | 遊走 (平均 ≈0、std 0.25〜0.44、真値 (0.83,0.15) に収束せず) |
+| b3 | b2 + 初期値 (無視) | 0.67 (+5) | −0.3 | 4.23° | 遊走 |
+| b3n | NAIVE + 初期値 + noise 1e-2 | 2.45 (−90) / −13.0 | −0.1 | 4.79° | 遊走 |
+| b2_0918 (汎化) | 0918 tare-all, k20, noise 1e-2 | 4.02 (+44) (baseline 4.05) | +2.5 (6.3) | — | 世界固定成分あり |
+
+- **critic 判定 (棄却)**: GLIM ソース確認で (1) LOOSE 初期化は config `imu_bias` を無視 (B(0)=0 で自前推定)、(2) NAIVE 初期化は**補正前の accel** で世界鉛直を決め v=0 (静止開始) を仮定 → b1n は世界座標がバイアス方位に 4.2° 傾いたまま `init_pose_damping_scale 1e10` で固定され、因子側だけ補正 = 恒常的重力残差 (not_good 220、A の方位 = バイアス方位)、(3) `imu_bias_noise_acc` は odom 段にしか読まれない (sub/global は odom の bias を precision 1e6 で固定受取)、(4) 自由 bias は不可観測で真値に収束せず random walk、**odom 段の姿勢傾き 4.5° は 1° も減らない = 物理は直っていない**。
+- b2 の global 段平坦化 (+20.7 → +2.3) は「odom と自己整合な bias を輸出し、境界 IMU 因子が odom 姿勢を保存する強いブレーキになった」帳尻効果 (H-2、本命)。0918 では床面の世界固定勾配 0.41 → 1.09°、姿勢 std 3 倍に**悪化**、周回閉合 (traj 95% 4.46 → 2.84) と引き換え。診断 (validation 警告) も消える。**live には入れない**。
+- **新しい診断指標 (確定)**: odom 段の LiDAR z 軸の車体固定傾き = accel 静止方位誤差の 88% で追従 (live 4.42° / 正しい入力 1.2° / 0918 baseline 0.24°)。A (R² 0.06) より桁で識別力が高い → IMU/extrinsic 整合は今後これで見る (目標 <1°)。
+- 「IMU 予測優位率」は設定の優劣に使えない (最も正しい入力の debias が 0.10/0.25 で最悪)。
+- H-F の格付け: 「確定」→ **本命**。0751 は屋外 700 m 片道で heading が 2 軸に 71% 集中 (再訪なし) → A の位相子 h0 は経路軸方向にしか決まらず「相殺の対蹠」は幾何的に強制される。同一 bag で accel 減算のみ変えて 1.04 → 6.54 は確定だが、「別方位から走ると悪化」は別方位/周回 bag で未検証。
+- **結論: (a) BNO086 accel の再較正が前提整備として必要 (→ 09-26 に実施、§5.4)。ただし (a) 後に 0751 型の bag では A 6.5 / global +100 m へ一時「悪化」する (debias run) = 地図改善策ではない。その後 LiDAR 側 L (k・登録) に戻る。** 判別 run の結果 (09-26):
+
+| run (0751) | odom A (h0) / z_end | global z_end | 読み |
+|---|---|---|---|
+| debias (参照、LOOSE) | 6.54 (+69) / +9.0 | +99.9 | 正しい入力 |
+| **debias + noise_acc 1e-2** | **6.47 (+70)** / +10.5 | +19.7 | **L は自由バイアスで吸収されない = 車体固定の IMU–LiDAR 不整合ではなく、世界固定の登録側の坡** (T_lidar_imu roll/pitch 誤り説を棄却) |
+| debias + NAIVE (bias 0) | 5.59 (+59) / +0.4 | +50.6 | 初期化方式の差は A に ~1° → b1n の食い違い (2.1@−108) は「NAIVE が補正前 accel で世界を作った」効果 (H-1 確定)。状態バイアスとデータ減算は本質的に等価 |
+| live + noise_acc 1e-3 | 1.29 (+47) / −0.3 | +5.8 | 中間値。odom 物理は live と同じ、global の帳尻効果は 1e-3 でも出る |
+
+→ **L (0751 で ≈6.5°@+69、0918 で ≈4°@+45) は LiDAR 登録側・世界固定 (確定寄り、同一 bag で IMU 側の 3 操作 (バイアス減算・自由化・初期化変更) に不感)。IMU/extrinsic を直す作業 (再較正・3 姿勢 Kabsch) は前提整備であり z の改善策ではない。改善策は 09-10 issue の LiDAR 側 (k・登録・global 段) に戻る。** `imu_bias_noise_acc` を上げる設定は global 段の帳尻を合わせる副作用 (debias でも +99.9 → +19.7) があるが、odom 物理を直さず地図の剛体傾きを悪化させ得るので採用しない。
 
 ## 3. 機構 (確定部分と推定部分)
 
@@ -151,7 +215,7 @@ yaw 成分の「起動ごとに変わる」は今日 1 起動 (24°) しか観�
 1. ✅ **`auto_tare: off`** — `rerobot_bringup/config/bno086.yaml` (ドライバ既定のコピー、auto_tare のみ off) を `rerobot_bringup.launch.py` の include に `params_file` で渡す (09-24 適用、ユーザ承認)。orientation は磁北基準の絶対 yaw になる (EKF は相対設定で無影響、GLIM は orientation 不使用)。⚠️ ドライバ再起動だけでは チップ内の Tare Now が残る → 電源断か `~/reset` が必要。
 2. ✅ off で傾けテスト → **rpy (π, 0, −1.625736)** を URDF 4 ファイルへ、GLIM `T_lidar_imu` を live/flat/tilted15/tilted45 で再計算 (§2.5)。精度: yaw ±2.5°、roll/pitch ±1° (WT901C 基準の相対較正)。**精密化は LiDAR 地面法線基準の 3 姿勢 Kabsch** (critic 推奨: 静止 60 s → 旋回 CCW/CW 2 回転ずつ → 前上げ・左上げ 10〜15° 各 15 s の 4 分 bag、`static_extrinsic.py` の地面フィット流用)。
 3. 過去 bag (〜09-23、tare-all): R_tare は bag 内で定数なので、直進区間の水平 accel 方向と車輪 odom の x を比べて bag ごとの yaw を推定すれば補正可能 (オフライン)。**新 URDF/T_lidar_imu は使わない** (gyro_z が反転して即破綻) — `config_sensors.flat_tareall_legacy.json` (旧 Rz 90°) を使う。走行中 USB 再接続で R_tare が変わっていないか `/diagnostics` device_resets を先に確認。
-4. **加速度計バイアス +1.12 m/s² (sensor x) の対処** — 未着手。候補: (a) BNO086 の動的較正をやり直して `~/save_calibration` (基板を複数姿勢に置く必要があり車載のままでは難しい)、(b) ドライバ/GLIM 側でバイアス補正 (GLIM は acc bias を状態として推定するが 1.1 m/s² は prior から遠い)、(c) 放置して GLIM の推定に任せる (要検証)。
+4. ✅ **加速度計バイアスの対処 = (a) 再較正 (09-26 実施)** — (b) GLIM 側吸収は §2.11 で棄却。基板を外して机上 (視覚的に水平) で 6 面静置 + 3 軸ゆっくり回転 → `orientation_accuracy` unreliable → low → high (3 分) → `save_calibration` → **`save DCD: OK` 応答**。**0°/180° 反転法** (基板を真上から 180° 回して 2 回測る: b = (h0+h180)/2、机の傾き t = (h0−h180)/2) で水平バイアス **0.34 → 0.08 m/s² (2.0° → 0.5°)**、USB 抜き差し後も 0.09 で保持 (机の傾き推定は 3 回とも 0.16〜0.18 で整合)。⚠️ 車体上で見えた 0.8〜1.1 と机上較正前の 0.34 が食い違う → **09-27 車体上で再測**: 台車上でその場 180° 回転の反転法 → 台車傾き 0.02 m/s² (WT も 0.05 で一致)、センサ固定成分 **0.38 m/s² (2.2°)**。旋回 78° で gyro x/y 漏れ 0.6° (取付傾き 2.2° なら 3.0° の予測、WT 0.4°) → **取付傾き ≤0.5° = URDF 据え置き、2.2° は車体上の accel バイアス**。車体上バイアスは較正で 0.8〜1.1 → 0.38 m/s² に低減したが、机上 (0.08) より 0.3 大きい (車体の磁気/振動環境 or 電源再投入後の動的較正変動、未識別)。診断指標目標 <1° には未達 → 走行 bag + GLIM で効果を確認する方針。次の実機日に前上げ・左上げの傾けテストで URDF の再確認も行う (付け直しで取付角が 1〜2° 変わり得る)。旧記述: 候補: (a) BNO086 の動的較正をやり直して `~/save_calibration` (基板を複数姿勢に置く必要があり車載のままでは難しい)、(b) ドライバ/GLIM 側でバイアス補正 (GLIM は acc bias を状態として推定するが 1.1 m/s² は prior から遠い)、(c) 放置して GLIM の推定に任せる (要検証)。
 
 ## 6. 未確認・残る不確かさ
 
