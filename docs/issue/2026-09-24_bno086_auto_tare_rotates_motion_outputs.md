@@ -1,7 +1,7 @@
 <!-- claude: docs/issue — 未解決問題の調査記録。解決したらステータスを更新すること。2026-09-24 作成。 -->
 # BNO086 ドライバ既定 `auto_tare: all` が accel/gyro を起動時姿勢の座標に回している — `/imu/data` は物理センサ座標ではない
 
-- **ステータス: 原因特定済み・対策適用済み・物理向き実測済み (09-24) → GLIM への影響を同一 bag 実験 14 run で定量 (09-26、critic 査読 ×4)。結論: GLIM の A に効くのは accel 静止方向のずれ θ (≈θ を世界固定で加算、確定)、gyro 軸傾きの寄与 ≤0.9° (確定)。tare は accel を鉛直化してバイアスを隠していたため tare 時代の A は LiDAR 側そのもの。現 live の 0751 A 1.0° は LiDAR 側 6.5° と accel バイアス 5° の偶然の相殺 (確定) → accel バイアス対処が最優先 (§2.9)。** `auto_tare: off` (`rerobot_bringup/config/bno086.yaml`)、URDF `imu_joint` を **上下逆 + yaw −93° = rpy (π,0,−1.625736)** に更新、GLIM `T_lidar_imu` 4 preset 再計算、旧値は `config_sensors.flat_tareall_legacy.json`。副産物: **BNO086 加速度計 x バイアス +1.12 m/s²** (§2.5、未対処)。残: LiDAR 地面法線基準の R_lidar_imu 精密化 / 加速度計バイアスの対処 / 過去 bag の yaw 補正可否 / §15.2 ジャイロ誤差との関係確認。
+- **ステータス: 原因特定済み・対策適用済み・物理向き実測済み (09-24)・accel 再較正済み (09-26) → 較正後 bag で IMU 入力の正しさを確認 (09-27、診断指標 0.91°、BNO≈WT、§2.12)。GLIM への影響を同一 bag 実験 14 run で定量 (09-26、critic 査読 ×4)。結論: GLIM の A に効くのは accel 静止方向のずれ θ (≈θ を世界固定で加算、確定)、gyro 軸傾きの寄与 ≤0.9° (確定)。tare は accel を鉛直化してバイアスを隠していたため tare 時代の A は LiDAR 側そのもの。現 live の 0751 A 1.0° は LiDAR 側 6.5° と accel バイアス 5° の偶然の相殺 (確定) → accel バイアス対処が最優先 (§2.9)。** `auto_tare: off` (`rerobot_bringup/config/bno086.yaml`)、URDF `imu_joint` を **上下逆 + yaw −93° = rpy (π,0,−1.625736)** に更新、GLIM `T_lidar_imu` 4 preset 再計算、旧値は `config_sensors.flat_tareall_legacy.json`。副産物: **BNO086 加速度計 x バイアス +1.12 m/s²** (§2.5、未対処)。残: LiDAR 地面法線基準の R_lidar_imu 精密化 / 加速度計バイアスの対処 / 過去 bag の yaw 補正可否 / §15.2 ジャイロ誤差との関係確認。
 - 日付: 2026-09-24。比較用 IMU WITmotion WT901C-TTL の取付向き確認 (`docs/features/2026-09-23_wt901c_comparison_imu.md`) の副産物として発覚。
 - 環境: `bno086_imu_driver` (ros2_ws_main/src/drivers/BNO086_ROS2Board-main、config `bno086.yaml` の `auto_tare: all`、`auto_tare_delay: 2.0`)、`rerobot_bringup.launch.py` は port / imu_rate_hz しか上書きしない → 既定 all のまま運用されてきた。
 - 関連: `docs/issue/2026-09-10_glim_z_drift_not_vangle.md` (IMU extrinsic 回転 c 成分・§9.3 静止較正・§15 ジャイロ旋回同期誤差)、`docs/issue/2026-08-30_chassis_rework_followup.md` L25 (「rpy (0,0,π/2) は不変」と仮定)、`ros2_ws_glim/config/config_sensors.json` (T_lidar_imu)。
@@ -186,6 +186,25 @@ tare off・reset 後に 3 姿勢 (水平 / 前上げ 5° / 左上げ 6°) + CCW 
 | live + noise_acc 1e-3 | 1.29 (+47) / −0.3 | +5.8 | 中間値。odom 物理は live と同じ、global の帳尻効果は 1e-3 でも出る |
 
 → **L (0751 で ≈6.5°@+69、0918 で ≈4°@+45) は LiDAR 登録側・世界固定 (確定寄り、同一 bag で IMU 側の 3 操作 (バイアス減算・自由化・初期化変更) に不感)。IMU/extrinsic を直す作業 (再較正・3 姿勢 Kabsch) は前提整備であり z の改善策ではない。改善策は 09-10 issue の LiDAR 側 (k・登録・global 段) に戻る。** `imu_bias_noise_acc` を上げる設定は global 段の帳尻を合わせる副作用 (debias でも +99.9 → +19.7) があるが、odom 物理を直さず地図の剛体傾きを悪化させ得るので採用しない。
+
+### 2.12 較正後初の走行 bag (09-27、`bags/raw/2026-09-27_1651_5goukan`、5号館 1 周 333 m、先頭 65 s 静止)
+
+GLIM は `bags/glim/2026-09-27_1651_5goukan/{bno_live, bno_scale1, wit}`、IMU 抽出は `bags/exp/2026-09-27_calib_1651/`。
+
+**IMU (静止 65 s、車体座標)**: BNO086 傾き 1.63° / \|g\| 9.788、WT901C 0.97° / 9.847 → 床の傾きは共通なので **BNO086 の accel ずれは WT901C 比 約 1.0° (0.17 m/s²)** (較正前 5〜6.5°、09-27 朝の台車上測定の差 1.2° と整合)。旋回ごとの yaw は BNO−WT 平均 0.17°。走行中 \|a\| は BNO が WT より 2.4% 高い (静止では 0.6% 低い、未切り分け)。
+
+**GLIM (同一 bag)**:
+
+| run | IMU / acc_scale | odom 段 A (h0) / z_max | global z_end | LiDAR z 軸の車体固定傾き (診断指標) | IMU 優位率 rot/trans/vel / not_good |
+|---|---|---|---|---|---|
+| bno_live | BNO086 / 0.9705 (live 設定) | 4.17° (+69) / +7.1 | +4.0 | **0.91°** (較正前 live 4.42°) | 0.94/0.21/0.61 / 116 |
+| bno_scale1 | BNO086 / 1.0 | 4.15° (+69) / +7.1 | +2.9 | 0.94° | **0.97/0.34/0.73 / 47** |
+| wit | WT901C / 1.0 | 3.83° (+75) / +6.0 | +3.5 | 0.41° | 0.96/0.30/0.69 / 56 |
+| (参考) 0918 同コース tare 時代 | — | 4.05° (+50) / +9.9 | +6.3 | 0.24° | — |
+
+- **較正の目的達成**: 診断指標 (odom 段の LiDAR z 軸の車体固定傾き) が目標 <1° に到達 (4.42 → 0.91°)。
+- **BNO086 と WT901C で坂 A が一致** (差 0.3°、方位差 6°) → IMU の違いで坂が変わる状態は解消。残る A ≈ 4°@+70 はこのコースの LiDAR 側の坂 L (偶然の相殺なしで初めて測れた値)。tare 時代の同コース 4.05° とも同程度 = §2.9 の「tare 時代の A は LiDAR 側そのもの」と整合 (単一 bag・1 周なので周回閉合は評価不能)。
+- **acc_scale 0.9705 は較正後は逆効果** (重力を 3% 小さく見せる): 1.0 にすると A は不変だが IMU 予測の質が上がる (not_good 116 → 47)。**09-27 live に反映 (`config_ros.json` acc_scale 0.0 = 自動 1.0、ユーザ承認)**。
 
 ## 3. 機構 (確定部分と推定部分)
 

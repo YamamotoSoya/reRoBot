@@ -25,6 +25,12 @@
 | **`/rfans_driver/rfans_packets`** | `surestar_rfans_ros2/msg/RfansPacket` | R-Fans-16 の **UDP 生パケット** (1206 B、約 750 packet/s、stamp + udp_count + data)。点群に変換する前の一次データなので、縦角表・時刻復元など **LiDAR 側の計算を後から直してもこれから点群を再生成できる**。`rfans_calculation` がこの topic を購読するので、bag 再生 + そのノード起動で `/rfans_driver/rfans_points` を作り直せる |
 | **`/imu_wit/data`** | `sensor_msgs/Imu` | WITmotion WT901C-TTL の角速度・加速度・姿勢 (frame_id `imu_wit_link`、200 Hz)。BNO086 との比較用 (2026-09-23 追加)。stamp は受信時刻なので BNO086 より遅延・ジッタが乗る |
 | **`/imu_wit/mag`** | `sensor_msgs/MagneticField` | 同 IMU の地磁気 (200 Hz)。BNO086 は磁気を出さないので、磁北基準の yaw を検証するならこれ。`/imu_wit/temperature` も出ているが解析には通常不要 |
+| **`/behavior_tree_log`** | `nav2_msgs/BehaviorTreeLog` | bt_navigator の BT ノード状態遷移 (RUNNING/SUCCESS/FAILURE)。**自律移動中に止まったとき「planner 失敗か controller 失敗か、どの復帰行動に入ったか」を特定する一次データ**。状態が変わったときだけ出るので軽い |
+| **`/rosout`** | `rcl_interfaces/msg/Log` | 全ノードのログ (INFO/WARN/ERROR)。`Failed to make progress` / `collision ahead` / `Aborting` 等の文言が残る。コンテナを消すと端末ログは失われるので bag に残しておく |
+| **`/plan`** | `nav_msgs/Path` | planner_server の大域経路。更新が途切れた時刻 = 経路計画が通らなくなった時刻の目安 |
+| **`/amcl_pose`**<br>**`/initialpose`**<br>**`/goal_pose`** | `geometry_msgs/PoseWithCovarianceStamped` 他 | amcl の自己位置推定 / RViz で与えた初期位置 / RViz で与えたゴール。自己位置の飛びや、いつどこへゴールを出したかを追う |
+| **`/map`**<br>**`/keepout_filter_mask`** | `nav_msgs/OccupancyGrid` | 走行に使った地図と進入禁止帯マスク。latched (起動時 1 回) なので **Nav2 起動前から記録を始める** と確実に入る |
+| **`/local_costmap/costmap`**<br>**`/local_costmap/published_footprint`** | `nav_msgs/OccupancyGrid` / `geometry_msgs/PolygonStamped` | 局所コストマップ (4 m 四方、2 Hz) と車体外形。RPP の衝突判定で止まった疑いを検証する。global costmap は地図全体で重いので通常は記録しない |
 
 ### 参考：すべての対象topicを記録
 * 本番bag　必要最低限
@@ -57,5 +63,14 @@ ros2 bag record -s mcap -o /workspace/bags/raw/$(TZ=Asia/Tokyo date +%F_%H%M)_<�
 ※ 容量は走行時間に比例する (速度が半分なら容量は倍)。記録前に `df -h /workspace/bags` で空きを確認する。
 
 生パケットから点群を作り直すとき: `ros2 bag play <bag> --topics /rfans_driver/rfans_packets /tf_static --clock` を流しながら、main コンテナで `rfans_calculation` ノードだけを起動する (bringup 全体は不要)。
+
+* 自律移動 (Nav2) 用bag　本番 + Nav2 の判断過程
+```
+ros2 bag record -s mcap -o /workspace/bags/raw/$(TZ=Asia/Tokyo date +%F_%H%M)_<場所>_auto /rfans_driver/rfans_points /scan /imu/data /odom /odometry/filtered /tf /tf_static /diagnostics /robot_speed_cmd /behavior_tree_log /rosout /plan /amcl_pose /initialpose /goal_pose /map /keepout_filter_mask /local_costmap/costmap /local_costmap/published_footprint
+```
+容量目安 — **本番 bag とほぼ同じ (約 8.9 MB/s ≈ 32 GB/h)**。追加した Nav2 系 topic は合計でも数十 KB/s 程度で、容量のほぼ全部は `/rfans_driver/rfans_points` のまま。R-Fans の生データも残したいときは `/rfans_driver/rfans_packets` を足す (+約 1 MB/s)。
+
+※ 記録は **nav2.launch.py を起動する前に開始する**。`/map` と `/keepout_filter_mask` は起動時に 1 回しか出ないので、後から記録を始めると入らない。
+※ 走行が止まったときは、`/behavior_tree_log` でどの BT ノードが FAILURE になったかを見て、`/rosout` で同じ時刻の WARN/ERROR 行を確認する。`/robot_speed_cmd` が 10 Hz・1.0 rad/s の出力に変わっていたら復帰行動の Spin (behavior_server)。EPOS 側の異常かどうかは `/diagnostics` の statusword (正常 = `0x1237`) で切り分ける。
 
 ← [第4章 起動と手動操作](04_startup_teleop.md) | → [第6章 SLAM_toolbox](06_slam_toolbox.md)

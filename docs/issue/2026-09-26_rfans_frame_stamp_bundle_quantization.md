@@ -1,7 +1,7 @@
 <!-- claude: docs/issue — 未解決問題の調査記録。解決したらステータスを更新すること。2026-09-26 作成。 -->
 # R-Fans フレーム stamp が UDP bundle 到着 (41 ms) に量子化され、隣接間隔が 83 / 123 ms で交互する
 
-- **ステータス: 原因特定済み・ドライバ修正実装済み (submodule 未コミット)・bag 再生で検証済み・GLIM 効果測定済み (警告 1,597 → 0、z はノイズ床内)。実機 (live) での確認は未。**
+- **ステータス: 解決 (09-27 live 確認済み)。** ドライバ修正実装済み・bag 再生と実機 live の両方で 100 ± 0.2 ms を確認・GLIM 効果測定済み (警告 1,597 → 0、z はノイズ床内)。**submodule 未コミット**。
 - 日付: 2026-09-26。bag `2026-09-25_0751` の R-Fans 欠落確認 (欠落ゼロ) の副産物として発覚。
 - 環境: `surestar_rfans_ros2` (ros2_ws_main/src/drivers、commit 0f4566a 時点)、`use_gps: false`、data_level 3 (processPacketUserSimple 経路)、R-Fans-16 (V6K-16G) 10 Hz。
 - 関連: `docs/issue/2026-08-14_rfans_driver_renewal.md` (08-14 の stamp 巻き戻し)、`docs/issue/2026-09-10_glim_z_drift_not_vangle.md` (残留時刻オフセット −15 ms の議論)、GLIM ログの `imu_rate stamp does not cover the scan duration range (~17 ms)` 警告。
@@ -55,7 +55,7 @@ UDP 1 個 (1.28 ms) ×32 → bundle (40.9 ms) を ioapi.cpp revPacket が作り�
 
 ## 4. 残作業
 
-1. **実機 live で確認** (次回 bringup 時): `ros2 topic echo /rfans_driver/rfans_points --field header.stamp` の間隔が 100 ± 1 ms、ログに anchored 行、`imu_rate stamp does not cover` 警告が GLIM から消えるか。
+1. ✅ **実機 live で確認 (09-27)**: bag `2026-09-27_1651_5goukan` (修正版ドライバで直接記録) でフレーム間隔 **中央値 100.0 ms、95% 100.2、最大 101 ms**、欠落 0、受信 − stamp 121 ms (旧 100 ms 固定)。旧手順: `ros2 topic echo /rfans_driver/rfans_points --field header.stamp` の間隔が 100 ± 1 ms、ログに anchored 行、`imu_rate stamp does not cover` 警告が GLIM から消えるか。
 2. ✅ **GLIM への効果** (09-26): 録り直し bag (`exp_2026-09-25_tareoff_0751/restamp_bag_f`、14,129 フレーム) × live config → **`imu_rate stamp does not cover the scan duration range` 警告 1,597 → 0**、IMU 回転予測優位率 0.86 → 0.89、odom 段 A 1.04 → 1.46° / global z_end +20.7 → +13.2 m (いずれも run 間ノイズ床 内)。時刻整合の警告源としては完全解消、z ドリフトのレバーではない。
 3. submodule のコミット + 親の gitlink 更新 (bus.yml と同じ運用)。過去 bag の stamp は修正できない (rfans_packets から再生成すれば可: 上記 2 の手順)。
 4. 08-14 の `docs/issue/2026-08-14_rfans_driver_renewal.md` の stamp 節に本 issue への参照を追記 (未)。

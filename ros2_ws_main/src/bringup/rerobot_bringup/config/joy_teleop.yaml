@@ -29,7 +29,10 @@ teleop_twist_joy_node:
     scale_linear:
       x: 0.5              # [m/s]  通常   (2026-08-31 従来の 1/2 に減速) # claude
     scale_linear_turbo:
-      x: 1.0               # [m/s]  turbo  (同上 1/2) # claude
+      x: 0.8               # [m/s]  turbo  (2026-09-27 1.0 → 0.8) # claude
+      #   24 V 電源ではモータが頭打ち (浮かせで左 5790 / 右 6650 rpm、1.0 m/s = 6882 rpm 指令)
+      #   → 左右差で左に寄る + EPOS 速度 PI の積分ワインドアップで停止後 3〜5 s 惰性回転。
+      #   0.8 m/s = 5505 rpm で頭打ち未満にする。接地では上限がさらに下がる可能性あり # claude
     scale_angular:
       yaw: 0.3             # [rad/s] 通常   (同上 1/2) # claude
     scale_angular_turbo:
