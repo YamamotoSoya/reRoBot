@@ -33,11 +33,11 @@ ros2 bag record -s mcap -o /workspace/bags/raw/$(TZ=Asia/Tokyo date +%F_%H%M)_<�
 #### 3-1. GLIM-cpu
 glim-rosの実行
 ```
-B=2026-08-151030 # 評価対象 bag のディレクトリ名
-ros2 run glim_ros glim_rosbag /workspace/bags/5goukan/2d3dimu/online/rosbag/$B \
+B=2026-09-27_1651_5goukan # 評価対象 bag のディレクトリ名 (bags/raw/ 直下)
+ros2 run glim_ros glim_rosbag /workspace/bags/raw/$B \
  --ros-args -p config_path:=/glim_config \
  -p auto_quit:=false \
- -p dump_path:=/workspace/bags/5goukan/2d3dimu/offline/glim/${B}_dump
+ -p dump_path:=/workspace/bags/glim/${B}_dump/default
 ```
 dumpファイルをアップロード
 ```
@@ -49,10 +49,10 @@ rclone copy cit-share-bags:リモートファイルパス ローカルファイ�
 ```
 PROXMOXでofflineviewer,loopclosing
 ```
-B=2026-08-14_0919
-ros2 run glim_ros offline_viewer /workspace/bags/5goukan/2d3dimu/offline/glim/${B}_dump
+B=2026-08-14_0919_5goukan
+ros2 run glim_ros offline_viewer /workspace/bags/glim/${B}_dump/default
 ```
-filteredとして保存。アップロード、ローカルにダウンロード
+filteredとして保存 (`bags/glim/${B}_dump/filtered`)。アップロード、ローカルにダウンロード
 
 #### 3-2. GLIM-gpu
 
@@ -64,8 +64,8 @@ filteredとして保存。アップロード、ローカルにダウンロード
 ```
 source /opt/ros/jazzy/setup.bash
 T=/workspace/tools/glim_traj_to_2dmap/glim_traj_to_2dmap.py
-B=/workspace/bags/5goukan/2d3dimu/online/rosbag/2026-09-180915
-D=/workspace/bags/5goukan/2d3dimu/offline/glim/2026-09-180915_filtered_dump   # LC 後 dump (traj_lidar.txt 入り)
+B=/workspace/bags/raw/2026-09-180915_5goukan
+D=/workspace/bags/glim/2026-09-180915_5goukan_dump/filtered   # LC 後 dump (traj_lidar.txt 入り)
 O=/workspace/maps/2d/glim/2026-09-180915/nav2                                    # 保存先
 
 python3 $T $B $D $O \

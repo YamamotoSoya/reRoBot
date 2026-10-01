@@ -18,7 +18,7 @@
 #   docker exec -i rerobot_env bash -c \
 #     'source /opt/ros/jazzy/setup.bash && python3 - <in_dir> <out_dir>' \
 #     < tools/rfans_bag_to_liosam.py
-#   in_dir / out_dir はコンテナ内パス (例: /workspace/bags/.../2026-08-14_0919)
+#   in_dir / out_dir はコンテナ内パス (例: /workspace/bags/raw/2026-08-14_0919_5goukan)
 
 import sys
 

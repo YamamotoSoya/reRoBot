@@ -22,7 +22,7 @@
 # 使い方例 (glim_env 内):
 #   source /opt/ros/jazzy/setup.bash
 #   python3 /workspace/tools/glim_traj_to_2dmap/glim_traj_to_2dmap.py \
-#       /workspace/bags/<bag_dir> /workspace/bags/<dump_dir>/traj_lidar.txt <dest_dir> \
+#       /workspace/bags/raw/<bag名> /workspace/bags/glim/<bag名>_dump/<タグ>/traj_lidar.txt <dest_dir> \
 #       -r 0.05 --map_width 6144 --map_height 6144 --min_height -0.45 --max_height 0.75
 #   --floor_probe を付けると地図を書かずにセンサ座標の床 z (最頻値) だけ出す。
 

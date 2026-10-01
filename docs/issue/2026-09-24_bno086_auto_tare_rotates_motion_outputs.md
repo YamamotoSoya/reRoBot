@@ -189,7 +189,7 @@ tare off・reset 後に 3 姿勢 (水平 / 前上げ 5° / 左上げ 6°) + CCW 
 
 ### 2.12 較正後初の走行 bag (09-27、`bags/raw/2026-09-27_1651_5goukan`、5号館 1 周 333 m、先頭 65 s 静止)
 
-GLIM は `bags/glim/2026-09-27_1651_5goukan/{bno_live, bno_scale1, wit}`、IMU 抽出は `bags/exp/2026-09-27_calib_1651/`。
+GLIM は `bags/glim/2026-09-27_1651_5goukan_dump/{bno_live, bno_scale1, wit}`、IMU 抽出は `bags/exp/2026-09-27_calib_1651/`。
 
 **IMU (静止 65 s、車体座標)**: BNO086 傾き 1.63° / \|g\| 9.788、WT901C 0.97° / 9.847 → 床の傾きは共通なので **BNO086 の accel ずれは WT901C 比 約 1.0° (0.17 m/s²)** (較正前 5〜6.5°、09-27 朝の台車上測定の差 1.2° と整合)。旋回ごとの yaw は BNO−WT 平均 0.17°。走行中 \|a\| は BNO が WT より 2.4% 高い (静止では 0.6% 低い、未切り分け)。
 

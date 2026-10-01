@@ -46,7 +46,7 @@ docker exec glim_env bash -c "cd /workspace/maps/2d/glim/<name>/nav2 &&
 # 1) 床のセンサ相対 z を実測 (手順は第3章 §3.4。5号館 08-14 LC は -0.55)
 # 2) 変換 (帯 = 床相対値+0.3〜+1.5。dump 直読みなので PLY→PCD は不要)
 docker exec glim_env python3 /workspace/tools/glim_dump_to_2dmap/glim_dump_to_2dmap.py \
-  /workspace/bags/<dump_dir> /workspace/maps/2d/glim/<name>/nav2 \
+  /workspace/bags/glim/<bag名>_dump/<タグ> /workspace/maps/2d/glim/<name>/nav2 \
   -r 0.05 --map_width 6144 --map_height 6144 \
   --height_mode sensor --min_height -0.25 --max_height 0.95
 # 3) 出力は map.pgm + map.yaml (map_server は pgm も可)。規約名にするなら §7.1-4 と
@@ -60,7 +60,7 @@ docker exec glim_env python3 /workspace/tools/glim_dump_to_2dmap/glim_dump_to_2d
 # glim_env 内。dump は LC 後に保存したもの (traj_lidar.txt の終端 z が閉じているか確認)
 source /opt/ros/jazzy/setup.bash
 T=/workspace/tools/glim_traj_to_2dmap/glim_traj_to_2dmap.py
-python3 $T /workspace/bags/<bag_dir> /workspace/bags/<dump_dir> /workspace/maps/2d/glim/<name>/nav2 \
+python3 $T /workspace/bags/raw/<bag名> /workspace/bags/glim/<bag名>_dump/<タグ> /workspace/maps/2d/glim/<name>/nav2 \
   -r 0.05 --map_width 6144 --map_height 6144 \
   --height_frame ground --min_height 0.3 --max_height 1.5 --range_max 30 --deskew \
   --min_points_in_pix 4 --max_points_in_pix 12

@@ -136,7 +136,7 @@ nav2.launch.py (map_yaml:=…/my_map.yaml use_keepout:=false)
 ```bash
 # 1) PLY → PCD (実測 2 ms / 17.8 万点)
 docker exec glim_env pcl_ply2pcd \
-  /workspace/bags/9goukan/2d3d_imu/offline/glim/exp_2026-08-14/N12/N12_dense_map.ply /tmp/n12.pcd
+  /workspace/bags/exp/2026-08-14_new_driver_ab/N12/N12_dense_map.ply /tmp/n12.pcd
 
 # 2) 床 z と xy 範囲の実測 (--min/max_height と -w -h を決めるため)
 docker exec glim_env bash -c "python3 -c \"

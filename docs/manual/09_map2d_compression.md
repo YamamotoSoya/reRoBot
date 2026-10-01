@@ -31,7 +31,7 @@ GLIM で作った 3D 地図を、Nav2 (map_server / amcl) が読める **2D 占�
 
 ```bash
 docker exec glim_env python3 /workspace/tools/glim_dump_to_2dmap/glim_dump_to_2dmap.py \
-  /workspace/bags/<場所>/.../glim/<dump_dir> \
+  /workspace/bags/glim/<bag名>_dump/<タグ> \
   /workspace/maps/2d/glim/<name>/nav2 \
   -r 0.10 --height_mode sensor --min_height -0.25 --max_height 0.95
 ```
@@ -47,8 +47,8 @@ docker exec glim_env python3 /workspace/tools/glim_dump_to_2dmap/glim_dump_to_2d
 docker exec -it glim_env bash
 source /opt/ros/jazzy/setup.bash          # rosbag2_py が要る
 T=/workspace/tools/glim_traj_to_2dmap/glim_traj_to_2dmap.py
-B=/workspace/bags/<場所>/.../online/rosbag/<bag_dir>
-D=/workspace/bags/<場所>/.../glim/<dump_dir>      # 中の traj_lidar.txt を使う
+B=/workspace/bags/raw/<bag名>
+D=/workspace/bags/glim/<bag名>_dump/<タグ>      # 中の traj_lidar.txt を使う (LC 後なら filtered)
 O=/workspace/maps/2d/glim/<name>/nav2                # ← 保存先 (dest_dir)。map.pgm + map.yaml がここにできる
 
 # 1) 床のセンサ座標 z を実測 (約 15 s)。ground モードでは自動推定されるので省略可

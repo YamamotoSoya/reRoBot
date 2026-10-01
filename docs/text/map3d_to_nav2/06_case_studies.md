@@ -85,7 +85,7 @@ gitlink が「上流に存在しない commit」を指すか dirty のまま残�
 **GLIM 地図の床は z=+0.636 にあった — 地図の原点はどこか**
 
 - 一次資料: `docs/features/2026-08-17_glim_map_to_nav2.md` §4.1 (実測コマンド)
-- 対象データ: `bags/9goukan/2d3d_imu/offline/glim/exp_2026-08-14/N12/N12_dense_map.ply`
+- 対象データ: `bags/exp/2026-08-14_new_driver_ab/N12/N12_dense_map.ply`
 
 ### 症状
 

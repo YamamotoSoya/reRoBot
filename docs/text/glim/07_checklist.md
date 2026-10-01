@@ -41,12 +41,12 @@ docker exec rerobot_env bash -c 'source /opt/ros/jazzy/setup.bash && \
 # bag の記録 (main 側。点群 + IMU + TF 一式)
 docker exec -it rerobot_env bash -c \
   'source /opt/ros/jazzy/setup.bash && \
-   ros2 bag record -o /workspace/bags/<name> /sdk_could /imu/data /tf /tf_static /odom'
+   ros2 bag record -o /workspace/bags/raw/<name> /sdk_could /imu/data /tf /tf_static /odom'
 
 # GLIM で処理 (glim コンテナ。auto_quit を忘れない — 事例C-2)
 docker exec -it glim_env /ros_entrypoint.sh \
-  ros2 run glim_ros glim_rosbag /workspace/bags/<name> --ros-args \
-    -p config_path:=/glim_config -p auto_quit:=true -p dump_path:=/workspace/bags/<name>_dump
+  ros2 run glim_ros glim_rosbag /workspace/bags/raw/<name> --ros-args \
+    -p config_path:=/glim_config -p auto_quit:=true -p dump_path:=/workspace/bags/glim/<name>_dump/default
 ```
 
 ⚠️ `bags/` はコンテナ (root) 所有でホストから直接書けない。ホスト側で加工したければ
@@ -78,14 +78,14 @@ EOF
 
 # (b) 最終地図の PLY 書き出し (zenity ダイアログ回避つき — 事例C-1)
 docker exec -it glim_env /ros_entrypoint.sh \
-  ros2 run glim_ros offline_viewer /workspace/bags/<name>_dump --export_path /workspace/bags/<name>.ply
+  ros2 run glim_ros offline_viewer /workspace/bags/glim/<name>_dump/default --export_path /workspace/bags/glim/<name>_dump/default.ply
 
 # (c) GUI で対話的に見る場合。「Do optimization?」やフォルダ選択の zenity ダイアログが
 #     不可視になり 0% 停止に見える問題は GSK_RENDERER=cairo (compose 設定済み) で解決済み —
 #     コンテナが古いままなら docker compose --profile glim up -d glim で再作成してから。
 #     (詳細: docs/issue/2026-08-15_offline_viewer_zenity_dialog_hang.md)
 docker exec -it glim_env /ros_entrypoint.sh \
-  ros2 run glim_ros offline_viewer /workspace/bags/<name>_dump
+  ros2 run glim_ros offline_viewer /workspace/bags/glim/<name>_dump/default
 ```
 
 `odom_*.txt` と `traj_*.txt` の差が「大域最適化が直した量」— 差が巨大なら①層 (odometry)
@@ -110,8 +110,8 @@ docker exec glim_env bash -c 'cp -r /glim_config /tmp/glim_ct'
 
 ```bash
 docker exec -it glim_env /ros_entrypoint.sh \
-  ros2 run glim_ros glim_rosbag /workspace/bags/<name> --ros-args \
-    -p config_path:=/tmp/glim_ct -p auto_quit:=true -p dump_path:=/workspace/bags/<name>_ct_dump
+  ros2 run glim_ros glim_rosbag /workspace/bags/raw/<name> --ros-args \
+    -p config_path:=/tmp/glim_ct -p auto_quit:=true -p dump_path:=/workspace/bags/glim/<name>_dump/ct
 ```
 
 ⚠️ `config.json` 内の古い「戻し手順」コメント (imu_frame_id: glim_base 云々) は

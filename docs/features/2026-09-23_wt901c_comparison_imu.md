@@ -148,7 +148,7 @@ BNO086 の USB CDC (`ttyACM0`) と WT901C の `ttyUSB-wt901` は別デバイス�
 
 ```bash
 docker exec -it rerobot_env bash -c 'source /opt/ros/jazzy/setup.bash && \
-  ros2 bag record -s mcap -o /workspace/bags/5goukan/2d3d_imu_wit/online/rosbag/$(date +%F_%H%M) \
+  ros2 bag record -s mcap -o /workspace/bags/raw/$(TZ=Asia/Tokyo date +%F_%H%M)_<場所> \
     /rfans_driver/rfans_points /scan /imu/data /imu_wit/data /imu_wit/mag \
     /odom /tf /tf_static /diagnostics /robot_speed_cmd'
 ```

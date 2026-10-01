@@ -142,7 +142,7 @@ docker exec -i glim_env python3 - <<'EOF'
 import numpy as np, sys
 sys.path.insert(0, '/workspace/tools/glim_dump_to_2dmap')
 from glim_dump_to_2dmap import load_submap, list_submaps
-base = '/workspace/bags/<dump_dir>'
+base = '/workspace/bags/glim/<bag名>_dump/<タグ>'
 rels = []
 for i in list_submaps(base):
     T, pts = load_submap(base, i)
@@ -156,7 +156,7 @@ EOF
 
 # 2) 変換 (帯 = 床相対値 + 0.3 〜 +1.5。床 -0.55 なら -0.25〜+0.95)
 docker exec glim_env python3 /workspace/tools/glim_dump_to_2dmap/glim_dump_to_2dmap.py \
-  /workspace/bags/<dump_dir> /workspace/maps/glim/<name>/nav2 \
+  /workspace/bags/glim/<bag名>_dump/<タグ> /workspace/maps/glim/<name>/nav2 \
   -r 0.05 --map_width 6144 --map_height 6144 \
   --height_mode sensor --min_height -0.25 --max_height 0.95
 ```
@@ -198,7 +198,7 @@ odom 軌跡では +2.85 m で、LC が端点を合わせる代わりに中間を
 ことの実証であり、地図そのものの z 誤差を直したわけではない (3D 地図はドーム状のまま)。
 
 数値の裏取り (一次資料は git 管理外の
-`bags/5goukan/2d3d_imu/offline/glim/2dmap_compare/` — `absolute/` と `sensor/` に
+`bags/exp/2026-09-14_2dmap_compare/` — `absolute/` と `sensor/` に
 両方式の map.pgm/png + yaml、上図の元 PNG も同居):
 
 | | 絶対 z (既製) | センサ相対 (本ツール) |
@@ -472,8 +472,8 @@ GLIM はフレーム時刻に header stamp をそのまま使うので、5号館
 │   ├── 停車・低速区間は生密度で濃くなる (点数しきい値は速度で効きが変わる)
 │   ├── 動体 (歩行者) が 4..12 で黒になりうる — 撮影時に人を近づけない / keepout で潰す
 │   └── 未知領域 = 自由 は未解決のまま (§3.6)
-├── ⚠️ dump の取り違え: `2026-08-14_0919_dump/` は LC 前 (traj 終端 z −4.32)、
-│     `glim_5goukan_lc_2026-08-14_0919/` が LC 後。行数・時刻範囲が同じで見分けにくい
+├── ⚠️ dump の取り違え: `glim/2026-08-14_0919_5goukan_dump/default/` は LC 前 (traj 終端 z −4.32)、
+│     `glim/2026-08-14_0919_5goukan_dump/manual_lc/` が LC 後。行数・時刻範囲が同じで見分けにくい
 └── 次の 1 実験 (方式選択を決めるもの): bag 再生 + rfans_scan.launch.py + map_server/amcl だけを
       起こし、地図を R / B の 2 枚で回して /amcl_pose と traj_lidar.txt の xy 差 (中央値・最遠角)
       を比べる。一致率指標の代わりにこれを採用する

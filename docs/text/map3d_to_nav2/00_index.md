@@ -83,14 +83,14 @@ reRoBot では 2026-08-17 にこの接続層を実装した (実機での AMCL �
 - `docs/issue/2026-08-16_rfans_mount_angle_glim_z_collapse.md` — 地図品質の前提 (縦角再較正が保留中)
 - `docs/claude/PROJECT_STATE.md` タイムライン 08-12 (3) — 事例A (rfans2d_slam) の一次記録
 - `tools/README.md` / `img/2026-08-20_compare_abs_vs_sensor.png` (第3章 §3.4 に埋込・解説あり。
-  元データは git 管理外の `bags/5goukan/2d3d_imu/offline/glim/2dmap_compare/`)
+  元データは git 管理外の `bags/exp/2026-09-14_2dmap_compare/`)
   — glim_dump_to_2dmap の使い方と絶対 z vs センサ相対 (オドメトリ基準) の実測比較画像 (2026-08-20)
 - `img/2026-09-10_density_cause.png` / `img/2026-09-10_sweep_grid.png` — センサ相対地図の
   「右上だけ薄い」機構解剖とパラメータ掃引 (第3章 §3.4、2026-09-10)。元データは
-  `bags/5goukan/2d3d_imu/offline/glim/2dmap_compare/sweep_2026-09-10/` (A〜I の map.pgm/yaml + 集計 json)
+  `bags/exp/2026-09-14_2dmap_compare/sweep_2026-09-10/` (A〜I の map.pgm/yaml + 集計 json)
 - `img/2026-09-14_traj_compare_grid.png` / `_traj_detail.png` / `_traj_match.png` — 生スキャン × 最適化軌跡
   再投影 (glim_traj_to_2dmap) と既存 2 方式の比較 (第3章 §3.5、2026-09-14)。元データは
-  `bags/5goukan/2d3d_imu/offline/glim/2dmap_compare/traj_2026-09-14/` (J〜R の map + counts.npy + 集計 json)。
+  `bags/exp/2026-09-14_2dmap_compare/traj_2026-09-14/` (J〜R の map + counts.npy + 集計 json)。
   設計文書は `../../features/2026-09-14_glim_traj_to_2dmap.md`
 - 第 8 章の出典は章内リンク (論文 arXiv / GitHub / つくばチャレンジ技術記事、2026-09-03 調査時点)
 

@@ -41,7 +41,7 @@ Python ツール (依存 numpy のみ、ビルド不要)。既製 pointcloud_to_
 ```bash
 # 例: 5号館 LC 地図 (帯はセンサ相対。床は同梱手順で実測 → 床+0.3〜1.5 に相当する値を指定)
 docker exec glim_env python3 /workspace/tools/glim_dump_to_2dmap/glim_dump_to_2dmap.py \
-  /workspace/bags/5goukan/2d3d_imu/offline/glim/glim_5goukan_lc_2026-08-14_0919 \
+  /workspace/bags/glim/2026-08-14_0919_5goukan_dump/manual_lc \
   /workspace/maps/2d/glim/<name>/nav2 \
   -r 0.05 --map_width 6144 --map_height 6144 \
   --height_mode sensor --min_height -0.25 --max_height 0.95
@@ -59,7 +59,7 @@ docker exec glim_env python3 /workspace/tools/glim_dump_to_2dmap/glim_dump_to_2d
   17 倍・ノイズ増なし。機構と掃引表は読本 `docs/text/map3d_to_nav2/03_map_conversion.md` §3.4
 - 絶対 z vs センサ相対の比較実測 (5号館 08-14 LC 地図、z ドリフト +4.9 m):
   `docs/text/map3d_to_nav2/img/2026-08-20_compare_abs_vs_sensor.png` (解説は読本 §3.4。
-  元データ・両方式の map 出力は git 管理外の `bags/5goukan/2d3d_imu/offline/glim/2dmap_compare/`)
+  元データ・両方式の map 出力は git 管理外の `bags/exp/2026-09-14_2dmap_compare/`)
   — 絶対 z はドリフト最大部で壁が全滅、センサ相対は全周で壁が残る
 
 ## glim_traj_to_2dmap (自作, 2026-09-14)
@@ -88,8 +88,8 @@ traj 姿勢のピッチ誤差 (z ドーム斜面) が帯に混入しない。
 docker exec -it glim_env bash
 source /opt/ros/jazzy/setup.bash
 T=/workspace/tools/glim_traj_to_2dmap/glim_traj_to_2dmap.py
-B=/workspace/bags/5goukan/2d3d_imu/online/rosbag/2026-08-14_0919
-D=/workspace/bags/5goukan/2d3d_imu/offline/glim/glim_5goukan_lc_2026-08-14_0919   # dump dir (中の traj_lidar.txt を使う)
+B=/workspace/bags/raw/2026-08-14_0919_5goukan
+D=/workspace/bags/glim/2026-08-14_0919_5goukan_dump/manual_lc   # dump dir (中の traj_lidar.txt を使う)
 
 # 1) 床のセンサ座標 z を実測 (10 スキャンに 1 つ、約 15 s)。5号館 08-14 は -0.65 → 帯 -0.35〜+0.85
 python3 $T $B $D /tmp/x --floor_probe --skip 10
@@ -124,7 +124,7 @@ python3 $T $B $D /workspace/maps/2d/glim/<name>/nav2 \
   submap 版 r=0.10 と同等 (0.79 vs 0.77) で、AMCL 実走での優劣は未検証。詳細・図・残る代替仮説は
   読本 `docs/text/map3d_to_nav2/03_map_conversion.md` §3.5
 - ⚠️ dump は **LC 後に保存したもの**を渡す (`traj_lidar.txt` の終端 z が閉じているか確認。
-  5号館は `glim_5goukan_lc_2026-08-14_0919/` が LC 後、`2026-08-14_0919_dump/` は LC 前)
+  5号館は `glim/2026-08-14_0919_5goukan_dump/manual_lc/` が LC 後、同 `default/` は LC 前)
 - 処理時間: 全 6,989 スキャン (5.8 GB mcap) で 25〜45 s (glim_env、deskew 込みで 45 s)
 
 ## 99-wt901.rules (2026-09-23)

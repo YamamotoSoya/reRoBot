@@ -98,8 +98,8 @@ bag (mcap)                                   GLIM dump (offline_viewer で LC �
 # glim_env 内
 source /opt/ros/jazzy/setup.bash
 T=/workspace/tools/glim_traj_to_2dmap/glim_traj_to_2dmap.py
-B=/workspace/bags/5goukan/2d3d_imu/online/rosbag/2026-08-14_0919
-D=/workspace/bags/5goukan/2d3d_imu/offline/glim/glim_5goukan_lc_2026-08-14_0919
+B=/workspace/bags/raw/2026-08-14_0919_5goukan
+D=/workspace/bags/glim/2026-08-14_0919_5goukan_dump/manual_lc
 
 # 床のセンサ座標 z を実測 (約 15 s) → 5号館 08-14: -0.650 m → 帯は床+0.3〜+1.5 = -0.35〜+0.85
 python3 $T $B $D /tmp/x --floor_probe --skip 10
@@ -137,7 +137,7 @@ python3 $T $B $D /workspace/maps/glim/<name>/nav2 \
 ## 6. 既知の制限
 
 - **AMCL 実走 (または bag 再生 + AMCL) での優劣は未検証**。一致率指標は自己包含・黒面積依存で方式選択の根拠にならないと判明 (critic 査読)
-- LC 後に保存した dump が必要。LC 前の dump (`*_dump/`) と行数・時刻範囲が同じで見分けにくい — `traj_lidar.txt` 終端 z で確認する
+- LC 後に保存した dump が必要。LC 前の dump (`glim/<bag名>_dump/default/`) と行数・時刻範囲が同じで見分けにくい — `traj_lidar.txt` 終端 z で確認する
 - 密度が速度・距離依存になる。停車・低速区間が濃くなり、点数しきい値の効きが場所で変わる
 - 動体 (歩行者・随伴者) が生密度で残る。左 3 m の黒帯が静止物である根拠は観測時刻幅と別 run の一致で、随伴者説は完全棄却できていない
 - 未知領域 = 自由 の制約は既製ツールと共通で未解決 (生スキャンには視点があるのでレイキャストで解ける余地はある)
