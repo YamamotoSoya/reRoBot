@@ -11,6 +11,12 @@ install(DIRECTORY
   DESTINATION share/${PROJECT_NAME}
 )
 
+# claude: 起動結果サマリ (rerobot_bringup.launch.py の最後に起動, 2026-10-01)
+install(PROGRAMS
+  scripts/bringup_check.py
+  DESTINATION lib/${PROJECT_NAME}
+)
+
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
   set(ament_cmake_copyright_FOUND TRUE)

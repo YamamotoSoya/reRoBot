@@ -12,9 +12,11 @@ docker compose up glim main
 docker exec -it ~~~~~_env bash
 
 ros2 launch rerobot_bringup rerobot_bringup.launch.py
-ros2 launch rerobot_bringup wt901_imu.launch.py
-ros2 launch rerobot_bringup joy_releop.launch.py
+ros2 launch rerobot_bringup joy_teleop.launch.py
 ``` 
+<!-- claude: 2026-10-01 WT901C (witmotion) は rerobot_bringup.launch.py に統合 — wt901_imu.launch.py の別起動は不要。joy_releop → joy_teleop (typo 修正) -->
+* WT901C (`/imu_wit/data`) も bringup 1 本で一緒に起動する (別 launch 不要)。
+* bringup 起動の約 15 秒後に **起動結果の表** が出る。全項目 `✔ OK` なら次へ。`✘ NG` / `▲ LOW` の行は `→` のヒントを見て対処し、bringup を再起動する。
 topicの確認
 ```
 ros2 topic list
@@ -24,6 +26,8 @@ ros2 topic list
 
 ## 2. bagの記録
 <<<リンク　05>>>
+<!-- claude: 2026-10-01 NTP 停止のチェックを追加 -->
+* 記録前に **ホストで NTP を止める** (同期済みを確認 → `sudo timedatectl set-ntp false`、走行後に `true` で戻す)。走行中の時刻ジャンプ対策。手順は [第5章 記録前: NTP の自動時刻合わせを止める](05_bag_recording.md#記録前-ntp-の自動時刻合わせを止める)
 ```
 ros2 bag record -s mcap -o /workspace/bags/raw/$(TZ=Asia/Tokyo date +%F_%H%M)_<場所> /rfans_driver/rfans_points /rfans_driver/rfans_packets /scan /imu/data /imu_wit/data /imu_wit/mag /odom /tf /tf_static /diagnostics /robot_speed_cmd /scan_all /amcl_pose
 ```

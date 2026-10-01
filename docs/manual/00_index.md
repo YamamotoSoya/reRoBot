@@ -74,7 +74,7 @@ reRoBot 運用手引き
 
 **第3章 基本パラメータ**
 - 車体パラメータ (`config/params.yaml`: tread_width / tire_diam / gear_ratio / invert_left・right) — 意味・現在値・変えたら何が狂うか。teleop 側の複製と同期が必要 (`/params-sync`)
-- センサ接続パラメータ (serial_port / device_ip / rps / imu_port / imu_rate) — launch 引数で上書きできるもの
+- センサ接続パラメータ (serial_port / device_ip / rps / imu_port / imu_rate / imu_wit_port) — launch 引数で上書きできるもの
 - URDF のセンサ取付位置 (laser / rfans / imu_link) と rfans 取付プリセット (tilted45 / tilted15 / flat) — 切替時は GLIM の config も一緒に
 - EKF (`config/ekf.yaml`) の融合設定、Nav2 (`config/nav2_params.yaml`) の速度上限など「よく触る値」の一覧表 (パラメータ | ファイル | 意味 | 現在値)
 

@@ -3,6 +3,33 @@
 # 第5章 bag記録
 
 ---
+<!-- claude: 2026-10-01 追記 — 10-01_1759_gaishu bag で走行中の NTP 初回同期により時計が +0.44 s 飛んだ件 -->
+### 記録前: NTP の自動時刻合わせを止める
+
+走行中に WiFi が繋がり直すと、OS の時刻合わせ (systemd-timesyncd) が時計を**一気に飛ばして**直すことがある。bag では全 topic が同時に 0.5 s ほど途切れたように見え、さらに BNO086 (`/imu/data`) だけは stamp を IMU 自身の時計で作るので飛ばず、**以後 LiDAR と IMU の stamp が飛んだ分だけずれたまま**になる (GLIM の LIO が正しく組めない)。
+
+実例: `2026-10-01_1759_gaishu` の 2359 s (18:39:19) で +0.44 s。journal に `systemd-timesyncd: Initial synchronization` と `Clock change detected` が残る。それ以降の終端までの約 3 分は `/imu/data` の stamp が他より 0.44 s 遅れている。
+
+**ホストで実行する** (時計は OS に 1 つで、コンテナも同じ時計を使う):
+
+```
+# ① ネットに繋がっている状態で、同期済みか確認
+timedatectl status          # "System clock synchronized: yes" を確認 (no なら数十秒待つ)
+
+# ② 同期済みを確認してから止める
+sudo timedatectl set-ntp false
+timedatectl status          # "NTP service: inactive" になれば OK
+
+# ③ 走行・bag 記録
+
+# ④ 走行後に戻す
+sudo timedatectl set-ntp true
+```
+
+* **① を飛ばさない**。今回のジャンプは「起動後ずっと未同期 → 走行中に WiFi が繋がって初回同期」で起きた。同期前に止めると、ずれた時計のまま走ることになる (bag 内は一貫するが、他のログと時刻が合わない)。
+* 止めている間の時計の狂いは 1 時間でもミリ秒以下。走行には影響しない。
+* bag に全 topic 同時の短い穴を見つけたら、まず `journalctl | grep -E "Clock change|timesyncd"` で同じ時刻に時計が飛んでいないか確認する。
+
 ### 記録対象topic
 
 | topic | 型 | 内容 |

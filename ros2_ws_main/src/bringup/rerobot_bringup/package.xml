@@ -20,6 +20,13 @@
   <exec_depend>rfans_driver</exec_depend>
   <!-- claude: BNO086 IMU (rerobot_bringup.launch.py imu:=true, src/drivers/BNO086_ROS2Board-main) -->
   <exec_depend>bno086_imu_driver</exec_depend>
+  <!-- claude: 比較用 IMU WT901C (imu_wit:=true, src/drivers/witmotion_ros) -->
+  <exec_depend>witmotion_ros</exec_depend>
+  <!-- claude: scripts/bringup_check.py (起動結果サマリ) -->
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>nav_msgs</exec_depend>
+  <exec_depend>canopen_interfaces</exec_depend>
   <!-- claude: slam_toolbox 系は rerobot_slamtoolbox (ros2_ws_slamtoolbox) に分離済み -->
   <!-- claude: Nav2 最小構成 (nav2.launch.py) で起動するサーバ群 -->
   <exec_depend>nav2_map_server</exec_depend>

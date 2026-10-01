@@ -9,6 +9,9 @@
 #     ekf:=true/false       ... robot_localization EKF (車輪 odom + IMU 融合, 2026-08-11)。
 #                               true で /odometry/filtered + TF odom->base_link を EKF が
 #                               担当し、epos4_odometry の TF は自動オフ。imu:=true と併用。
+#   起動の流れ (2026-10-01 に表示を整理): 冒頭に構成バナー → [1/3] CANopen + センサ →
+#   [2/3] 5 s 後に controller/odometry → [3/3] check_delay 秒後に bringup_check が
+#   EPOS4 状態と各トピック周波数を表で表示 (scripts/bringup_check.py)。
 #   URDF は rerobot.urdf 1 本 (laser / rfans / imu_link を常に含む — 使わないセンサの
 #   静的 TF が出ていても無害)。params は config/params.yaml 1 本。
 #   直接叩いてもよいが、構成別ラッパ (rerobot_bringup_{2d,3d}{,_imu}.launch.py /
@@ -17,7 +20,8 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, TimerAction
+from launch.actions import (DeclareLaunchArgument, IncludeLaunchDescription, LogInfo,
+                            OpaqueFunction, TimerAction)
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PythonExpression
@@ -89,6 +93,12 @@ def generate_launch_description():
     imu_rate_arg = DeclareLaunchArgument(
         "imu_rate", default_value="200.0",
         description="BNO086 IMU report rate [Hz] (firmware practical max 200)")
+
+    # claude_check: 起動結果サマリ (bringup_check) を出すまでの待ち [s]。EPOS4 enable
+    # (5 s TimerAction + 数 s) と R-Fans の回転安定を待つ。
+    check_delay_arg = DeclareLaunchArgument(
+        "check_delay", default_value="15.0",
+        description="Seconds before bringup_check prints the startup summary")
 
     with open(urdf_file, "r") as f:
         robot_description = f.read()
@@ -242,7 +252,65 @@ def generate_launch_description():
         condition=IfCondition(PythonExpression([
             "'", LaunchConfiguration("imu"), "'.lower() == 'true' and '",
             LaunchConfiguration("imu_wit"), "'.lower() == 'true'"])),
-        launch_arguments={"port": LaunchConfiguration("imu_wit_port")}.items(),
+        # claude_imu_wit: params_file は明示必須 — include の launch 引数は後続 include に漏れるため、
+        # 省略すると直前の BNO086 include の params_file (bno086.yaml) を拾ってしまう (2026-10-01 実測)。
+        launch_arguments={
+            "port": LaunchConfiguration("imu_wit_port"),
+            "params_file": os.path.join(pkg_share, "config", "wt901.yaml"),
+        }.items(),
+    )
+
+    # claude_check: 解決済みの引数から「何を起動するか」のバナーを組む (launch 冒頭に表示)
+    def _banner(context):
+        def on(name):
+            return LaunchConfiguration(name).perform(context).lower() == "true"
+        def cfg(name):
+            return LaunchConfiguration(name).perform(context)
+        mark = lambda b: "起動 " if b else "----"  # noqa: E731
+        lines = [
+            "",
+            "=" * 64,
+            " reRoBot bringup — 起動構成",
+            "=" * 64,
+            f"  [{mark(True)}] EPOS4 x2 (CANopen can0) + controller / odometry",
+            f"  [{mark(on('lidar_2d'))}] 2D LiDAR UTM-30LX      port={cfg('serial_port')}",
+            f"  [{mark(on('lidar_3d'))}] 3D LiDAR R-Fans-16     ip={cfg('device_ip')} rps={cfg('rps')}",
+            f"  [{mark(on('imu'))}] IMU BNO086             port={cfg('imu_port')} rate={cfg('imu_rate')} Hz",
+            f"  [{mark(on('imu') and on('imu_wit'))}] IMU WT901C             port=/dev/{cfg('imu_wit_port')}",
+            f"  [{mark(on('ekf'))}] EKF (robot_localization)",
+            "=" * 64,
+            f" [1/3] CANopen バスとセンサドライバを起動します",
+            f" [2/3] 5 秒後に epos4_controller / epos4_odometry を起動 (EPOS4 enable)",
+            f" [3/3] {cfg('check_delay')} 秒後に起動結果の一覧を表示します",
+            "=" * 64,
+        ]
+        return [LogInfo(msg="\n".join(lines))]
+
+    def _bool_param(name):
+        return ParameterValue(
+            PythonExpression(["'", LaunchConfiguration(name), "'.lower() == 'true'"]),
+            value_type=bool)
+
+    # claude_check: 起動結果サマリ。1 回判定して表を出したら終了する (launch は止まらない)。
+    bringup_check_node = Node(
+        package="rerobot_bringup",
+        executable="bringup_check.py",
+        name="bringup_check",
+        parameters=[{
+            "lidar_2d": _bool_param("lidar_2d"),
+            "lidar_3d": _bool_param("lidar_3d"),
+            "imu": _bool_param("imu"),
+            "imu_wit": _bool_param("imu_wit"),
+            "ekf": _bool_param("ekf"),
+            "imu_rate": ParameterValue(LaunchConfiguration("imu_rate"), value_type=float),
+            "rps": ParameterValue(LaunchConfiguration("rps"), value_type=int),
+        }],
+        output="screen",
+        emulate_tty=True,  # claude: 色付き表示のため
+    )
+    delayed_check = TimerAction(
+        period=LaunchConfiguration("check_delay"),
+        actions=[LogInfo(msg="[3/3] 起動チェックを開始します"), bringup_check_node],
     )
 
     # Delay controller/odometry so the ros2_canopen device_manager has time to
@@ -251,7 +319,8 @@ def generate_launch_description():
     # race the bus_config launch and silently fail, leaving the EPOS4s disabled.
     delayed_nodes = TimerAction(
         period=5.0,
-        actions=[epos4_controller_node, epos4_odometry_node],
+        actions=[LogInfo(msg="[2/3] epos4_controller / epos4_odometry を起動します"),
+                 epos4_controller_node, epos4_odometry_node],
     )
 
     return LaunchDescription([
@@ -267,6 +336,8 @@ def generate_launch_description():
         imu_port_arg,
         imu_rate_arg,
         imu_wit_port_arg,
+        check_delay_arg,
+        OpaqueFunction(function=_banner),
         bus_config,
         delayed_nodes,
         ekf_node,
@@ -276,4 +347,5 @@ def generate_launch_description():
         rfans_calc_node,
         imu_include,
         imu_wit_include,
+        delayed_check,
     ])
