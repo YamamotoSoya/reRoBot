@@ -58,4 +58,4 @@ print("T_lidar_imu:", [*np.round(t,5), *np.round(q,10)])     # [x,y,z,qx,qy,qz,q
 現行値で回すと [0, 0, -0.0605, 0, 0, 0.7071, 0.7071] が出るので、まずこれで自己検証してから新しい値に差し替えてください。出た 7 要素を config_sensors.json と config_sensors.flat.json の T_lidar_imu に貼り、直上のコメント (算出元の xyz/rpy) も更新します。書式は TUM 形式※1 で quaternion が最後、qw が末尾です。
 
 
-← [第12章 つくチャレ当日の実行手順](12_challenge_day.md) | ↑ [目次](00_index.md)
+← [第12章 つくチャレ当日の実行手順](12_challenge_day.md) | → [第14章 pointcloud_to_laserscan](14_pointcloud_to_laserscan.md) | ↑ [目次](00_index.md)

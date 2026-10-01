@@ -1,0 +1,45 @@
+# claude: 2026-10-01 新設。AMCL 並走比較の変種定義 (amcl_variants.launch.py が読む)。
+# 1 変種 = 「スキャンの作り方」+「AMCL パラメータの上書き」。AMCL は名前空間 /loc_<name> で
+# 起動し、TF は出さない (tf_broadcast false)。本番の /amcl (TF あり) は nav2.launch.py のまま。
+#
+# source:
+#   bag_scan : スキャンノードを立てず scan_topic をそのまま購読 (再生で記録済み /scan を使う対照群)
+#   p2l      : pointcloud_to_laserscan (最近点固定)。angle_increment を細かくすると "全点" に近づく
+#   modes    : rfans_scan_modes (mode = nearest / farthest / nth)
+#   none     : 他の変種が出すスキャンを共有 (scan_topic 必須)
+# scan_topic 省略時は /scan_<name>。帯 (min/max_height) は省略時 0.3 / 1.5 (rfans_scan.launch.py と同じ)。
+common:
+  cloud_topic: /rfans_driver/rfans_points
+  target_frame: base_link
+  min_height: 0.3
+  max_height: 1.5
+  range_max: 30.0
+
+variants:
+  base:                              # 記録済み /scan を今の AMCL 設定で (再現性の確認)
+    source: bag_scan
+    scan_topic: /scan
+    amcl: {}
+  near:                              # 自作ノードの nearest = base と一致するはず (実装検証)
+    source: modes
+    mode: nearest
+    amcl: {}
+  far:                               # ビン内の最遠点
+    source: modes
+    mode: farthest
+    amcl: {}
+  nth1:                              # 近い方から 2 番目
+    source: modes
+    mode: nth
+    nth_k: 1
+    amcl: {}
+  all:                               # ビン幅を R-Fans の方位刻みに → ほぼ全点が席を持つ
+    source: p2l
+    angle_increment: 0.00016
+    amcl:
+      max_beams: 2000                # 席 39,270 → 間隔 19 (16 と互いに素)
+  allS:                              # all と同じスキャンで本数だけ base の 2 倍 (情報量 vs 本数の切り分け)
+    source: none
+    scan_topic: /scan_all
+    amcl:
+      max_beams: 120

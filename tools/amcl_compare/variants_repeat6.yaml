@@ -1,0 +1,27 @@
+# claude: 2026-10-01 新設。各変種 6 コピー (STAGGER=1.1 と併用して乱数種を独立にする)。r1 がスキャン生成、r2〜は共有。
+common: {cloud_topic: /rfans_driver/rfans_points, target_frame: base_link, min_height: 0.3, max_height: 1.5, range_max: 30.0}
+variants:
+  base_r1: {source: bag_scan, scan_topic: /scan, amcl: {}}
+  base_r2: {source: bag_scan, scan_topic: /scan, amcl: {}}
+  base_r3: {source: bag_scan, scan_topic: /scan, amcl: {}}
+  base_r4: {source: bag_scan, scan_topic: /scan, amcl: {}}
+  base_r5: {source: bag_scan, scan_topic: /scan, amcl: {}}
+  base_r6: {source: bag_scan, scan_topic: /scan, amcl: {}}
+  far_r1: {source: modes, mode: farthest, scan_topic: /scan_far, amcl: {}}
+  far_r2: {source: none, scan_topic: /scan_far, amcl: {}}
+  far_r3: {source: none, scan_topic: /scan_far, amcl: {}}
+  far_r4: {source: none, scan_topic: /scan_far, amcl: {}}
+  far_r5: {source: none, scan_topic: /scan_far, amcl: {}}
+  far_r6: {source: none, scan_topic: /scan_far, amcl: {}}
+  nth1_r1: {source: modes, mode: nth, nth_k: 1, scan_topic: /scan_nth1, amcl: {}}
+  nth1_r2: {source: none, scan_topic: /scan_nth1, amcl: {}}
+  nth1_r3: {source: none, scan_topic: /scan_nth1, amcl: {}}
+  nth1_r4: {source: none, scan_topic: /scan_nth1, amcl: {}}
+  nth1_r5: {source: none, scan_topic: /scan_nth1, amcl: {}}
+  nth1_r6: {source: none, scan_topic: /scan_nth1, amcl: {}}
+  all_r1: {source: p2l, angle_increment: 0.00016, scan_topic: /scan_all, amcl: {max_beams: 2000}}
+  all_r2: {source: none, scan_topic: /scan_all, amcl: {max_beams: 2000}}
+  all_r3: {source: none, scan_topic: /scan_all, amcl: {max_beams: 2000}}
+  all_r4: {source: none, scan_topic: /scan_all, amcl: {max_beams: 2000}}
+  all_r5: {source: none, scan_topic: /scan_all, amcl: {max_beams: 2000}}
+  all_r6: {source: none, scan_topic: /scan_all, amcl: {max_beams: 2000}}

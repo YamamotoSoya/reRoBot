@@ -31,7 +31,7 @@ from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.conditions import IfCondition, UnlessCondition  # claude
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, PythonExpression  # claude: PythonExpression 追加
 from launch_ros.actions import Node
 
 
@@ -99,13 +99,30 @@ def generate_launch_description():
         parameters=[params_file, {"use_sim_time": use_sim_time, "yaml_filename": map_yaml}],
     )
 
-    amcl = Node(
-        package="nav2_amcl",
-        executable="amcl",
-        name="amcl",
-        output="screen",
-        parameters=[params_file, {"use_sim_time": use_sim_time}],
+    # claude: 2026-10-01 AMCL の入力スキャンを選ぶ (rfans_scan.launch.py の allpoints / farthest と対で使う)。
+    #   default = /scan (方位ビン内最近点、nav2_params.yaml の max_beams 60)
+    #   all     = /scan_all (全点、39,270 席) + max_beams 2000 (間隔 19 席、リング数 16 と互いに素)
+    #   far     = /scan_far (方位ビン内最遠点) + max_beams 60
+    amcl_scan = LaunchConfiguration("amcl_scan")
+    amcl_scan_arg = DeclareLaunchArgument(
+        "amcl_scan",
+        default_value="default",
+        description="AMCL の入力スキャン: default=/scan (最近点) / all=/scan_all (全点) / far=/scan_far (最遠点)",
     )
+
+    def _amcl(name_suffix, overrides, when):
+        return Node(
+            package="nav2_amcl",
+            executable="amcl",
+            name="amcl",
+            output="screen",
+            parameters=[params_file, {"use_sim_time": use_sim_time, **overrides}],
+            condition=IfCondition(PythonExpression(["'", amcl_scan, f"' {when}"])),
+        )
+
+    amcl = _amcl("", {}, "not in ('all', 'far')")
+    amcl_all = _amcl("_all", {"scan_topic": "/scan_all", "max_beams": 2000}, "== 'all'")
+    amcl_far = _amcl("_far", {"scan_topic": "/scan_far"}, "== 'far'")
 
     # keepout マスク配信サーバ (map_server 実体を別名・別トピックで起動)。
     filter_mask_server = Node(
@@ -233,8 +250,11 @@ def generate_launch_description():
         map_yaml_arg,      # claude
         keepout_yaml_arg,  # claude
         use_keepout_arg,   # claude
+        amcl_scan_arg,     # claude
         map_server,
         amcl,
+        amcl_all,          # claude
+        amcl_far,          # claude
         filter_mask_server,
         costmap_filter_info_server,
         lifecycle_manager_localization,

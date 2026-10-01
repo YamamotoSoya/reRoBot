@@ -24,6 +24,11 @@ def generate_launch_description():
                               description="R-Fans model"),
         DeclareLaunchArgument("imu_port", default_value="/dev/ttyACM0",
                               description="BNO086 IMU board serial device path"),
+        # claude_imu_wit: WT901C 並走 (2026-10-01 デフォルト構成化) を透過
+        DeclareLaunchArgument("imu_wit", default_value="true",
+                              description="Start witmotion_ros for WT901C (/imu_wit/data)"),
+        DeclareLaunchArgument("imu_wit_port", default_value="ttyUSB-wt901",
+                              description="WT901C serial device name under /dev"),
         # claude_ekf: 車輪 odom + IMU の EKF 融合 (robot_localization) を透過 (2026-08-11)
         DeclareLaunchArgument("ekf", default_value="false",
                               description="Fuse wheel odom + IMU with robot_localization EKF"),
@@ -41,6 +46,8 @@ def generate_launch_description():
             "rps": LaunchConfiguration("rps"),
             "model": LaunchConfiguration("model"),
             "imu_port": LaunchConfiguration("imu_port"),
+            "imu_wit": LaunchConfiguration("imu_wit"),  # claude_imu_wit
+            "imu_wit_port": LaunchConfiguration("imu_wit_port"),
             "ekf": LaunchConfiguration("ekf"),  # claude_ekf
         }.items(),
     )

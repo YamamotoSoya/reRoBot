@@ -1,0 +1,22 @@
+# claude: 2026-10-01 新設。AMCL は乱数を使う (リサンプリング・ノイズ付与) ため、同じ入力でも run ごとに
+# 見失う/見失わないが分かれる。各変種を 4 コピーずつ並走させ「見失い頻度」で比べるための変種定義。
+# スキャン生成ノードは選び方ごとに 1 本 (r1 が生成、r2〜r4 は source: none で共有)。
+# allS (all スキャン + max_beams 120) は 1948_A で 29 回飛んだため除外 (細かい席を 120 本しか見ない = 疎)。
+common: {cloud_topic: /rfans_driver/rfans_points, target_frame: base_link, min_height: 0.3, max_height: 1.5, range_max: 30.0}
+variants:
+  base_r1: {source: bag_scan, scan_topic: /scan, amcl: {}}
+  base_r2: {source: bag_scan, scan_topic: /scan, amcl: {}}
+  base_r3: {source: bag_scan, scan_topic: /scan, amcl: {}}
+  base_r4: {source: bag_scan, scan_topic: /scan, amcl: {}}
+  far_r1:  {source: modes, mode: farthest, scan_topic: /scan_far, amcl: {}}
+  far_r2:  {source: none, scan_topic: /scan_far, amcl: {}}
+  far_r3:  {source: none, scan_topic: /scan_far, amcl: {}}
+  far_r4:  {source: none, scan_topic: /scan_far, amcl: {}}
+  nth1_r1: {source: modes, mode: nth, nth_k: 1, scan_topic: /scan_nth1, amcl: {}}
+  nth1_r2: {source: none, scan_topic: /scan_nth1, amcl: {}}
+  nth1_r3: {source: none, scan_topic: /scan_nth1, amcl: {}}
+  nth1_r4: {source: none, scan_topic: /scan_nth1, amcl: {}}
+  all_r1:  {source: p2l, angle_increment: 0.00016, scan_topic: /scan_all, amcl: {max_beams: 2000}}
+  all_r2:  {source: none, scan_topic: /scan_all, amcl: {max_beams: 2000}}
+  all_r3:  {source: none, scan_topic: /scan_all, amcl: {max_beams: 2000}}
+  all_r4:  {source: none, scan_topic: /scan_all, amcl: {max_beams: 2000}}

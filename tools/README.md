@@ -134,3 +134,10 @@ python3 $T $B $D /workspace/maps/2d/glim/<name>/nav2 \
 `/dev/ttyUSB-wt901` を与える rule。導入コマンドはファイル冒頭、手順全体は
 `docs/features/2026-09-23_wt901c_comparison_imu.md`。センサ本体の設定 (115200 / 200 Hz) は
 Windows 公式ソフトで行った (Linux 用の設定スクリプトは検証後に不要となり削除)。
+
+## amcl_compare (自作, 2026-10-01)
+
+<!-- claude: 2026-10-01 追加 -->
+AMCL を名前空間付きで多数並走させ、3D→2D スキャン変換の選び方 (最近点 / 最遠点 / n 番目 / 全点) や
+AMCL パラメータを同じ bag 入力で比べるツール一式。AMCL は乱数で結果が揺れるため、反復 run の
+失敗頻度で比べる。詳細は `tools/amcl_compare/README.md`。

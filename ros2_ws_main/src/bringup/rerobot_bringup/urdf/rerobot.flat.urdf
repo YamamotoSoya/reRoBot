@@ -3,8 +3,8 @@
      が両方常設 + BNO086 IMU を搭載予定のため、旧 rerobot_2d.urdf / rerobot_3d.urdf を
      1 本に統合した。起動するドライバは rerobot_bringup.launch.py の引数で選ぶ
      (URDF は常に全センサの TF を出す — 使わないセンサの静的 TF が残っても無害)。
-     センサ位置はユーザ実測値 (2026-08-31 車体改修後の再実測、2026-10-01 フレーム組み替えで rfans / imu / imu_wit の z を一律 −8.5 mm): laser (0.067, 0, 0.09406,
-     上下反転取付 = roll=pi) / rfans (0, 0, 0.79396) / imu (0, 0, 0.73346, **上下逆 + yaw −93° = rpy (pi,0,−1.6257)、2026-09-24 実測**) / imu_wit (−0.065, 0, 0.56896, 上下逆 roll=pi — 2026-09-24 比較用)。
+     センサ位置はユーザ実測値 (2026-08-31 車体改修後の再実測、2026-10-01 フレーム組み替えで rfans / imu / imu_wit の z を一律 −8.5 mm、同日 imu_wit のみ +150 mm 移設): laser (0.067, 0, 0.09406,
+     上下反転取付 = roll=pi) / rfans (0, 0, 0.79396) / imu (0, 0, 0.73346, **上下逆 + yaw −93° = rpy (pi,0,−1.6257)、2026-09-24 実測**) / imu_wit (−0.065, 0, 0.71896, 上下逆 roll=pi — 2026-09-24 比較用)。
      rfans は正立取付 (詳細は rfans_joint のコメント参照)。
 
      ⚠️ rfans 取付プリセット (2026-08-15 導入、丸ごとコピー方式): この内容 = flat。
@@ -157,7 +157,7 @@
   </joint>
 
   <!-- claude: 比較用 IMU WITmotion WT901C-TTL (witmotion_ros の frame_id imu_wit_link と一致)。2026-09-24 追加。
-       xyz はユーザ実測 (x −65 mm, y 0, z 568.96 mm、ケース中心)。
+       xyz はユーザ実測 (x −65 mm, y 0, z 718.96 mm、ケース中心。2026-10-01 に +150 mm 移設)。
        rpy: 静置重力 (z=−9.86) + ノーズアップで x>0 + 手回転で gyro_z 符号反転 の 3 証拠から
        「x 前向き・上下逆 = roll=pi」で確定 (2026-09-24)。yaw は暫定 0 — BNO086 との 24° 差の原因が
        未識別 (取付 / BNO086 auto_tare / WT 側) のため、決着後に必要なら更新する。
@@ -177,7 +177,7 @@
   <joint name="imu_wit_joint" type="fixed">
     <parent link="base_link"/>
     <child  link="imu_wit_link"/>
-    <origin xyz="-0.065 0 0.56896" rpy="3.141592653589793 0 0"/>
+    <origin xyz="-0.065 0 0.71896" rpy="3.141592653589793 0 0"/>
   </joint>
 
 </robot>

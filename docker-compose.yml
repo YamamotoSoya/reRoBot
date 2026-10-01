@@ -26,6 +26,7 @@ services:
       - ./ros2_ws_main/src:/workspace/src
       - ./maps:/workspace/maps
       - ./bags:/workspace/bags
+      - ./tools:/workspace/tools   # claude: 2026-10-01 追加 (tools/amcl_compare を main 内で実行するため。glim と同じ)
       - main_build:/workspace/build
       - main_install:/workspace/install
       - main_log:/workspace/log

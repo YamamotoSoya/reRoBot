@@ -25,8 +25,9 @@ ros2 topic list
 ## 2. bagの記録
 <<<リンク　05>>>
 ```
-ros2 bag record -s mcap -o /workspace/bags/raw/$(TZ=Asia/Tokyo date +%F_%H%M)_<場所> /rfans_driver/rfans_points /rfans_driver/rfans_packets /scan /imu/data /imu_wit/data /imu_wit/mag /odom /tf /tf_static /diagnostics /robot_speed_cmd
+ros2 bag record -s mcap -o /workspace/bags/raw/$(TZ=Asia/Tokyo date +%F_%H%M)_<場所> /rfans_driver/rfans_points /rfans_driver/rfans_packets /scan /imu/data /imu_wit/data /imu_wit/mag /odom /tf /tf_static /diagnostics /robot_speed_cmd /scan_all /amcl_pose
 ```
+<!-- claude: 2026-10-01 全点版の AMCL 入力 /scan_all と推定結果 /amcl_pose を追加 (第14章 2.5) -->
 
 ## 3. 3D SLAM
 ### **GLIM**
@@ -92,7 +93,7 @@ git checkout <hash> -- glim/<name>/nav2/my_map.pgm   # 任意の版に戻す
 * keepout マスク (任意、未整備): `my_map.pgm` を `<map_dir>/keep_out/keep_out.pgm` にコピーして進入禁止帯を黒で塗り、yaml も `keep_out.yaml` としてコピー (`image:` を書き換え)。使わないなら 6 で `use_keepout:=false`
 
 ## 6. Nav2,slamtoolbox反映
-* GLIM 由来 (3D) 地図: 5 のディレクトリを `map_dir:=` で渡す (7 参照)。amcl の `/scan` は 2D LiDAR ではなく `rfans_scan.launch.py` で作る
+* GLIM 由来 (3D) 地図: 5 のディレクトリを `map_dir:=` で渡す (7 参照)。amcl の入力スキャンは 2D LiDAR ではなく `rfans_scan.launch.py` で作る (当日は全点版 `/scan_all`。[第14章](14_pointcloud_to_laserscan.md))
 * slam_toolbox 由来 (2D) 地図の場合: `maps/2d/slam_toolbox/<name>/nav2/my_map.{pgm,yaml}` に同じ規約で置き、bringup は 2D (`lidar_2d:=true`)、rfans_scan は不要
 * 地図の高さ帯 (4 の `--min/max_height 0.3 1.5`) と `rfans_scan.launch.py` の既定 (0.3 / 1.5) は揃えておく。片方だけ変えない
 
@@ -101,11 +102,14 @@ main コンテナで 3 本 (別ターミナル)。`lidar_2d:=false` 必須 (`/sc
 ```
 # 1) bringup (3D LiDAR + IMU + EKF)
 ros2 launch rerobot_bringup rerobot_bringup.launch.py lidar_2d:=false lidar_3d:=true imu:=true ekf:=true
-# 2) R-Fans 点群 → /scan
-ros2 launch rerobot_bringup rfans_scan.launch.py
-# 3) Nav2 + RViz
-ros2 launch rerobot_bringup nav2.launch.py map_dir:=/workspace/maps/2d/glim/<name> use_keepout:=false
+# 2) R-Fans 点群 → /scan (costmap 用) + /scan_all (AMCL 用、全点)
+ros2 launch rerobot_bringup rfans_scan.launch.py allpoints:=true
+# 3) Nav2 + RViz (AMCL は /scan_all を max_beams 2000 で読む)
+ros2 launch rerobot_bringup nav2.launch.py map_dir:=/workspace/maps/2d/glim/<name> use_keepout:=false amcl_scan:=all
 ```
+<!-- claude: 2026-10-01 全点版に変更 (ユーザ指示)。従来 (最近点) に戻すなら 2) の allpoints:=true と 3) の amcl_scan:=all を外す。引数の意味と最遠点版は第14章 -->
+起動確認: `ros2 param get /amcl scan_topic` が `/scan_all`、`ros2 topic hz /scan_all` が約 10 Hz。従来の最近点に戻すなら 2) の `allpoints:=true` と 3) の `amcl_scan:=all` を外す ([第14章](14_pointcloud_to_laserscan.md))
+
 RViz 操作:
 1. 「2D Pose Estimate」で現在地と向きをクリック → amcl の粒子 (赤矢印) が数秒で収束することを確認。しなければもう一度
 2. 「Nav2 Goal」でゴールを指定 → 緑 (global plan) が出れば走行開始

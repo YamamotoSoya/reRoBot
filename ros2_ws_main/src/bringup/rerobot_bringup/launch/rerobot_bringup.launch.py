@@ -4,6 +4,8 @@
 #     lidar_2d:=true/false  ... urg_node (HOKUYO, /scan)
 #     lidar_3d:=true/false  ... surestar_rfans_ros2 (R-Fans, /rfans_driver/rfans_points)
 #     imu:=true/false       ... bno086_imu_driver (/imu/data)
+#     imu_wit:=true/false   ... witmotion_ros (WT901C, /imu_wit/data)。imu:=true のときだけ有効
+#                               (既定 true = BNO086 と並走が標準構成、2026-10-01)
 #     ekf:=true/false       ... robot_localization EKF (車輪 odom + IMU 融合, 2026-08-11)。
 #                               true で /odometry/filtered + TF odom->base_link を EKF が
 #                               担当し、epos4_odometry の TF は自動オフ。imu:=true と併用。
@@ -39,6 +41,16 @@ def generate_launch_description():
     imu_arg = DeclareLaunchArgument(
         "imu", default_value="true",
         description="Start bno086_imu_driver (/imu/data)")
+    # claude_imu_wit: 比較用 IMU WT901C を BNO086 と並走させる (2026-10-01 にデフォルト構成化)。
+    # imu:=true と AND で効く — IMU なし構成 (rerobot_bringup_{2d,3d}.launch.py) では起動しない。
+    imu_wit_arg = DeclareLaunchArgument(
+        "imu_wit", default_value="true",
+        description="Start witmotion_ros for WT901C (/imu_wit/data); effective only with imu:=true")
+    # claude_imu_wit: /dev 配下のデバイス名 (witmotion_ros は /dev/ を前置して開く)。
+    # udev rule (tools/99-wt901.rules) 未導入なら ttyUSB0 等を渡す。
+    imu_wit_port_arg = DeclareLaunchArgument(
+        "imu_wit_port", default_value="ttyUSB-wt901",
+        description="WT901C serial device name under /dev (udev symlink or ttyUSBn)")
     # claude_ekf: 車輪 odom + IMU の EKF 融合 (robot_localization)。true にすると
     # ekf_node が /odometry/filtered と TF odom->base_link を出し、epos4_odometry の
     # publish_tf を自動で false にする (TF 二重配信の防止。/odom topic 自体は残る)。
@@ -222,6 +234,17 @@ def generate_launch_description():
         }.items(),
     )
 
+    # claude_imu_wit: WT901C (witmotion_ros)。topic /imu_wit/data・frame_id imu_wit_link は
+    # config/wt901.yaml、TF は rerobot.urdf の imu_wit_joint。/imu/data とは別名なので衝突しない。
+    imu_wit_include = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(pkg_share, "launch", "wt901_imu.launch.py")),
+        condition=IfCondition(PythonExpression([
+            "'", LaunchConfiguration("imu"), "'.lower() == 'true' and '",
+            LaunchConfiguration("imu_wit"), "'.lower() == 'true'"])),
+        launch_arguments={"port": LaunchConfiguration("imu_wit_port")}.items(),
+    )
+
     # Delay controller/odometry so the ros2_canopen device_manager has time to
     # advertise /motor*/cia402_device_*/{init,enable,cyclic_velocity_mode}.
     # Without this, the controller's constructor-time wait_for_service(1s) calls
@@ -235,6 +258,7 @@ def generate_launch_description():
         lidar_2d_arg,
         lidar_3d_arg,
         imu_arg,
+        imu_wit_arg,
         ekf_arg,
         serial_port_arg,
         device_ip_arg,
@@ -242,6 +266,7 @@ def generate_launch_description():
         model_arg,
         imu_port_arg,
         imu_rate_arg,
+        imu_wit_port_arg,
         bus_config,
         delayed_nodes,
         ekf_node,
@@ -250,4 +275,5 @@ def generate_launch_description():
         rfans_node,
         rfans_calc_node,
         imu_include,
+        imu_wit_include,
     ])

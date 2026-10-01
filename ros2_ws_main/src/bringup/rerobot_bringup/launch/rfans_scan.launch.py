@@ -15,10 +15,17 @@
 # ⚠️ /scan は HOKUYO urg_node と同名トピック。同時起動しないこと —
 #   bringup は lidar_2d:=false lidar_3d:=true で使う。
 #
+# claude: 2026-10-01 追加 — allpoints:=true で「全点版」/scan_all も同時に出す (AMCL 専用)。
+#   方位ビンを R-Fans の方位刻み (0.00016 rad ≈ 0.009°) まで細かくし、同じ方位ビンで最近点 1 点に
+#   絞らずほぼ全点に自分の席を持たせる。/scan (0.0035 rad、最近点) は costmap 用にそのまま残す
+#   (/scan_all を costmap に入れると 3.9 万本のレイトレースで重い)。AMCL 側は nav2.launch.py amcl_scan:=all。
+#   比較実験の経緯: docs/issue/2026-10-01_amcl_hedge_corridor_scan_reduction.md
+#
 # 前提: rerobot_bringup (lidar_3d:=true) が先に上がっており、
 #   /rfans_driver/rfans_points と TF base_link->rfans が流れていること。
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
+from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
@@ -69,9 +76,73 @@ def generate_launch_description():
         }],
     )
 
+    # claude: 2026-10-01 全点版 (AMCL 専用、allpoints:=true のときだけ)
+    allpoints = LaunchConfiguration("allpoints")
+    allpoints_arg = DeclareLaunchArgument(
+        "allpoints",
+        default_value="false",
+        description="true で /scan_all (方位ビン 0.00016 rad = ほぼ全点) も出す。AMCL 側は nav2.launch.py amcl_scan:=all",
+    )
+    pointcloud_to_laserscan_all = Node(
+        package="pointcloud_to_laserscan",
+        executable="pointcloud_to_laserscan_node",
+        name="rfans_to_scan_all",
+        output="screen",
+        remappings=[
+            ("cloud_in", "/rfans_driver/rfans_points"),
+            ("scan", "/scan_all"),
+        ],
+        parameters=[{
+            "target_frame": "base_link",
+            "transform_tolerance": 0.1,
+            "min_height": min_height,      # 帯は /scan と共通 (地図の帯と揃える条件も同じ)
+            "max_height": max_height,
+            "angle_min": -3.14159265,
+            "angle_max": 3.14159265,
+            "angle_increment": 0.00016,    # R-Fans の方位刻み (bag 実測 0.009°)。39,270 席
+            "scan_time": 0.1,
+            "range_min": 0.5,
+            "range_max": range_max,
+            "use_inf": True,
+        }],
+        condition=IfCondition(allpoints),
+    )
+
+    # claude: 2026-10-01 最遠点版 (AMCL 専用、farthest:=true のときだけ)。pointcloud_to_laserscan は
+    #   ビン内最近点しか選べないため自作ノード rfans_scan_modes (mode=farthest) で作る。
+    #   ⚠ 並走比較では平常時に約 1.2 m ずれた (地図は植え込みも壁として描くので、奥の点だけでは合わない)。
+    farthest = LaunchConfiguration("farthest")
+    farthest_arg = DeclareLaunchArgument(
+        "farthest",
+        default_value="false",
+        description="true で /scan_far (方位ビン 0.0035 rad 内の最遠点) も出す。AMCL 側は nav2.launch.py amcl_scan:=far",
+    )
+    scan_far = Node(
+        package="rfans_scan_modes",
+        executable="scan_modes",
+        name="rfans_to_scan_far",
+        output="screen",
+        parameters=[{
+            "cloud_topic": "/rfans_driver/rfans_points",
+            "scan_topic": "/scan_far",
+            "target_frame": "base_link",
+            "mode": "farthest",
+            "min_height": min_height,
+            "max_height": max_height,
+            "angle_increment": 0.0035,
+            "range_min": 0.5,
+            "range_max": range_max,
+        }],
+        condition=IfCondition(farthest),
+    )
+
     return LaunchDescription([
         min_height_arg,
         max_height_arg,
         range_max_arg,
+        allpoints_arg,  # claude
+        farthest_arg,   # claude
         pointcloud_to_laserscan,
+        pointcloud_to_laserscan_all,  # claude
+        scan_far,       # claude
     ])
