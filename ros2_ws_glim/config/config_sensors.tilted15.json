@@ -53,7 +53,7 @@
     // claude: reRoBot 実機値 — rfans 前傾 15° 取付・ヨー回転なし = ケーブル前向き (tilted15。
     //   2026-08-31 車体改修の実測反映 — ただし rfans xyz は flat 実測 + 旧オフセットの換算値、切替時は要再実測)。
     //   URDF rerobot.tilted15.urdf から算出:
-    //   base->rfans t=(0.038, 0, 0.80746) rpy=(0, +pi/12, 0) / base->imu t=(0, 0, 0.74196) rpy=(0, 0, pi/2)
+    //   base->rfans t=(0.038, 0, 0.79896) rpy=(0, +pi/12, 0) / base->imu t=(0, 0, 0.73346) rpy=(0, 0, pi/2)
     //   T_lidar_imu = T_base_lidar^-1 * T_base_imu:
     //   => R_lidar_imu = Ry(-15deg) * Rz(90deg) => q(x,y,z,w) = (-0.0922959, -0.0922959, 0.7010574, 0.7010574)
     //   => t_lidar_imu = Ry(-15deg)*(-0.038, 0, -0.0655) = (-0.0197525, 0, -0.0731033)
