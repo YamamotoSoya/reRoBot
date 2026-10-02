@@ -135,6 +135,29 @@ python3 $T $B $D /workspace/maps/2d/glim/<name>/nav2 \
   5号館は `glim/2026-08-14_0919_5goukan_dump/manual_lc/` が LC 後、同 `default/` は LC 前)
 - 処理時間: 全 6,989 スキャン (5.8 GB mcap) で 25〜45 s (glim_env、deskew 込みで 45 s)
 
+## map_to_keepout (自作, 2026-10-02)
+
+<!-- claude: 2026-10-02 追加 -->
+`--mark_unknown` 付きで作った 2D 地図 (上の 2 ツールの出力) から Nav2 KeepoutFilter 用マスク
+(`keep_out.pgm` + `keep_out.yaml`、白黒 2 値) を作る。keepout = **未観測 (灰 180)** から、
+**走行軌跡の周り (`--path_clear_radius` 既定 0.4 m) を除いたもの**。
+
+軌跡を除く理由: ロボットの約 1.6 m 後ろを歩く操作者が毎スキャン高さ帯に入り、**走路そのものが壁として
+焼き付く** (09-18 5号館 traj 版で軌跡上の 94% が占有。従来は GIMP で手消ししていた)。
+`--clean_map <dir>` で同じ範囲を白に戻した本体地図 (map.pgm / map.yaml / my_map.yaml) も書く。
+
+```bash
+docker exec glim_env python3 /workspace/tools/map_to_keepout/map_to_keepout.py \
+  <map.yaml> /workspace/maps/2d/glim/<name>/keep_out \
+  --min_unknown_area 1.0 --traj <dump>/traj_lidar.txt --clean_map /workspace/maps/2d/glim/<name>/nav2
+# → nav2.launch.py map_dir:=/workspace/maps/2d/glim/<name> でそのまま読める
+```
+
+- `--min_unknown_area` [m²] 未満の未観測の塊は keepout にしない (空き域内の小穴が通路を塞ぐのを防ぐ)
+- 壁は既定で keepout に入れない (static_layer + inflation が担う。keepout の致命セルは inflation されない)。`--include_walls` で入れる
+- 濃淡の灰 (lo〜hi 点) は keepout にしない。`allow_unknown: false` だとこれも通行不可になるので、未観測の禁止は keepout 側で行う
+- 操作者が真後ろでなく横を歩いた区間は跡が残りうる (除去は軌跡半径内のみ)
+
 ## 99-wt901.rules (2026-09-23)
 
 <!-- claude: 2026-09-23 追加 -->
