@@ -75,8 +75,9 @@ O=/workspace/maps/2d/glim/2026-09-180915/nav2                                   
 
 python3 $T $B $D $O \
   -r 0.05 --height_frame ground --min_height 0.3 --max_height 1.5 \
-  --range_max 30 --deskew --min_points_in_pix 4 --max_points_in_pix 12
+  --range_max 30 --deskew --min_points_in_pix 4 --max_points_in_pix 12 --map_only
 ```
+<!-- claude: 2026-10-02 ツールの既定が一式出力 (raw/ nav2/ keep_out/) になったため、この手順 (地図だけ → 5 で加工) は --map_only で従来動作に固定 -->
 → `$O/map.pgm` + `map.yaml` ができる。壁がつながっているか画像で確認。
 
 ## 5. map加工

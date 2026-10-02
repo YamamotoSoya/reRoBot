@@ -27,6 +27,16 @@ Boost 1.83 (Jazzy) では未宣言エラーになる。**submodule のソース�
 依存 (`libpcl-dev`, `pcl-tools`, OpenCV, Boost) は Dockerfile_glim で導入済み。
 build/ はホスト側に永続化されるが、`.gitignore` 対象 (バイナリはコミットしない)。
 
+<!-- claude: 2026-10-02 追加 -->
+> **生成条件の記録**: glim_dump_to_2dmap / glim_traj_to_2dmap は地図と同じ出力先に `map_params.yaml` を書く
+> (実行コマンド全文・高さ基準・帯・距離の上限・しきい値・全引数・結果の要約)。map_to_keepout は `keep_out/keepout_params.yaml` を書き、
+> `--clean_map` 先には元の `map_params.yaml` を引き継いで掃除内容を追記する。
+>
+> **1 コマンドで Nav2 用一式 (既定)**: 両変換ツールは既定で dest_dir を地図一式の親として
+> `raw/` (未観測マーク付き原本)・`nav2/` (走路掃除済み本体 + `my_map.yaml`)・`keep_out/` を書く (内部で map_to_keepout を呼ぶ。
+> `--min_unknown_area` / `--path_clear_radius` もそのまま渡せる)。root (コンテナ) で実行しても出力の所有者は親ディレクトリに合わせる。
+> 地図だけを dest_dir に書く従来動作は `--map_only` (下の例はすべて従来動作のまま `--map_only` 付き)。
+
 ## glim_dump_to_2dmap (自作, 2026-08-20)
 
 <!-- claude: 2026-08-20 追加 -->
@@ -44,7 +54,7 @@ docker exec glim_env python3 /workspace/tools/glim_dump_to_2dmap/glim_dump_to_2d
   /workspace/bags/glim/2026-08-14_0919_5goukan_dump/manual_lc \
   /workspace/maps/2d/glim/<name>/nav2 \
   -r 0.05 --map_width 6144 --map_height 6144 \
-  --height_mode sensor --min_height -0.25 --max_height 0.95
+  --height_mode sensor --min_height -0.25 --max_height 0.95 --map_only
 ```
 
 - `--height_mode base_link --base_to_sensor_z <URDF rfans_joint z> --min_height 0.3 --max_height 1.5`
@@ -118,7 +128,7 @@ python3 $T $B $D /tmp/x --floor_probe --skip 10
 python3 $T $B $D /workspace/maps/2d/glim/<name>/nav2 \
   -r 0.05 --map_width 6144 --map_height 6144 \
   --height_frame sensor --min_height -0.35 --max_height 0.85 \
-  --min_points_in_pix 2 --max_points_in_pix 5
+  --min_points_in_pix 2 --max_points_in_pix 5 --map_only
 ```
 
 | 引数 | 既定 | 意味 |

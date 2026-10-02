@@ -48,7 +48,7 @@ docker exec glim_env bash -c "cd /workspace/maps/2d/glim/<name>/nav2 &&
 docker exec glim_env python3 /workspace/tools/glim_dump_to_2dmap/glim_dump_to_2dmap.py \
   /workspace/bags/glim/<bag名>_dump/<タグ> /workspace/maps/2d/glim/<name>/nav2 \
   -r 0.05 --map_width 6144 --map_height 6144 \
-  --height_mode sensor --min_height -0.25 --max_height 0.95
+  --height_mode sensor --min_height -0.25 --max_height 0.95 --map_only
 # 3) 出力は map.pgm + map.yaml (map_server は pgm も可)。規約名にするなら §7.1-4 と
 #    同様に mv + yaml の image 行を追従 (pgm のまま my_map.pgm で問題ない)
 ```
@@ -63,7 +63,8 @@ T=/workspace/tools/glim_traj_to_2dmap/glim_traj_to_2dmap.py
 python3 $T /workspace/bags/raw/<bag名> /workspace/bags/glim/<bag名>_dump/<タグ> /workspace/maps/2d/glim/<name>/nav2 \
   -r 0.05 --map_width 6144 --map_height 6144 \
   --height_frame ground --min_height 0.3 --max_height 1.5 --range_max 30 --deskew \
-  --min_points_in_pix 4 --max_points_in_pix 12
+  --min_points_in_pix 4 --max_points_in_pix 12 --map_only
+# --map_only = 地図だけ (2026-10-02 から既定は raw/ nav2/ keep_out/ の一式出力。第9章 §9.2 参照)
 # 0.10 m 格子が要るなら -r 0.10 --map_width 3072 --map_height 3072 --min_points_in_pix 8 --max_points_in_pix 24
 ```
 

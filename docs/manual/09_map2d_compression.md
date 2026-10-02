@@ -21,22 +21,33 @@ GLIM で作った 3D 地図を、Nav2 (map_server / amcl) が読める **2D 占�
 ## 9.2 実行手順
 
 前提: **LC 後に保存した dump** を使う (`traj_lidar.txt` の終端 z が閉じているか確認。LC 前後で行数も時刻範囲も同じなので取り違えやすい)。
-どちらも glim コンテナで実行する。**保存先はコマンド最後の位置引数 `dest_dir`** で毎回指定する (既定値なし)。
-ツールがそのディレクトリを作り、中に `map.pgm` と `map.yaml` の 2 ファイルを書く。
-慣例は `/workspace/maps/2d/glim/<name>/nav2` — `maps/` は全コンテナに `./maps:/workspace/maps` で mount されているので、
-ホストでは `reRoBot/maps/2d/glim/<name>/nav2/` に現れ、main コンテナの Nav2 からも同じパスで読める。
-別設定で作り直すときは `<name>/nav2_thr13` のように dest_dir を変えれば並べて残せる。
+どちらも glim コンテナで実行する。<!-- claude: 2026-10-02 keepout 生成を既定の手順に組み込み (ユーザ依頼) -->
+**既定で 1 コマンドで一式が出る**: 変換ツールが未観測マーク付きの地図を `<name>/raw/` に書き、続けて内部で
+`map_to_keepout` を呼んで Nav2 規約どおりの `<name>/nav2/` (本体地図 `my_map.yaml`、走路の操作者跡を消した版) と `<name>/keep_out/` (keepout マスク) を書く。
+出力の所有者は親ディレクトリ (ホストのユーザ) に合わせるので、そのまま GIMP で編集できる。
+
+```
+maps/2d/glim/<name>/
+├─ raw/       map.pgm + map.yaml + map_params.yaml   変換結果 (未観測 = 灰 180、手を加えない原本)
+├─ nav2/      map.pgm + map.yaml + my_map.yaml + map_params.yaml   Nav2 が読む本体地図
+└─ keep_out/  keep_out.pgm + keep_out.yaml + keepout_params.yaml   未観測 = 進入禁止
+```
+
+`maps/` は全コンテナに `./maps:/workspace/maps` で mount されているので、ホストでは `reRoBot/maps/2d/glim/<name>/` に現れ、
+main コンテナの Nav2 からも同じパスで読める。別設定で作り直すときは `<name>` を変えれば並べて残せる。
+どちらのツールも同じ場所に **`map_params.yaml`** (実行コマンド全文・高さ基準・帯・距離の上限・しきい値など) を書くので、後から「どの高さで切ったか」を確認できる。
 
 ### dump 版 (速い・形の確認用)
 
 ```bash
-docker exec glim_env python3 /workspace/tools/glim_dump_to_2dmap/glim_dump_to_2dmap.py \
-  /workspace/bags/glim/<bag名>_dump/<タグ> \
-  /workspace/maps/2d/glim/<name>/nav2 \
-  -r 0.10 --height_mode base_link --base_to_sensor_z 0.79396 --min_height 0.3 --max_height 1.5 --range_max 30
+G=/workspace/bags/glim/<bag名>_dump/<タグ>     # LC 後なら filtered (中の traj_lidar.txt も使う)
+M=/workspace/maps/2d/glim/<name>
+
+docker exec glim_env python3 /workspace/tools/glim_dump_to_2dmap/glim_dump_to_2dmap.py $G $M \
+  -r 0.10 --height_mode base_link --base_to_sensor_z 0.79396 --min_height 0.4 --max_height 1.7 --range_max 30 --mark_unknown
 ```
 
-- 1 つ目の引数が dump、**2 つ目が保存先 (dest_dir)**
+- 1 つ目の引数が dump、**2 つ目が地図一式の親 `<name>`** (`--map_only` を付けると、その場所に地図だけを書く従来動作)
 
 - `-r 0.10` を推奨 (0.05 だと間引きのせいで壁が点線になる)
 - 帯 (`--min/max_height`) は **base_link 基準 = 実機 `rfans_scan.launch.py` と同じ値** (既定 0.3 / 1.5) をそのまま書く
@@ -53,50 +64,44 @@ source /opt/ros/jazzy/setup.bash          # rosbag2_py が要る
 T=/workspace/tools/glim_traj_to_2dmap/glim_traj_to_2dmap.py
 B=/workspace/bags/raw/<bag名>
 D=/workspace/bags/glim/<bag名>_dump/<タグ>      # 中の traj_lidar.txt を使う (LC 後なら filtered)
-O=/workspace/maps/2d/glim/<name>/nav2                # ← 保存先 (dest_dir)。map.pgm + map.yaml がここにできる
+M=/workspace/maps/2d/glim/<name>                     # ← 地図一式の親 (raw/ nav2/ keep_out/ ができる)
 
-# 1) 床のセンサ座標 z を実測 (約 15 s)。ground モードでは自動推定されるので省略可
+# (任意) 床のセンサ座標 z を実測 (約 15 s)。ground / base_link モードでは不要
 python3 $T $B $D /tmp/x --floor_probe --skip 10     # 地図は書かないので保存先はダミー
 
-# 2) 変換
-python3 $T $B $D $O \
-  -r 0.05 --height_frame ground --min_height 0.3 --max_height 1.5 \
-  --range_max 30 --deskew --min_points_in_pix 4 --max_points_in_pix 12
+# 変換 + keepout (約 2 分)
+python3 $T $B $D $M \
+  -r 0.05 --height_frame ground --min_height 0.4 --max_height 1.7 \
+  --range_max 30 --deskew --min_points_in_pix 4 --max_points_in_pix 12 --mark_unknown
 ```
 
 - `--height_frame ground` は地面平面からの高さ。実機 `/scan` (pointcloud_to_laserscan) は車体基準 (base_link) なので、厳密に揃えるなら `--height_frame base_link --base_to_sensor_z <URDF rfans z>` (値は実機と同じ 0.3 / 1.5)。平坦な 5号館 09-18 では両者の地図は占有一致 0.99
 - Nav2 用に 0.10 m 格子にするなら `-r 0.10 --min_points_in_pix 8 --max_points_in_pix 24`
 - `--height_frame sensor` は LiDAR 座標の z で切る (値 = 実機の値 − rfans 取付高)
 
-## 9.3 未観測マークと keepout (任意、2026-10-02 追加)
+## 9.3 未観測マークと keepout の仕組み (2026-10-02 追加)
 
-`--mark_unknown` を付けると、センサから一度も見えていない画素を灰 180 (map_server で unknown) で塗る (各センサ位置から方位ごとに「帯内の最近点」と「全点の最遠点」の手前までを空きにする)。traj 版はスキャンごとの実姿勢で厳密、dump 版は submap 内スキャン位置からの近似 (建物内などに空きが漏れることがある)。
+`--mark_unknown` (既定の一式出力では自動的に有効) を付けると、センサから一度も見えていない画素を灰 180 (map_server で unknown) で塗る (各センサ位置から方位ごとに「帯内の最近点」と「全点の最遠点」の手前までを空きにする)。traj 版はスキャンごとの実姿勢で厳密、dump 版は submap 内スキャン位置からの近似 (建物内などに空きが漏れることがある)。
 
-その地図から keepout マスクを作る (未観測だけを禁止。壁は static_layer + inflation が担うので入れない):
+`map_to_keepout` (一式出力のとき変換ツールが内部で呼ぶ。単体でも使える) はその地図から keepout マスクを作る (未観測だけを禁止。壁は static_layer + inflation が担うので入れない。`--include_walls` で壁も入る)。
 
-```bash
-docker exec glim_env python3 /workspace/tools/map_to_keepout/map_to_keepout.py \
-  /workspace/maps/2d/glim/<name>/raw/map.yaml /workspace/maps/2d/glim/<name>/keep_out \
-  --min_unknown_area 1.0 --traj <dump>/traj_lidar.txt --clean_map /workspace/maps/2d/glim/<name>/nav2
-```
-
-- 1 つ目は `--mark_unknown` 付きで作った地図 (上の例では dest_dir を `<name>/raw` にしておく)
+- `--min_unknown_area` (既定 1.0) は、この面積 [m²] 未満の未観測の塊を keepout にしない (空き域内の小穴で通路を塞がない)。`--path_clear_radius` (既定 0.4) は軌跡周りの除外半径。どちらも変換ツールにそのまま渡せる
 - `--traj` を渡すと走行軌跡から 0.4 m 以内を keepout から外し、`--clean_map` はその範囲の壁を白に戻した本体地図 (`map.pgm` / `map.yaml` / `my_map.yaml`) を `nav2/` に書く → 規約名のまま 9.4 で `use_keepout:=true` で起動できる
 - 理由: ロボットの後ろを歩く操作者が高さ帯に入り、**走路そのものが壁として焼き付く** (09-18 traj 版で軌跡上の 94% が占有。従来は GIMP で手消ししていた)
 - 芝生・車道などの進入禁止帯は、出来た `keep_out.pgm` に手で黒を描き足す
 
 ## 9.4 Nav2 に渡す
 
-`nav2.launch.py` の規約は `<map_dir>/nav2/my_map.yaml` + `<map_dir>/keep_out/keep_out.yaml`。
+`nav2.launch.py` の規約は `<map_dir>/nav2/my_map.yaml` + `<map_dir>/keep_out/keep_out.yaml`。9.2 の手順ならそのまま揃っている。
 
 ```bash
-# 規約に合わせるなら出力をリネーム (yaml 内の image: も合わせる)
-cd /workspace/maps/2d/glim/<name>/nav2 && mv map.pgm my_map.pgm && sed -i 's/^image: map.pgm/image: my_map.pgm/' map.yaml && mv map.yaml my_map.yaml
-# 起動 (main コンテナ)
+# 起動 (main コンテナ)。keepout 込み (use_keepout は既定 true)
+ros2 launch rerobot_bringup nav2.launch.py map_dir:=/workspace/maps/2d/glim/<name>
+# keepout なしで試すなら
 ros2 launch rerobot_bringup nav2.launch.py map_dir:=/workspace/maps/2d/glim/<name> use_keepout:=false
-# リネームせず直接指定するなら
-ros2 launch rerobot_bringup nav2.launch.py map_yaml:=/workspace/maps/2d/glim/<name>/nav2/map.yaml use_keepout:=false
 ```
+
+`--map_only` で作った地図や 2026-10-02 以前の地図 (`nav2/map.yaml` だけ) は `map_yaml:=/workspace/maps/2d/glim/<name>/nav2/map.yaml use_keepout:=false` で直接指定する。
 
 3D 地図由来なので、amcl の入力 `/scan` は 2D LiDAR ではなく `rfans_scan.launch.py` (R-Fans 点群 → LaserScan、`lidar_2d:=false` 前提) で作る。→ [第10章 Nav2](10_nav2.md) / [第11章 amcl](11_amcl.md)
 

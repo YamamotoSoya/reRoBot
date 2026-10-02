@@ -158,7 +158,7 @@ EOF
 docker exec glim_env python3 /workspace/tools/glim_dump_to_2dmap/glim_dump_to_2dmap.py \
   /workspace/bags/glim/<bag名>_dump/<タグ> /workspace/maps/glim/<name>/nav2 \
   -r 0.05 --map_width 6144 --map_height 6144 \
-  --height_mode sensor --min_height -0.25 --max_height 0.95
+  --height_mode sensor --min_height -0.25 --max_height 0.95 --map_only
 ```
 
 | 引数 | 既定 | 意味 |

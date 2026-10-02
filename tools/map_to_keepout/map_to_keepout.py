@@ -21,8 +21,10 @@
 #       --min_unknown_area 1.0 --traj <dump>/traj_lidar.txt --clean_map <map_dir>/nav2
 
 import argparse
+import json
 import os
 import re
+import sys
 
 import numpy as np
 
@@ -46,7 +48,27 @@ def read_map_yaml(path):
     return image, res, org
 
 
-def main():
+def write_params(path, tool, args, summary, result):
+    """claude: 2026-10-02 生成条件の記録 (map_params.yaml)。値は JSON 表記 (YAML として読める、PyYAML 不要)。
+    summary = 高さ基準・帯・距離などの要点、result = 実行結果の要約"""
+    import datetime
+    import json
+    import shlex
+
+    def dump(d, ind=""):
+        return "".join(f"{ind}{k}: {json.dumps(v, ensure_ascii=False)}\n" for k, v in d.items())
+
+    with open(path, "w") as f:
+        f.write(f"# {tool} の生成条件 (自動生成。再実行は command をそのまま使う)\n")
+        f.write(dump({"tool": tool, "created": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
+                      "command": "python3 " + " ".join(shlex.quote(a) for a in sys.argv)}))
+        f.write("summary:\n" + dump(summary, "  "))
+        f.write("args:\n" + dump({k: (os.path.abspath(v) if isinstance(v, str) and os.path.exists(v) else v)
+                                  for k, v in vars(args).items()}, "  "))
+        f.write("result:\n" + dump(result, "  "))
+
+
+def main(argv=None):
     ap = argparse.ArgumentParser(description="--mark_unknown 付き 2D 地図 -> Nav2 keepout マスク")
     ap.add_argument("map_yaml")
     ap.add_argument("dest_dir", help="keep_out.pgm / keep_out.yaml の出力先 (nav2.launch.py 規約では <map_dir>/keep_out)")
@@ -61,7 +83,7 @@ def main():
                     help="軌跡の各姿勢からこの半径 [m] を keepout から外す (0 で無効。Nav2 robot_radius 0.35 + 余裕)")
     ap.add_argument("--clean_map", default=None,
                     help="走路の除外範囲を白にした本体地図 (map.pgm + map.yaml + my_map.yaml) の出力先")
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
 
     image, res, org = read_map_yaml(args.map_yaml)
     img = read_pgm(image)
@@ -125,6 +147,20 @@ def main():
         for n in ("map.yaml", "my_map.yaml"):  # my_map.yaml = nav2.launch.py の map_dir 規約名
             open(os.path.join(args.clean_map, n), "w").write(y)
         print(f"clean map: {fix.sum()} px set to free -> {args.clean_map}")
+        # 元地図の生成条件を引き継ぎ、clean の内容を追記
+        src = os.path.join(os.path.dirname(os.path.abspath(image)), "map_params.yaml")
+        dst = os.path.join(args.clean_map, "map_params.yaml")
+        if os.path.exists(src) and os.path.abspath(src) != os.path.abspath(dst):
+            body = open(src).read()
+            with open(dst, "w") as f:
+                f.write(body + f"cleaned_by_map_to_keepout:\n  source_map: {json.dumps(os.path.abspath(args.map_yaml))}\n"
+                        f"  path_clear_radius_m: {args.path_clear_radius}\n  traj: {json.dumps(args.traj)}\n"
+                        f"  px_set_free: {int(fix.sum())}\n")
+    write_params(os.path.join(args.dest_dir, "keepout_params.yaml"), "map_to_keepout", args, {
+        "keepout": "未観測" + (" + 壁" if args.include_walls else "") + " − 小さい未観測塊 − 軌跡周り",
+        "min_unknown_area_m2": args.min_unknown_area, "path_clear_radius_m": args.path_clear_radius if args.traj else None,
+    }, {"keepout_m2": round(float(keep.sum()) * a, 1), "free_m2": round(float((~keep).sum()) * a, 1),
+        "small_unknown_blobs_dropped": n_small})
     return 0
 
 

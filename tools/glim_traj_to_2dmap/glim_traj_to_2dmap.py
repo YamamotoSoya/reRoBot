@@ -159,6 +159,64 @@ def open_bag(bag_dir, topic):
     return gen()
 
 
+def write_params(path, tool, args, summary, result):
+    """claude: 2026-10-02 生成条件の記録 (map_params.yaml)。値は JSON 表記 (YAML として読める、PyYAML 不要)。
+    summary = 高さ基準・帯・距離などの要点、result = 実行結果の要約"""
+    import datetime
+    import json
+    import shlex
+
+    def dump(d, ind=""):
+        return "".join(f"{ind}{k}: {json.dumps(v, ensure_ascii=False)}\n" for k, v in d.items())
+
+    with open(path, "w") as f:
+        f.write(f"# {tool} の生成条件 (自動生成。再実行は command をそのまま使う)\n")
+        f.write(dump({"tool": tool, "created": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
+                      "command": "python3 " + " ".join(shlex.quote(a) for a in sys.argv)}))
+        f.write("summary:\n" + dump(summary, "  "))
+        f.write("args:\n" + dump({k: (os.path.abspath(v) if isinstance(v, str) and os.path.exists(v) else v)
+                                  for k, v in vars(args).items()}, "  "))
+        f.write("result:\n" + dump(result, "  "))
+
+
+def match_owner(dest, ref):
+    """claude: 2026-10-02 root (コンテナ) で書いた出力の所有者を ref (実行前から在った親ディレクトリ) に合わせる。
+    ホストのユーザが GIMP 等でそのまま編集できるようにするため。root 以外で実行したときは何もしない"""
+    if not hasattr(os, "geteuid") or os.geteuid() != 0:
+        return
+    st = os.stat(ref)
+    d = os.path.abspath(dest)
+    while d != os.path.abspath(ref) and d != os.path.dirname(d):  # dest から ref の手前まで遡って作ったディレクトリ
+        os.chown(d, st.st_uid, st.st_gid)
+        d = os.path.dirname(d)
+    for root, dirs, files in os.walk(dest):
+        for n in dirs + files:
+            os.chown(os.path.join(root, n), st.st_uid, st.st_gid)
+
+
+def existing_parent(path):
+    """path の最も近い既存の祖先ディレクトリ"""
+    d = os.path.dirname(os.path.abspath(path))
+    while not os.path.isdir(d):
+        d = os.path.dirname(d)
+    return d
+
+
+def run_keepout(dest_dir, map_dir, traj_path, args):
+    """claude: 2026-10-02 --with_keepout: raw/ の地図から keep_out/ と nav2/ (clean map) を作る"""
+    sys.dont_write_bytecode = True  # tools/ 配下に root 所有の __pycache__ を作らない
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "map_to_keepout"))
+    import map_to_keepout
+    kargv = [os.path.join(map_dir, "map.yaml"), os.path.join(dest_dir, "keep_out"),
+             "--unknown_value", str(args.unknown_value), "--min_unknown_area", str(args.min_unknown_area),
+             "--path_clear_radius", str(args.path_clear_radius), "--clean_map", os.path.join(dest_dir, "nav2")]
+    if traj_path and os.path.exists(traj_path):
+        kargv += ["--traj", traj_path]
+    else:
+        print("warning: 軌跡が無いので走路周りの除外 (操作者跡の掃除) をしない")
+    map_to_keepout.main(kargv)
+
+
 def main():
     ap = argparse.ArgumentParser(description="bag raw scans x GLIM optimized trajectory -> Nav2 2D occupancy grid")
     ap.add_argument("bag_dir")
@@ -198,7 +256,23 @@ def main():
                     help="未観測画素の値。occupied/free_thresh 0.5/0.2 では 128〜204 が unknown")
     ap.add_argument("--free_bins", type=int, default=720, help="空き判定の方位分割数 (720 = 0.5°)")
     ap.add_argument("--save_free", default=None, help="空き (観測済み) 画素マスク (.npy, uint8) を保存する")
+    # claude: 2026-10-02 1 コマンドで Nav2 用一式 (raw/ nav2/ keep_out/) を作る
+    # 既定 = 一式出力 (2026-10-02 ユーザ指示)。地図だけ欲しいときは --map_only
+    ap.add_argument("--map_only", dest="with_keepout", action="store_false",
+                    help="地図 (map.pgm / map.yaml / map_params.yaml) だけを dest_dir に書く (従来動作)。"
+                         "既定は dest_dir を地図一式の親とし、raw/ (未観測マーク付き原本)・nav2/ (走路掃除済み本体 + "
+                         "my_map.yaml)・keep_out/ (未観測 = 進入禁止) を書く (--mark_unknown を自動で有効化)")
+    ap.add_argument("--with_keepout", dest="with_keepout", action="store_true", default=True,
+                    help="一式出力 (既定。互換のため残しているだけ)")
+    ap.add_argument("--min_unknown_area", type=float, default=1.0, help="--with_keepout: この面積 [m^2] 未満の未観測塊は keepout にしない")
+    ap.add_argument("--path_clear_radius", type=float, default=0.4, help="--with_keepout: 軌跡からこの半径 [m] を keepout・壁から外す")
     args = ap.parse_args()
+    if args.floor_probe:  # 地図を書かないモードでは一式出力しない
+        args.with_keepout = False
+    if args.with_keepout:
+        args.mark_unknown = True
+    out_dir = os.path.join(args.dest_dir, "raw") if args.with_keepout else args.dest_dir
+    owner_ref = existing_parent(args.dest_dir)
 
     if args.height_frame == "base_link" and args.base_to_sensor_z is None:
         raise SystemExit("--height_frame base_link には --base_to_sensor_z が必要 (URDF rfans_joint の z)")
@@ -357,21 +431,43 @@ def main():
             unk = (img == 255) & (free == 0)
             img[unk] = args.unknown_value
             print(f"mark_unknown: free {int(free.sum())} px, unknown {int(unk.sum())} px")
-    os.makedirs(args.dest_dir, exist_ok=True)
+    os.makedirs(out_dir, exist_ok=True)
     if args.save_counts:
         np.save(args.save_counts, counts)
-    pgm = os.path.join(args.dest_dir, "map.pgm")
+    pgm = os.path.join(out_dir, "map.pgm")
     with open(pgm, "wb") as f:
         f.write(f"P5\n{W} {H}\n255\n".encode())
         f.write(img.tobytes())
     origin_x = cx - res * W / 2
     origin_y = cy - res * H / 2
-    with open(os.path.join(args.dest_dir, "map.yaml"), "w") as f:
+    with open(os.path.join(out_dir, "map.yaml"), "w") as f:
         f.write(f"image: map.pgm\nresolution: {res}\n"
                 f"origin: [{origin_x}, {origin_y}, 0.0]\n"
                 "occupied_thresh: 0.5\nfree_thresh: 0.2\nnegate: 0\n")
     occ = int((img < 128).sum())
-    print(f"wrote {pgm} and map.yaml (origin=[{origin_x:.2f},{origin_y:.2f}]); occupied px {occ} = {occ*res*res:.1f} m^2")
+    write_params(os.path.join(out_dir, "map_params.yaml"), "glim_traj_to_2dmap", args, {
+        "height_reference": {"sensor": "LiDAR 座標 z", "world": "世界 z − 姿勢 z",
+                             "ground": "スキャンごとの地面平面からの高さ",
+                             "base_link": "base_link (実機 rfans_scan と同じ)"}[args.height_frame],
+        "height_band_m": [args.min_height, args.max_height],
+        "base_to_sensor_z_m": args.base_to_sensor_z,
+        "range_m": [args.range_min, args.range_max],
+        "points_in_pix_lo_hi": [lo, hi],
+        "resolution_m": res,
+        "deskew": args.deskew,
+        "mark_unknown": args.mark_unknown,
+    }, {
+        "scans_in_bag": n_msg, "scans_used": n_used, "scans_without_traj": n_nomatch,
+        "points_in_range": int(n_pts_in), "points_in_band": int(n_pts_band),
+        "ground_z_sensor_m": round(ground_z, 3) if ground_z is not None else None,
+        "map_px": [W, H], "origin": [origin_x, origin_y], "occupied_m2": round(occ * res * res, 1),
+        "unknown_m2": round(int((img == args.unknown_value).sum()) * res * res, 1) if args.mark_unknown else None,
+        "traj_used": os.path.abspath(traj_path),
+    })
+    print(f"wrote {pgm}, map.yaml, map_params.yaml (origin=[{origin_x:.2f},{origin_y:.2f}]); occupied px {occ} = {occ*res*res:.1f} m^2")
+    if args.with_keepout:
+        run_keepout(args.dest_dir, out_dir, traj_path, args)
+    match_owner(args.dest_dir, owner_ref)
     return 0
 
 
