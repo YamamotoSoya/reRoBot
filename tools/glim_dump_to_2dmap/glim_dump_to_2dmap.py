@@ -38,6 +38,42 @@ def load_submap(dump_dir, idx):
     return T, pts
 
 
+def load_viewpoints(dump_dir, idx):
+    """claude: 2026-10-02 submap 内の各スキャンのセンサ位置 (T_world_lidar の並進, (F,3)) を返す"""
+    txt = open(os.path.join(dump_dir, f"{idx:06d}", "data.txt")).read()
+    blocks = re.findall(r"T_world_lidar:\s*\n((?:.+\n){4})", txt)
+    return np.array([[float(line.split()[3]) for line in b.strip().split("\n")[:3]] for b in blocks])
+
+
+def add_free_fan(free, sx, sy, wx, wy, obst, cx, cy, res, rmax, n_bins):
+    """claude: 2026-10-02 センサ (sx,sy) から見えた範囲を空きとして free (H,W uint8) に塗る。
+    方位を n_bins に分け、各方位で「帯内の点 (障害物) の最近距離」と「全点の最遠距離」の小さい方
+    までを空きとする (= 光線が障害物で止まる。帯の外の点 = 地面などは「そこまで何も無かった」証拠)。
+    光線を 1 本ずつ引く代わりに、方位ごとの端点をつないだ星形多角形を塗る"""
+    import cv2
+    H, W = free.shape
+    dx, dy = wx - sx, wy - sy
+    r = np.hypot(dx, dy)
+    m = (r > 0.05) & (r <= rmax)
+    if not m.any():
+        return
+    b = ((np.arctan2(dy[m], dx[m]) + np.pi) / (2 * np.pi) * n_bins).astype(np.int64) % n_bins
+    rm = r[m]
+    rfar = np.zeros(n_bins)
+    np.maximum.at(rfar, b, rm)
+    robs = np.full(n_bins, np.inf)
+    om = obst[m]
+    np.minimum.at(robs, b[om], rm[om])
+    rf = np.minimum(rfar, robs)
+    ang = (np.arange(n_bins) + 0.5) / n_bins * 2 * np.pi - np.pi
+    ex = sx + rf * np.cos(ang)
+    ey = sy + rf * np.sin(ang)
+    # 画素系は地図本体と同じ (x 右, 画像行は -y)。shift=2 で 1/4 画素精度
+    px = ((ex - cx) / res + W // 2) * 4
+    py = (-(ey - cy) / res + H // 2) * 4
+    cv2.fillPoly(free, [np.stack([px, py], axis=1).round().astype(np.int32)], 1, lineType=cv2.LINE_8, shift=2)
+
+
 def list_submaps(dump_dir):
     ids = sorted(int(n) for n in os.listdir(dump_dir) if n.isdigit() and len(n) == 6)
     if not ids:
@@ -75,11 +111,21 @@ def main():
     ap.add_argument("--max_points_in_pix", type=int, default=5)
     ap.add_argument("--export_pcd", default=None,
                     help="全点 (高さフィルタ前) の世界座標マージ PCD をこのパスへ書き出す")
+    # claude: 2026-10-02 未観測域を灰 (map_server で unknown) にする
+    ap.add_argument("--mark_unknown", action="store_true",
+                    help="センサから見えた範囲を空き、見えていない範囲を --unknown_value で塗る (要 cv2)")
+    ap.add_argument("--unknown_value", type=int, default=180,
+                    help="未観測画素の値。occupied/free_thresh 0.5/0.2 では 128〜204 が unknown")
+    ap.add_argument("--free_range_max", type=float, default=30.0, help="空きを伸ばす最大水平距離 [m]")
+    ap.add_argument("--view_stride", type=int, default=10,
+                    help="submap 内のスキャン姿勢を N 個に 1 個だけ視点に使う (点とスキャンの対応は dump に無いので近似)")
+    ap.add_argument("--free_bins", type=int, default=720, help="空き判定の方位分割数 (720 = 0.5°)")
     args = ap.parse_args()
 
     ids = list_submaps(args.dump_dir)
     world_pts = []      # スライス帯を通過した点 (地図用)
     all_pts = []        # 全点 (--export_pcd 用)
+    views = []          # (視点 (F,3), 全点 xy, 帯内マスク) — --mark_unknown 用
     for i in ids:
         T, pts = load_submap(args.dump_dir, i)
         w = pts @ T[:3, :3].T + T[:3, 3]
@@ -89,6 +135,10 @@ def main():
         rel = w[:, 2] - z_ref
         keep = (rel >= args.min_height) & (rel <= args.max_height)
         world_pts.append(w[keep, :2])
+        if args.mark_unknown:
+            vp = load_viewpoints(args.dump_dir, i)
+            vp = vp[::max(args.view_stride, 1)] if len(vp) else T[None, :3, 3]
+            views.append((vp, w[:, :2].copy(), keep))
     sel = np.concatenate(world_pts)
     print(f"submaps: {len(ids)}, points in height band: {len(sel)}")
 
@@ -127,6 +177,19 @@ def main():
     # 既製ツールと同じ濃度変換: count<=min → 白 (自由), count>=max → 黒 (占有)
     lo, hi = args.min_points_in_pix, args.max_points_in_pix
     img = np.clip(255.0 - 255.0 * (counts - lo) / (hi - lo), 0, 255).astype(np.uint8)
+
+    if args.mark_unknown:
+        # claude: 2026-10-02 白 (点数 <= lo) のうち、どの視点からも見えていない画素を unknown に
+        free = np.zeros((H, W), np.uint8)
+        nv = 0
+        for vp, wxy, keep in views:
+            for v in vp:
+                add_free_fan(free, v[0], v[1], wxy[:, 0], wxy[:, 1], keep, cx, cy, res,
+                             args.free_range_max, args.free_bins)
+                nv += 1
+        unk = (img == 255) & (free == 0)
+        img[unk] = args.unknown_value
+        print(f"mark_unknown: {nv} viewpoints, free {int(free.sum())} px, unknown {int(unk.sum())} px")
 
     os.makedirs(args.dest_dir, exist_ok=True)
     pgm = os.path.join(args.dest_dir, "map.pgm")

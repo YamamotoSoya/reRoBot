@@ -8,7 +8,7 @@
 
 走行中に WiFi が繋がり直すと、OS の時刻合わせ (systemd-timesyncd) が時計を**一気に飛ばして**直すことがある。bag では全 topic が同時に 0.5 s ほど途切れたように見え、さらに BNO086 (`/imu/data`) だけは stamp を IMU 自身の時計で作るので飛ばず、**以後 LiDAR と IMU の stamp が飛んだ分だけずれたまま**になる (GLIM の LIO が正しく組めない)。
 
-実例: `2026-10-01_1759_gaishu` の 2359 s (18:39:19) で +0.44 s。journal に `systemd-timesyncd: Initial synchronization` と `Clock change detected` が残る。それ以降の終端までの約 3 分は `/imu/data` の stamp が他より 0.44 s 遅れている。
+実例: `2026-10-01_1759_sinnaragaishu` の 2359 s (18:39:19) で +0.44 s。journal に `systemd-timesyncd: Initial synchronization` と `Clock change detected` が残る。それ以降の終端までの約 3 分は `/imu/data` の stamp が他より 0.44 s 遅れている。
 
 **ホストで実行する** (時計は OS に 1 つで、コンテナも同じ時計を使う):
 

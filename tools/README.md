@@ -51,6 +51,12 @@ docker exec glim_env python3 /workspace/tools/glim_dump_to_2dmap/glim_dump_to_2d
   点群 bbox 中心 + サイズ自動決定 (既製ツールの「原点中心固定で巨大地図になる」制約の回避)
 - `--export_pcd <path>` で全点マージの世界座標 PCD も書ける (既製ツールとの比較・
   3D ローカライザ地図用)
+- `--mark_unknown` (2026-10-02 追加) で**未観測域を灰 (map_server の unknown) で塗る**。
+  submap 内の各スキャン姿勢 (`data.txt` の `T_world_lidar`、`--view_stride` 個に 1 個) を視点にし、
+  方位 0.5° ごとに「帯内の点 (障害物) の最近距離」と「全点の最遠距離」の小さい方までを空きとする
+  (`--free_range_max` 既定 30 m)。dump には点↔スキャンの対応が無いので、視点は近似 (submap 長 ≈ 4 m)。
+  建物内などに空きが漏れることがある。灰の値は `--unknown_value` (既定 180 = 占有確率 0.29。
+  yaml の 0.5/0.2 では 128〜204 が unknown。定番の 205 は 0.196 で free になるので不可)
 - 濃度変換 (`--min/max_points_in_pix`) と yaml 形式は既製ツール互換。画像は PGM
   (map_server は png/pgm どちらも可)
 - **解像度は `-r 0.10` を推奨** (2026-09-10 掃引)。dump の点は GLIM が 0.3 m ボクセルで
@@ -114,6 +120,8 @@ python3 $T $B $D /workspace/maps/2d/glim/<name>/nav2 \
 | `--skip N` | 1 | N スキャンに 1 つだけ使う (試験用) |
 | `--floor_probe` | off | 地図を書かず床 z の最頻値だけ出す |
 | `--save_counts <npy>` | なし | 画素点数配列を保存 (しきい値・解像度の派生を再実行なしで作る用) |
+| `--mark_unknown` | off | 未観測域を `--unknown_value` (既定 180) で塗る。スキャンごとに実姿勢から、方位 0.5° (`--free_bins`) ごとに帯内の最近点 / 全点の最遠点の手前までを空きにする (2026-10-02 追加。処理時間 約 2 倍) |
+| `--save_free <npy>` | なし | 空き (観測済み) 画素マスクを保存 |
 
 - **推奨引数 (2026-09-14 比較の結論)**: `--height_frame ground --min_height 0.3 --max_height 1.5
   --range_max 30 --deskew --min_points_in_pix 4 --max_points_in_pix 12`。ground は取付ピッチ

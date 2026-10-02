@@ -99,6 +99,35 @@ def fit_ground_plane(p, z0, rmax, iters=2, tol=0.12):
     return float(a), float(b), float(c), int(m.sum())
 
 
+def add_free_fan(free, sx, sy, wx, wy, obst, cx, cy, res, rmax, n_bins):
+    """claude: 2026-10-02 センサ (sx,sy) から見えた範囲を空きとして free (H,W uint8) に塗る。
+    方位を n_bins に分け、各方位で「帯内の点 (障害物) の最近距離」と「全点の最遠距離」の小さい方
+    までを空きとする (= 光線が障害物で止まる。帯の外の点 = 地面などは「そこまで何も無かった」証拠)。
+    光線を 1 本ずつ引く代わりに、方位ごとの端点をつないだ星形多角形を塗る"""
+    import cv2
+    H, W = free.shape
+    dx, dy = wx - sx, wy - sy
+    r = np.hypot(dx, dy)
+    m = (r > 0.05) & (r <= rmax)
+    if not m.any():
+        return
+    b = ((np.arctan2(dy[m], dx[m]) + np.pi) / (2 * np.pi) * n_bins).astype(np.int64) % n_bins
+    rm = r[m]
+    rfar = np.zeros(n_bins)
+    np.maximum.at(rfar, b, rm)
+    robs = np.full(n_bins, np.inf)
+    om = obst[m]
+    np.minimum.at(robs, b[om], rm[om])
+    rf = np.minimum(rfar, robs)
+    ang = (np.arange(n_bins) + 0.5) / n_bins * 2 * np.pi - np.pi
+    ex = sx + rf * np.cos(ang)
+    ey = sy + rf * np.sin(ang)
+    # 画素系は地図本体と同じ (x 右, 画像行は -y)。shift=2 で 1/4 画素精度
+    px = ((ex - cx) / res + W // 2) * 4
+    py = (-(ey - cy) / res + H // 2) * 4
+    cv2.fillPoly(free, [np.stack([px, py], axis=1).round().astype(np.int32)], 1, lineType=cv2.LINE_8, shift=2)
+
+
 def cloud_to_numpy(msg):
     dt = np.dtype({
         "names": [f.name for f in msg.fields],
@@ -160,6 +189,13 @@ def main():
     ap.add_argument("--floor_probe", action="store_true",
                     help="地図を書かず、センサ座標 z のヒストグラム最頻値 (床) を出して終わる")
     ap.add_argument("--save_counts", default=None, help="画素点数配列 (.npy) を保存する (解析用)")
+    # claude: 2026-10-02 未観測域を灰 (map_server で unknown) にする
+    ap.add_argument("--mark_unknown", action="store_true",
+                    help="スキャンごとにセンサから見えた範囲を空き、見えていない範囲を --unknown_value で塗る (要 cv2)")
+    ap.add_argument("--unknown_value", type=int, default=180,
+                    help="未観測画素の値。occupied/free_thresh 0.5/0.2 では 128〜204 が unknown")
+    ap.add_argument("--free_bins", type=int, default=720, help="空き判定の方位分割数 (720 = 0.5°)")
+    ap.add_argument("--save_free", default=None, help="空き (観測済み) 画素マスク (.npy, uint8) を保存する")
     args = ap.parse_args()
 
     traj_path = args.traj
@@ -184,6 +220,7 @@ def main():
     print(f"map: {W}x{H} px @ {res} m/px, center=({cx:.2f},{cy:.2f}), height_frame={args.height_frame} "
           f"band [{args.min_height},{args.max_height}]")
     counts = np.zeros(W * H, dtype=np.int32)
+    free = np.zeros((H, W), np.uint8) if (args.mark_unknown or args.save_free) else None
 
     n_msg = n_used = n_nomatch = 0
     dts = []
@@ -211,6 +248,7 @@ def main():
         rng = np.hypot(p[:, 0], p[:, 1])
         ok = np.isfinite(p).all(axis=1) & (rng >= args.range_min) & (rng <= args.range_max)
         p = p[ok]
+        p_all = p
         n_pts_in += len(p)
         if args.floor_probe:
             z = p[:, 2]
@@ -264,6 +302,11 @@ def main():
             rel = w[:, 2] - zref
             keep = (rel >= args.min_height) & (rel <= args.max_height)
             w = w[keep]
+        if free is not None:
+            # claude: 2026-10-02 空き判定は全点 (帯の外 = 地面なども) を使う。deskew は省略 (1 回転の移動は数 cm)
+            wa = p_all[:, :2] @ R[k][:2, :2].T + p_all[:, 2:3] * R[k][:2, 2][None, :] + t[k][None, :2]
+            add_free_fan(free, t[k, 0], t[k, 1], wa[:, 0], wa[:, 1], keep, cx, cy, res,
+                         args.range_max, args.free_bins)
         n_pts_band += len(w)
         px = np.floor((w[:, 0] - cx) / res).astype(np.int64) + W // 2
         py = np.floor(-(w[:, 1] - cy) / res).astype(np.int64) + H // 2
@@ -300,6 +343,14 @@ def main():
     counts = counts.reshape(H, W)
     lo, hi = args.min_points_in_pix, args.max_points_in_pix
     img = np.clip(255.0 - 255.0 * (counts - lo) / (hi - lo), 0, 255).astype(np.uint8)
+    if free is not None:
+        if args.save_free:
+            np.save(args.save_free, free)
+        if args.mark_unknown:
+            # claude: 2026-10-02 白 (点数 <= lo) のうち、どのスキャンからも見えていない画素を unknown に
+            unk = (img == 255) & (free == 0)
+            img[unk] = args.unknown_value
+            print(f"mark_unknown: free {int(free.sum())} px, unknown {int(unk.sum())} px")
     os.makedirs(args.dest_dir, exist_ok=True)
     if args.save_counts:
         np.save(args.save_counts, counts)
