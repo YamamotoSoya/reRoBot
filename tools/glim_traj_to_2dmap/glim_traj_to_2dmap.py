@@ -170,9 +170,11 @@ def main():
     ap.add_argument("--map_height", type=int, default=0)
     ap.add_argument("--center", choices=["world", "auto"], default="world",
                     help="world: 既製ツール互換 (world 原点中心) / auto: 軌跡 bbox 中心")
-    ap.add_argument("--height_frame", choices=["sensor", "world", "ground"], default="sensor",
-                    help="sensor: センサ座標の z で切る (実機 /scan と同じ) / world: 世界 z − 姿勢 z で切る / "
-                         "ground: スキャンごとに近傍点へ地面平面を当て、その平面からの高さで切る (min/max_height は地上高)")
+    ap.add_argument("--height_frame", choices=["sensor", "world", "ground", "base_link"], default="sensor",
+                    help="sensor: センサ座標 z / world: 世界 z − 姿勢 z / ground: スキャンごとの地面平面からの高さ / "
+                         "base_link: センサ座標 z + --base_to_sensor_z (実機 rfans_scan.launch.py と同じ車体基準。2026-10-02 追加)")
+    ap.add_argument("--base_to_sensor_z", type=float, default=None,
+                    help="base_link → rfans の高さ [m] (URDF rfans_joint z。〜09-30 の bag は 0.80246、10-01 以降 0.79396)。取付 rpy=0 前提")
     ap.add_argument("--ground_z", type=float, default=None,
                     help="ground モードの地面探索の初期値 (センサ座標の床 z)。省略時は先頭 50 スキャンの最頻値から自動推定")
     ap.add_argument("--ground_range", type=float, default=12.0, help="ground モードで平面当てに使う水平距離 [m]")
@@ -198,6 +200,8 @@ def main():
     ap.add_argument("--save_free", default=None, help="空き (観測済み) 画素マスク (.npy, uint8) を保存する")
     args = ap.parse_args()
 
+    if args.height_frame == "base_link" and args.base_to_sensor_z is None:
+        raise SystemExit("--height_frame base_link には --base_to_sensor_z が必要 (URDF rfans_joint の z)")
     traj_path = args.traj
     if os.path.isdir(traj_path):
         traj_path = os.path.join(traj_path, "traj_lidar.txt")
@@ -279,8 +283,10 @@ def main():
                 w = quat_rotate(qi, p) + t[k][None, :] + u[:, None] * (t[k + 1] - t[k])[None, :]
             else:
                 w = p @ R[k].T + t[k]
-        elif args.height_frame == "sensor":
-            keep = (p[:, 2] >= args.min_height) & (p[:, 2] <= args.max_height)
+        elif args.height_frame in ("sensor", "base_link"):
+            # claude: 2026-10-02 base_link = センサ z + 取付高 (取付 rpy=0 なので z の平行移動だけ)
+            zb = p[:, 2] + (args.base_to_sensor_z if args.height_frame == "base_link" else 0.0)
+            keep = (zb >= args.min_height) & (zb <= args.max_height)
             p = p[keep]
             if args.deskew and "time" in a.dtype.names and k + 1 < len(st):
                 tt = a["time"][ok][keep].astype(np.float64)

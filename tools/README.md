@@ -47,6 +47,20 @@ docker exec glim_env python3 /workspace/tools/glim_dump_to_2dmap/glim_dump_to_2d
   --height_mode sensor --min_height -0.25 --max_height 0.95
 ```
 
+- `--height_mode base_link --base_to_sensor_z <URDF rfans_joint z> --min_height 0.3 --max_height 1.5`
+  (2026-10-02 追加) で**実機 /scan (`rfans_scan.launch.py`, target_frame base_link) と同じ基準・同じ値**で切れる。
+  submap 内スキャンの stamp で `traj_lidar.txt` (最適化後 LiDAR 姿勢) を引き、各点を水平最寄りのスキャンの
+  LiDAR 座標へ戻して z + 取付高を高さとする (取付 rpy=0 前提)。取付高は 〜09-30 の bag 0.80246 / 10-01 以降 0.79396。
+  09-18 5号館で床 (base_link 基準) は中央値 +0.015 m を確認
+- `--range_max 30` (2026-10-02 追加、既定 0 = 無制限): submap 内の最寄りスキャン位置から水平 30 m を超える点を捨てる
+  (実機 rfans_scan・traj ツールと同じ)。base_link 基準では遠方の地面が距離に比例して持ち上がって帯に入る
+  (09-18: 10〜20 m で +0.30 m、40〜60 m で +1.55 m。原因は未特定 — 車体ピッチ / R-Fans 縦角誤差 / GLIM 姿勢 /
+  最寄りスキャン近似) ので、base_link では付けるのが前提。30 m 以上の点のノイズ率は 31%、未満は 1〜2%
+- スキャン位置 (base_link / `--range_max` / `--mark_unknown` の視点) は `traj_lidar.txt` (最適化後) を stamp で引く。
+  data.txt の `T_world_lidar` は最適化前で、09-18 では水平に中央値 1.7 m・最大 6.1 m ずれる (traj が無い dump では警告して data.txt を使う)
+- ⚠️ sensor 帯の基準は **submap 原点 (`T_world_origin`) の z** で、LiDAR の高さとは一致しない
+  (2026-10-02 実測: 09-18 5号館 dump で床は原点基準 中央値 −0.65 m、submap ごとに ±0.2 m ばらつく。
+  同じ bag の traj ツール (LiDAR 基準) の床は −0.81 m)。帯を地上高で決めるときは dump の点で床を測る
 - `--center world` (既定) で既製ツールと同じ world (0,0) 中心。`--center auto` は
   点群 bbox 中心 + サイズ自動決定 (既製ツールの「原点中心固定で巨大地図になる」制約の回避)
 - `--export_pcd <path>` で全点マージの世界座標 PCD も書ける (既製ツールとの比較・
@@ -111,7 +125,7 @@ python3 $T $B $D /workspace/maps/2d/glim/<name>/nav2 \
 |---|---|---|
 | `bag_dir` / `traj` / `dest_dir` | — | bag ディレクトリ / `traj_lidar.txt` か dump ディレクトリ / 出力先 |
 | `--topic` | `/rfans_driver/rfans_points` | PointCloud2 トピック |
-| `--height_frame` | sensor | sensor = センサ座標 z で切る (実機 /scan と同じ) / world = 世界 z − 姿勢 z (glim_dump_to_2dmap の sensor と同じ意味) |
+| `--height_frame` | sensor | sensor = センサ座標 z で切る (値は LiDAR 基準。実機と同じ値で書くなら base_link) / world = 世界 z − 姿勢 z (glim_dump_to_2dmap の sensor と同じ意味) / base_link = センサ z + `--base_to_sensor_z` (実機 /scan と同じ基準。2026-10-02 追加) |
 | `--min/max_height` | −0.45 / +0.75 | スライス帯。`--floor_probe` の出力 (床 +0.3〜+1.5) で決める |
 | `--range_min/max` | 0.5 / 40 | この範囲外の点を捨てる (車体・無効点・遠方ノイズ) |
 | `-r`, `--map_width/height`, `--center`, `--min/max_points_in_pix` | 0.05, 0 (自動), world, 2/5 | glim_dump_to_2dmap と同じ画素系・濃度変換 |

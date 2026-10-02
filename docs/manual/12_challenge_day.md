@@ -95,6 +95,7 @@ git checkout <hash> -- glim/<name>/nav2/my_map.pgm   # 任意の版に戻す
   コンテナが書いたファイルは root 所有なので、ホストで編集する前に一度 `sudo chown -R $USER:$USER maps/2d/glim`
 * 地図の手直し (任意): `my_map.pgm` を画像エディタで開き、歩行者・車などの動体を白 (自由) に、走らせたくない場所を黒 (占有) に塗る。サイズ・解像度・origin は変えない
 * keepout マスク (任意、未整備): `my_map.pgm` を `<map_dir>/keep_out/keep_out.pgm` にコピーして進入禁止帯を黒で塗り、yaml も `keep_out.yaml` としてコピー (`image:` を書き換え)。使わないなら 6 で `use_keepout:=false`
+  * <!-- claude: 2026-10-02 追記 (ユーザ依頼) --> 未観測域の自動 keepout + 走路の操作者跡の除去は `tools/map_to_keepout` ([第9章 9.3](09_map2d_compression.md))。芝生などは出来たマスクに描き足す
 
 ## 6. Nav2,slamtoolbox反映
 * GLIM 由来 (3D) 地図: 5 のディレクトリを `map_dir:=` で渡す (7 参照)。amcl の入力スキャンは 2D LiDAR ではなく `rfans_scan.launch.py` で作る (当日は全点版 `/scan_all`。[第14章](14_pointcloud_to_laserscan.md))

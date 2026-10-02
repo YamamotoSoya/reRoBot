@@ -45,6 +45,41 @@ def load_viewpoints(dump_dir, idx):
     return np.array([[float(line.split()[3]) for line in b.strip().split("\n")[:3]] for b in blocks])
 
 
+def load_frame_stamps(dump_dir, idx):
+    """claude: 2026-10-02 submap 内の各スキャンの stamp (F,) を返す"""
+    txt = open(os.path.join(dump_dir, f"{idx:06d}", "data.txt")).read()
+    return np.array([float(v) for v in re.findall(r"^stamp:\s*([\d.]+)", txt, re.M)])
+
+
+def load_traj_tum(path):
+    """claude: 2026-10-02 TUM 形式 (stamp x y z qx qy qz qw) → (stamps, R[N,3,3], t[N,3])、stamp 昇順"""
+    a = np.loadtxt(path, ndmin=2)
+    a = a[np.argsort(a[:, 0])]
+    x, y, z, w = a[:, 4], a[:, 5], a[:, 6], a[:, 7]
+    R = np.empty((len(a), 3, 3))
+    R[:, 0, 0] = 1 - 2 * (y * y + z * z); R[:, 0, 1] = 2 * (x * y - z * w); R[:, 0, 2] = 2 * (x * z + y * w)
+    R[:, 1, 0] = 2 * (x * y + z * w); R[:, 1, 1] = 1 - 2 * (x * x + z * z); R[:, 1, 2] = 2 * (y * z - x * w)
+    R[:, 2, 0] = 2 * (x * z - y * w); R[:, 2, 1] = 2 * (y * z + x * w); R[:, 2, 2] = 1 - 2 * (x * x + y * y)
+    return a[:, 0], R, a[:, 1:4]
+
+
+def base_link_height(w, stamps, traj, h_sensor, tol=0.02):
+    """claude: 2026-10-02 世界座標の点 w (N,3) の base_link 基準の高さを返す。
+    submap 内スキャンの最適化後 LiDAR 姿勢 (traj_lidar.txt を stamp で引く) のうち水平距離で最寄りの
+    ものを選び、点をその LiDAR 座標に戻した z + h_sensor (base_link → LiDAR の高さ、取付 rpy=0 前提)。
+    実機 rfans_scan.launch.py (pointcloud_to_laserscan, target_frame base_link) と同じ基準"""
+    st, R, t = traj
+    k = np.clip(np.searchsorted(st, stamps), 1, len(st) - 1)
+    k = np.where(np.abs(st[k - 1] - stamps) < np.abs(st[k] - stamps), k - 1, k)
+    k = k[np.abs(st[k] - stamps) <= tol]
+    if len(k) == 0:
+        return None
+    pos = t[k]
+    d2 = (w[:, None, 0] - pos[None, :, 0]) ** 2 + (w[:, None, 1] - pos[None, :, 1]) ** 2
+    j = k[np.argmin(d2, axis=1)]
+    return np.einsum("ni,ni->n", w - t[j], R[j][:, :, 2]) + h_sensor
+
+
 def add_free_fan(free, sx, sy, wx, wy, obst, cx, cy, res, rmax, n_bins):
     """claude: 2026-10-02 センサ (sx,sy) から見えた範囲を空きとして free (H,W uint8) に塗る。
     方位を n_bins に分け、各方位で「帯内の点 (障害物) の最近距離」と「全点の最遠距離」の小さい方
@@ -103,8 +138,18 @@ def main():
     ap.add_argument("--map_height", type=int, default=0, help="pixels; 0 = auto fit to points")
     ap.add_argument("--center", choices=["world", "auto"], default="world",
                     help="world: 既製ツール互換 (world 原点中心) / auto: 点群 bbox 中心")
-    ap.add_argument("--height_mode", choices=["sensor", "absolute"], default="sensor",
-                    help="sensor: submap センサ z 基準の相対高さ / absolute: 世界座標 z")
+    ap.add_argument("--height_mode", choices=["sensor", "absolute", "base_link"], default="sensor",
+                    help="sensor: submap 原点 z 基準の相対高さ (LiDAR 高ではない) / absolute: 世界座標 z / "
+                         "base_link: 実機 /scan と同じ車体基準の地上高 (要 --base_to_sensor_z)")
+    # claude: 2026-10-02 base_link モード用
+    ap.add_argument("--base_to_sensor_z", type=float, default=None,
+                    help="base_link → rfans の高さ [m] (URDF rfans_joint z。〜09-30 の bag は 0.80246、10-01 以降 0.79396)")
+    ap.add_argument("--traj", default=None,
+                    help="最適化後 LiDAR 軌跡 (既定 <dump_dir>/traj_lidar.txt)。base_link / --range_max / --mark_unknown の"
+                         "スキャン位置に使う (data.txt の T_world_lidar は最適化前で最大数 m ずれる)")
+    ap.add_argument("--range_max", type=float, default=0.0,
+                    help="submap 内の最寄りスキャン位置から水平にこの距離 [m] を超える点を捨てる (0 = 無制限。"
+                         "実機 rfans_scan / traj ツールに合わせるなら 30)")
     ap.add_argument("--min_height", type=float, default=-0.5)
     ap.add_argument("--max_height", type=float, default=0.7)
     ap.add_argument("--min_points_in_pix", type=int, default=2)
@@ -123,6 +168,19 @@ def main():
     args = ap.parse_args()
 
     ids = list_submaps(args.dump_dir)
+    traj = None
+    n_fallback = 0
+    if args.height_mode == "base_link" and args.base_to_sensor_z is None:
+        raise SystemExit("--height_mode base_link には --base_to_sensor_z が必要 (URDF rfans_joint の z)")
+    if args.height_mode == "base_link" or args.range_max > 0 or args.mark_unknown:
+        # claude: 2026-10-02 スキャン位置は最適化後の traj_lidar.txt から引く
+        tp = args.traj or os.path.join(args.dump_dir, "traj_lidar.txt")
+        if os.path.exists(tp):
+            traj = load_traj_tum(tp)
+        elif args.height_mode == "base_link":
+            raise SystemExit(f"{tp} が無い (base_link モードには最適化後軌跡が必要)")
+        else:
+            print(f"warning: {tp} が無いので data.txt の T_world_lidar (最適化前) をスキャン位置に使う")
     world_pts = []      # スライス帯を通過した点 (地図用)
     all_pts = []        # 全点 (--export_pcd 用)
     views = []          # (視点 (F,3), 全点 xy, 帯内マスク) — --mark_unknown 用
@@ -131,16 +189,42 @@ def main():
         w = pts @ T[:3, :3].T + T[:3, 3]
         if args.export_pcd:
             all_pts.append(w)
-        z_ref = T[2, 3] if args.height_mode == "sensor" else 0.0
-        rel = w[:, 2] - z_ref
+        # submap 内スキャン位置 (traj があれば最適化後、無ければ data.txt)
+        vp = None
+        if traj is not None:
+            stamps = load_frame_stamps(args.dump_dir, i)
+            k = np.clip(np.searchsorted(traj[0], stamps), 1, len(traj[0]) - 1)
+            k = np.where(np.abs(traj[0][k - 1] - stamps) < np.abs(traj[0][k] - stamps), k - 1, k)
+            k = k[np.abs(traj[0][k] - stamps) <= 0.02]
+            if len(k):
+                vp = traj[2][k]
+            else:
+                n_fallback += 1
+        if vp is None and args.height_mode != "base_link":
+            vp = load_viewpoints(args.dump_dir, i)
+            if len(vp) == 0:
+                vp = T[None, :3, 3]
+        if args.height_mode == "base_link":
+            rel = base_link_height(w, stamps, traj, args.base_to_sensor_z) if vp is not None else None
+            if rel is None:  # traj に対応するスキャンが無い submap は捨てる
+                rel = np.full(len(w), np.nan)
+        else:
+            z_ref = T[2, 3] if args.height_mode == "sensor" else 0.0
+            rel = w[:, 2] - z_ref
         keep = (rel >= args.min_height) & (rel <= args.max_height)
+        if args.range_max > 0 and vp is not None:
+            # claude: 2026-10-02 遠方の点を捨てる。30 m 超の点は base_link 高さが距離に比例して持ち上がり
+            # 地面が帯に入る (09-18 5号館: 30 m 以上でノイズ率 31%、未満は 1〜2%)
+            d2 = ((w[:, None, 0] - vp[None, :, 0]) ** 2 + (w[:, None, 1] - vp[None, :, 1]) ** 2).min(axis=1)
+            keep &= d2 <= args.range_max ** 2
         world_pts.append(w[keep, :2])
         if args.mark_unknown:
-            vp = load_viewpoints(args.dump_dir, i)
-            vp = vp[::max(args.view_stride, 1)] if len(vp) else T[None, :3, 3]
-            views.append((vp, w[:, :2].copy(), keep))
+            views.append((vp[::max(args.view_stride, 1)], w[:, :2].copy(), keep))
     sel = np.concatenate(world_pts)
     print(f"submaps: {len(ids)}, points in height band: {len(sel)}")
+    if traj is not None and n_fallback:
+        print(f"warning: {n_fallback} submaps had no matching traj stamps "
+              f"({'skipped' if args.height_mode == 'base_link' else 'used data.txt poses'})")
 
     if args.export_pcd:
         merged = np.concatenate(all_pts)
