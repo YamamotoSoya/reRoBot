@@ -222,7 +222,11 @@ global_costmap:
           marking: true
           data_type: "LaserScan"
           raytrace_max_range: 30.0
-          obstacle_max_range: 25.0
+          # claude: 2026-10-04 25.0 → 5.0。12〜25 m の /scan 終点の約 6 割が地面ゴースト
+          #   (坂・−1° リング) で、global は累積するので見えない壁が溜まる。遠方の静的構造は
+          #   static_layer (/map) が持つので、動的障害物は近距離だけ書けば足りる。
+          #   (docs/trial/improvements.md 10-03 メモ P0①)
+          obstacle_max_range: 5.0
       inflation_layer:
         plugin: nav2_costmap_2d::InflationLayer
         cost_scaling_factor: 3.0

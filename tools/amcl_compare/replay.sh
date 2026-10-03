@@ -34,6 +34,7 @@ trap cleanup EXIT
 echo "[replay] bag=$BAG start=$START dur=$DUR out=$OUT only=${ONLY:-all}" | tee "$LOG"
 ONLY_ARG=(); [ -n "$ONLY" ] && ONLY_ARG=("only:=$ONLY")   # 空の only:= は launch が拒否する
 [ -n "${VARIANTS:-}" ] && ONLY_ARG+=("variants_file:=$VARIANTS")   # env VARIANTS=<yaml> で変種定義を差し替え
+[ -n "${MAP_YAML:-}" ] && ONLY_ARG+=("map_yaml:=$MAP_YAML")   # claude: 2026-10-04 env MAP_YAML=<yaml> で再生用 /map を差し替え (既定は launch 側の旧 dumpbase)
 ros2 launch rerobot_bringup amcl_variants.launch.py use_sim_time:=true start_map_server:=true start_robot_state_publisher:=true stagger:=${STAGGER:-0} "${ONLY_ARG[@]}" >> "$LOG" 2>&1 &
 LP=$!
 # 全 manager の活性化を待つ (stagger 時は manager が AMCL ごとに 1 つ)

@@ -45,6 +45,22 @@ def generate_launch_description():
         default_value="1.5",
         description="採用する点の高さ帯の上限 [m] (base_link 基準。地図スライス帯と揃える)。",
     )
+    # claude: 2026-10-04 AMCL 専用スキャン (/scan_all, /scan_far) の高さ帯を /scan と分ける。
+    #   AMCL 用地図 (屋根・軒・建物上部込み、例 0.3〜3.0 m) に合わせて上限を上げても、
+    #   costmap 用の /scan は従来帯のまま (屋根を障害物にしない)。既定は min/max_height を引き継ぐ。
+    #   ⚠ 整合条件: amcl_min/max_height は nav2.launch.py loc_map_yaml の地図の帯と揃える。
+    amcl_min_height = LaunchConfiguration("amcl_min_height")
+    amcl_max_height = LaunchConfiguration("amcl_max_height")
+    amcl_min_height_arg = DeclareLaunchArgument(
+        "amcl_min_height",
+        default_value=min_height,
+        description="/scan_all・/scan_far の高さ帯の下限 [m] (既定 = min_height)。AMCL 用地図の帯と揃える。",
+    )
+    amcl_max_height_arg = DeclareLaunchArgument(
+        "amcl_max_height",
+        default_value=max_height,
+        description="/scan_all・/scan_far の高さ帯の上限 [m] (既定 = max_height)。AMCL 用地図の帯と揃える。",
+    )
     range_max_arg = DeclareLaunchArgument(
         "range_max",
         default_value="30.0",
@@ -95,8 +111,8 @@ def generate_launch_description():
         parameters=[{
             "target_frame": "base_link",
             "transform_tolerance": 0.1,
-            "min_height": min_height,      # 帯は /scan と共通 (地図の帯と揃える条件も同じ)
-            "max_height": max_height,
+            "min_height": amcl_min_height,  # claude: 2026-10-04 AMCL 専用帯 (既定は /scan と共通)
+            "max_height": amcl_max_height,
             "angle_min": -3.14159265,
             "angle_max": 3.14159265,
             "angle_increment": 0.00016,    # R-Fans の方位刻み (bag 実測 0.009°)。39,270 席
@@ -127,8 +143,8 @@ def generate_launch_description():
             "scan_topic": "/scan_far",
             "target_frame": "base_link",
             "mode": "farthest",
-            "min_height": min_height,
-            "max_height": max_height,
+            "min_height": amcl_min_height,  # claude: 2026-10-04 AMCL 専用帯
+            "max_height": amcl_max_height,
             "angle_increment": 0.0035,
             "range_min": 0.5,
             "range_max": range_max,
@@ -139,6 +155,8 @@ def generate_launch_description():
     return LaunchDescription([
         min_height_arg,
         max_height_arg,
+        amcl_min_height_arg,  # claude
+        amcl_max_height_arg,  # claude
         range_max_arg,
         allpoints_arg,  # claude
         farthest_arg,   # claude

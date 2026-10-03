@@ -20,6 +20,15 @@
 #      (マスク yaml が無いと filter_mask_server の configure が失敗し
 #       localization 一式が上がらないため、フィルタ系 2 ノードごと外す)。
 #
+# claude: 2026-10-04 自己位置推定用と経路計画用の地図を分ける (loc_map_yaml)。
+#   loc_map_yaml:=<yaml> を渡すと 2 つ目の map_server (map_server_loc) が /map_loc を配信し、
+#   AMCL だけがそれを読む。/map (global costmap の static_layer・RViz) と keepout は従来どおり。
+#   AMCL 用地図は屋根・軒・建物上部まで含めた広い帯で作り、rfans_scan.launch.py の
+#   amcl_min/max_height (/scan_all・/scan_far) を同じ帯にする。例:
+#     loc_map_yaml:=<map_dir>/loc_0.3-3.0/map.yaml amcl_scan:=all
+#     (rfans_scan 側: allpoints:=true amcl_min_height:=0.3 amcl_max_height:=3.0)
+#   未指定 (既定 "") なら従来どおり AMCL も /map を読む。
+#
 # 速度司令の配線: Nav2 既定の /cmd_vel を本機の /robot_speed_cmd (素の Twist) へ
 # リマップする。Twist 化は params 側の enable_stamped_cmd_vel: false で行う。
 #
@@ -83,6 +92,16 @@ def generate_launch_description():
         description="keepout マスクを配信するか。マスク未作成の地図では false にする。",
     )
 
+    # claude: 2026-10-04 AMCL 専用地図 (空文字なら無効 = AMCL も /map を読む)
+    loc_map_yaml = LaunchConfiguration("loc_map_yaml")
+    loc_map_yaml_arg = DeclareLaunchArgument(
+        "loc_map_yaml",
+        default_value="",
+        description="AMCL 専用地図 yaml (/map_loc で配信)。空なら AMCL は /map を読む。帯は rfans_scan の amcl_min/max_height と揃える。",
+    )
+    use_loc_map = PythonExpression(["'", loc_map_yaml, "' != ''"])
+    amcl_map_topic = PythonExpression(["'/map_loc' if '", loc_map_yaml, "' != '' else 'map'"])
+
     # ---- 速度司令リマップ: Nav2 の /cmd_vel を本機の /robot_speed_cmd へ ----
     cmd_vel_remap = ("/cmd_vel", "/robot_speed_cmd")
 
@@ -116,13 +135,34 @@ def generate_launch_description():
             executable="amcl",
             name="amcl",
             output="screen",
-            parameters=[params_file, {"use_sim_time": use_sim_time, **overrides}],
+            parameters=[params_file, {"use_sim_time": use_sim_time, "map_topic": amcl_map_topic, **overrides}],  # claude: map_topic
             condition=IfCondition(PythonExpression(["'", amcl_scan, f"' {when}"])),
         )
 
     amcl = _amcl("", {}, "not in ('all', 'far')")
     amcl_all = _amcl("_all", {"scan_topic": "/scan_all", "max_beams": 2000}, "== 'all'")
     amcl_far = _amcl("_far", {"scan_topic": "/scan_far"}, "== 'far'")
+
+    # claude: 2026-10-04 AMCL 専用地図の配信 (loc_map_yaml 指定時のみ)。lifecycle_manager の
+    #   node_names は条件で切り替えられないので、専用の lifecycle manager を別に立てる。
+    #   AMCL は transient_local で /map_loc を購読するので、起動順が前後しても受け取れる。
+    map_server_loc = Node(
+        package="nav2_map_server",
+        executable="map_server",
+        name="map_server_loc",
+        output="screen",
+        parameters=[{"use_sim_time": use_sim_time, "yaml_filename": loc_map_yaml, "topic_name": "map_loc"}],
+        remappings=[("map", "/map_loc")],
+        condition=IfCondition(use_loc_map),
+    )
+    lifecycle_manager_loc_map = Node(
+        package="nav2_lifecycle_manager",
+        executable="lifecycle_manager",
+        name="lifecycle_manager_loc_map",
+        output="screen",
+        parameters=[{"use_sim_time": use_sim_time, "autostart": True, "node_names": ["map_server_loc"]}],
+        condition=IfCondition(use_loc_map),
+    )
 
     # keepout マスク配信サーバ (map_server 実体を別名・別トピックで起動)。
     filter_mask_server = Node(
@@ -251,10 +291,13 @@ def generate_launch_description():
         keepout_yaml_arg,  # claude
         use_keepout_arg,   # claude
         amcl_scan_arg,     # claude
+        loc_map_yaml_arg,  # claude
         map_server,
         amcl,
         amcl_all,          # claude
         amcl_far,          # claude
+        map_server_loc,    # claude
+        lifecycle_manager_loc_map,  # claude
         filter_mask_server,
         costmap_filter_info_server,
         lifecycle_manager_localization,

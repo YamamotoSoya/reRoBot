@@ -5,6 +5,32 @@
 
 - 新しい走行は上に追加する (新しいものが先頭)
 - 対応が済んだら、状態を `[ ]` から `[x]` にし、どう直したか (コミット / docs/issue へのリンク) を書く
+---
+## 2026-10-04 つくば / 全周bag取得
+
+- bag:
+- 構成: 
+- TODO1: ローカルbag(ループとじ)の取得
+- TODO2: 自律移動実験 (navigation, amclでmapわけ運用　amclのmapの高さを分けて実験)
+  - **使い方メモ (Claude 追記 2026-10-04)** — 地図生成は glim コンテナ、起動は main コンテナ
+    - 共通: `D=/workspace/bags/glim/<bag>_dump/k20` (GLIM dump)、`M=/workspace/maps/2d/glim/<地図名>`、
+      `Z` = base_link→rfans 高さ (**〜09-30 の bag は 0.80246、10-01 以降は 0.79396**)
+    - ① 経路計画用 + keepout (1 コマンドで `raw/` `nav2/` `keep_out/` が出る。帯 0.4〜1.7、しきい値 1/3)
+      `python3 /workspace/tools/glim_dump_to_2dmap/glim_dump_to_2dmap.py $D $M -r 0.10 --height_mode base_link --base_to_sensor_z $Z --min_height 0.4 --max_height 1.7 --range_max 30 --min_points_in_pix 1 --max_points_in_pix 3`
+      → 必要なら `nav2/map.pgm` を GIMP で手直し
+    - ② AMCL 用 (高さ帯ごとに 1 枚。`--map_only`、しきい値は厳しめの 2/5 = 植え込みの中を塗らない)
+      `python3 /workspace/tools/glim_dump_to_2dmap/glim_dump_to_2dmap.py $D $M/loc_0.3-H -r 0.10 --height_mode base_link --base_to_sensor_z $Z --min_height 0.3 --max_height H --range_max 30 --min_points_in_pix 2 --max_points_in_pix 5 --map_only`
+      (H = 1.5 / 3.0 / 5.0。5goukan_dumpbase には 3 枚とも作成済み)
+    - ③ 起動 (**H は ② の地図と必ず同じ値**。ずれると地図に無い壁を見て推定が暴れる)
+      `ros2 launch rerobot_bringup rfans_scan.launch.py allpoints:=true amcl_min_height:=0.3 amcl_max_height:=H`
+      `ros2 launch rerobot_bringup nav2.launch.py map_dir:=$M loc_map_yaml:=$M/loc_0.3-H/map.yaml amcl_scan:=all`
+      → /scan (costmap 用) は 0.3〜1.5 のまま、/scan_all (AMCL 用) だけ H まで。Nav2 は /map、AMCL は /map_loc を読む
+    - 試す順: H = 1.5 と 3.0 (2039 bag 再生では両方とも現行より安定、5.0 は悪化)。差が出るのは屋根付き区間のはず
+- TODO3: 自律移動実験 (新しいwaypoint機能の試験)
+
+### 改善点
+
+- [ ]
 
 ---
 
@@ -12,6 +38,7 @@
 
 - bag:
 - 構成: (bringup 引数・地図・パラメータの変更点など)
+- TODO: 全周bagの取得
 
 ### 改善点
 
