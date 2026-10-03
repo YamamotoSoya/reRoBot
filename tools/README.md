@@ -196,3 +196,25 @@ Windows 公式ソフトで行った (Linux 用の設定スクリプトは検証�
 AMCL を名前空間付きで多数並走させ、3D→2D スキャン変換の選び方 (最近点 / 最遠点 / n 番目 / 全点) や
 AMCL パラメータを同じ bag 入力で比べるツール一式。AMCL は乱数で結果が揺れるため、反復 run の
 失敗頻度で比べる。詳細は `tools/amcl_compare/README.md`。
+
+## waypoint_editor (自作, 2026-10-02)
+
+<!-- claude: 2026-10-02 追加 -->
+屋外に出る前に、2D 地図 (map_server 形式 yaml) の上で waypoint を机上で打つ GUI。保存形式は
+RViz Nav2 パネルの **Load WPs** と同じ (`waypoints: {waypointN: {pose: [x,y,z], orientation: [w,x,y,z]}}`
+— orientation は **w が先頭**。nav2_panel.cpp jazzy で確認)。yaw は既定で次の点の方向 (Ctrl+ドラッグで点ごとに手動指定可、`yaw_manual: true` で保存。NavigateThroughPoses で効くのは最後の点の向きだけ)。
+点の色で置き場所を判定 (緑 = 空き / 橙 = 未観測 / 赤 = 壁・keepout — 赤は経路計算失敗で
+NavigateThroughPoses 全体が止まる)。keepout は `<map_dir>/keep_out/keep_out.yaml` を自動検出。
+依存 (matplotlib TkAgg) は **rerobot_env** にある (ホストには無い)。
+
+```bash
+# rerobot_env 内 (xhost +local:docker 済み)
+python3 /workspace/tools/waypoint_editor/waypoint_editor.py \
+    /workspace/maps/2d/glim/<map>/nav2/my_map.yaml /workspace/maps/2d/glim/<map>/waypoints/course.yaml \
+    [--traj <dump>/traj_lidar.txt]      # 走行軌跡を重ねる
+# 操作: 左クリック=追加 / ドラッグ=移動 / Shift+左=区間に挿入 / 右クリック=削除 / Ctrl+ドラッグ=向き指定 / a=向き自動 / u=戻す / s=保存 / q=終了
+# GUI なし: --check (判定表、要確認があれば exit 1) / --render out.png
+```
+
+当日: nav2 起動 → AMCL 初期位置合わせ → Nav2 パネル「Waypoint / Nav Through Poses Mode」→ **Load WPs** →
+「Start Nav Through Poses」。waypoint は作成時の地図の map 座標に紐づく (地図を作り直したら打ち直し)。
