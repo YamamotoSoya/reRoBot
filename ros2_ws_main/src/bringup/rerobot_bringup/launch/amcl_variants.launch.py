@@ -255,7 +255,7 @@ def generate_launch_description():
             DeclareLaunchArgument("start_map_server", default_value="false"),
             DeclareLaunchArgument(
                 "map_yaml",
-                default_value="/workspace/maps/2d/glim/2026-09-180915_dumpbase/nav2/my_map.yaml",
+                default_value="/workspace/maps/2d/glim/2026-09-180915_dumpbase/nav2/map.yaml",
             ),
             map_server,
             map_lifecycle,

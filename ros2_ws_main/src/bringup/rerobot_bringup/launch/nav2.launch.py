@@ -14,7 +14,8 @@
 #   - Nav2 サーバ群              : controller / planner / behavior / bt_navigator
 #
 # 地図の渡し方は 2 通り (claude 2026-08-11 追加):
-#   a) map_dir 規約 — <map_dir>/nav2/my_map.{yaml,pgm} + <map_dir>/keep_out/keep_out.{yaml,pgm}
+#   a) map_dir 規約 — <map_dir>/nav2/map.{yaml,pgm} + <map_dir>/keep_out/keep_out.{yaml,pgm}
+#      (claude 2026-10-04: 旧規約名 my_map.yaml から map.yaml へ統一。ツール出力名と一致)
 #   b) map_yaml:=<yaml へのフルパス> で直接指定 (map_saver_cli の保存物をそのまま使う)。
 #      keepout マスク未作成の地図は use_keepout:=false を併用する
 #      (マスク yaml が無いと filter_mask_server の configure が失敗し
@@ -78,7 +79,7 @@ def generate_launch_description():
 
     map_yaml_arg = DeclareLaunchArgument(
         "map_yaml",
-        default_value=PathJoinSubstitution([map_dir, "nav2", "my_map.yaml"]),
+        default_value=PathJoinSubstitution([map_dir, "nav2", "map.yaml"]),  # claude: 2026-10-04 my_map → map
         description="本体地図 yaml へのフルパス。指定すると map_dir 規約より優先。",
     )
     keepout_yaml_arg = DeclareLaunchArgument(

@@ -33,7 +33,7 @@ build/ はホスト側に永続化されるが、`.gitignore` 対象 (バイナ�
 > `--clean_map` 先には元の `map_params.yaml` を引き継いで掃除内容を追記する。
 >
 > **1 コマンドで Nav2 用一式 (既定)**: 両変換ツールは既定で dest_dir を地図一式の親として
-> `raw/` (未観測マーク付き原本)・`nav2/` (走路掃除済み本体 + `my_map.yaml`)・`keep_out/` を書く (内部で map_to_keepout を呼ぶ。
+> `raw/` (未観測マーク付き原本)・`nav2/` (走路掃除済み本体 + `map.yaml`)・`keep_out/` を書く (内部で map_to_keepout を呼ぶ。
 > `--min_unknown_area` / `--path_clear_radius` もそのまま渡せる)。root (コンテナ) で実行しても出力の所有者は親ディレクトリに合わせる。
 > 地図だけを dest_dir に書く従来動作は `--map_only` (下の例はすべて従来動作のまま `--map_only` 付き)。
 
@@ -168,7 +168,7 @@ python3 $T $B $D /workspace/maps/2d/glim/<name>/nav2 \
 
 軌跡を除く理由: ロボットの約 1.6 m 後ろを歩く操作者が毎スキャン高さ帯に入り、**走路そのものが壁として
 焼き付く** (09-18 5号館 traj 版で軌跡上の 94% が占有。従来は GIMP で手消ししていた)。
-`--clean_map <dir>` で同じ範囲を白に戻した本体地図 (map.pgm / map.yaml / my_map.yaml) も書く。
+`--clean_map <dir>` で同じ範囲を白に戻した本体地図 (map.pgm / map.yaml) も書く。
 
 ```bash
 docker exec glim_env python3 /workspace/tools/map_to_keepout/map_to_keepout.py \
@@ -210,7 +210,7 @@ NavigateThroughPoses 全体が止まる)。keepout は `<map_dir>/keep_out/keep_
 ```bash
 # rerobot_env 内 (xhost +local:docker 済み)
 python3 /workspace/tools/waypoint_editor/waypoint_editor.py \
-    /workspace/maps/2d/glim/<map>/nav2/my_map.yaml /workspace/maps/2d/glim/<map>/waypoints/course.yaml \
+    /workspace/maps/2d/glim/<map>/nav2/map.yaml /workspace/maps/2d/glim/<map>/waypoints/course.yaml \
     [--traj <dump>/traj_lidar.txt]      # 走行軌跡を重ねる
 # 操作: 左クリック=追加 / ドラッグ=移動 / Shift+左=区間に挿入 / 右クリック=削除 / Ctrl+ドラッグ=向き指定 / a=向き自動 / p=停止点 ON/OFF / u=戻す / s=保存 / q=終了
 # GUI なし: --check (判定表、要確認があれば exit 1) / --render out.png

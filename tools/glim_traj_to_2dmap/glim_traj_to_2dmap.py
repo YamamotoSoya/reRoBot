@@ -261,7 +261,7 @@ def main():
     ap.add_argument("--map_only", dest="with_keepout", action="store_false",
                     help="地図 (map.pgm / map.yaml / map_params.yaml) だけを dest_dir に書く (従来動作)。"
                          "既定は dest_dir を地図一式の親とし、raw/ (未観測マーク付き原本)・nav2/ (走路掃除済み本体 + "
-                         "my_map.yaml)・keep_out/ (未観測 = 進入禁止) を書く (--mark_unknown を自動で有効化)")
+                         "map.yaml)・keep_out/ (未観測 = 進入禁止) を書く (--mark_unknown を自動で有効化)")
     ap.add_argument("--with_keepout", dest="with_keepout", action="store_true", default=True,
                     help="一式出力 (既定。互換のため残しているだけ)")
     ap.add_argument("--min_unknown_area", type=float, default=1.0, help="--with_keepout: この面積 [m^2] 未満の未観測塊は keepout にしない")

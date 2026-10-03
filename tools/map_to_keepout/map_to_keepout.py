@@ -82,7 +82,7 @@ def main(argv=None):
     ap.add_argument("--path_clear_radius", type=float, default=0.4,
                     help="軌跡の各姿勢からこの半径 [m] を keepout から外す (0 で無効。Nav2 robot_radius 0.35 + 余裕)")
     ap.add_argument("--clean_map", default=None,
-                    help="走路の除外範囲を白にした本体地図 (map.pgm + map.yaml + my_map.yaml) の出力先")
+                    help="走路の除外範囲を白にした本体地図 (map.pgm + map.yaml) の出力先")
     args = ap.parse_args(argv)
 
     image, res, org = read_map_yaml(args.map_yaml)
@@ -144,8 +144,8 @@ def main(argv=None):
             f.write(cm.tobytes())
         y = (f"image: map.pgm\nresolution: {res}\norigin: [{org[0]}, {org[1]}, {org[2] if len(org) > 2 else 0.0}]\n"
              "occupied_thresh: 0.5\nfree_thresh: 0.2\nnegate: 0\n")
-        for n in ("map.yaml", "my_map.yaml"):  # my_map.yaml = nav2.launch.py の map_dir 規約名
-            open(os.path.join(args.clean_map, n), "w").write(y)
+        # claude: 2026-10-04 map.yaml だけ書く (旧 my_map.yaml は nav2.launch.py の規約名を map.yaml に統一して廃止)
+        open(os.path.join(args.clean_map, "map.yaml"), "w").write(y)
         print(f"clean map: {fix.sum()} px set to free -> {args.clean_map}")
         # 元地図の生成条件を引き継ぎ、clean の内容を追記
         src = os.path.join(os.path.dirname(os.path.abspath(image)), "map_params.yaml")

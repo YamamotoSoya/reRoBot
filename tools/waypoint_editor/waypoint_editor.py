@@ -26,7 +26,7 @@
 #
 # 使い方 (rerobot_env 内。xhost +local:docker 済みであること):
 #   python3 /workspace/tools/waypoint_editor/waypoint_editor.py \
-#       /workspace/maps/2d/glim/<map>/nav2/my_map.yaml \
+#       /workspace/maps/2d/glim/<map>/nav2/map.yaml \
 #       /workspace/maps/2d/glim/<map>/waypoints/course.yaml
 #   (out_yaml が既にあれば読み込んで続きから編集。keepout は <map_dir>/keep_out/keep_out.yaml を自動検出)
 #   GUI なしの検査:  ... --check          (各点の判定を表で出すだけ)
@@ -428,7 +428,7 @@ def load_traj(path):
 def main():
     ap = argparse.ArgumentParser(description="2D 地図上で waypoint を打ち Nav2 パネル用 YAML に保存",
                                  formatter_class=argparse.RawDescriptionHelpFormatter, epilog=HELP)
-    ap.add_argument("map_yaml", help="map_server 形式の地図 yaml (nav2/my_map.yaml 等)")
+    ap.add_argument("map_yaml", help="map_server 形式の地図 yaml (nav2/map.yaml 等)")
     ap.add_argument("out_yaml", help="waypoint の保存先 (既存なら読み込んで編集)")
     ap.add_argument("--keepout", help="keepout マスク yaml (既定: <map_dir>/keep_out/keep_out.yaml を自動検出)")
     ap.add_argument("--no_keepout", action="store_true", help="keepout を表示・判定しない")
