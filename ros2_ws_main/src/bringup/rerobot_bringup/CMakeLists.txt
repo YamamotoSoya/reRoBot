@@ -12,8 +12,10 @@ install(DIRECTORY
 )
 
 # claude: 起動結果サマリ (rerobot_bringup.launch.py の最後に起動, 2026-10-01)
+# claude: 停止点つき waypoint 走行 (stop: true の点で止まりキーで再開, 2026-10-04)
 install(PROGRAMS
   scripts/bringup_check.py
+  scripts/waypoint_runner.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

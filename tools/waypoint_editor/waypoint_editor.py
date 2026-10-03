@@ -14,6 +14,9 @@
 #   再読込でも手動のまま残す (panel は pose / orientation しか読まないので余分なキーは無視される)。
 #   ⚠️ NavigateThroughPoses (既定 BT + NavFn + RPP) で向きが効くのは**最後の点だけ** — 途中の点の
 #   向きは経路計算に使われず通過するだけ。最後の点は goal checker の yaw_goal_tolerance まで旋回して止まる。
+# claude: 2026-10-04 停止点 (p キー) を追加。`stop: true` を付けて保存し、rerobot_bringup の
+#   waypoint_runner.py がその点で止まって再開キー待ちになる (panel は stop を読まない = 素通り)。
+#   停止点は区間の終点として送られるので、その点の向きも効く (旋回してから止まる)。
 #
 # 点の色: 緑 = 空き / 橙 = 未観測 (地図の灰) / 赤 = 壁 or keepout 上。赤い点は
 #   ComputePathThroughPoses が失敗して NavigateThroughPoses 全体が止まる原因になるので避ける。
@@ -46,6 +49,7 @@ HELP = """\
   右クリック (点の上)    削除
   Ctrl + ドラッグ (点の上)  向きを手動指定 (マウスの方向を向く。紫の矢印)
   a  (点の上で)          向きを自動 (次の点の方向) に戻す
+  p  (点の上で)          停止点の ON/OFF (赤い四角。waypoint_runner.py がここで止まりキー待ち)
   u  元に戻す    s  保存    r  順序を反転    o  通過半径の表示切替
   h  この説明    q  終了 (未保存なら警告)
   ズーム/パンはツールバー (虫眼鏡/十字)。そのモード中はクリック編集を無視する。"""
@@ -125,10 +129,10 @@ def headings(pts, manual=None):
 
 
 def load_waypoints(path):
-    """戻り値 (pts, manual)。manual[i] = 手動 yaw [rad] または None (自動)。
-    panel で保存したファイル (yaw_manual 無し) は全点自動として読む。"""
+    """戻り値 (pts, manual, stops)。manual[i] = 手動 yaw [rad] または None (自動)、stops[i] = 停止点か。
+    panel で保存したファイル (yaw_manual / stop 無し) は全点自動・停止なしとして読む。"""
     d = yaml.safe_load(open(path)) or {}
-    pts, manual = [], []
+    pts, manual, stops = [], [], []
     for _, wp in (d.get("waypoints") or {}).items():  # PyYAML は記述順を保つ
         pts.append((float(wp["pose"][0]), float(wp["pose"][1])))
         if wp.get("yaw_manual"):
@@ -136,10 +140,11 @@ def load_waypoints(path):
             manual.append(2.0 * math.atan2(z, w))
         else:
             manual.append(None)
-    return pts, manual
+        stops.append(bool(wp.get("stop", False)))
+    return pts, manual, stops
 
 
-def save_waypoints(path, pts, manual, map_yaml):
+def save_waypoints(path, pts, manual, stops, map_yaml):
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     lines = [
         f"# claude: waypoint_editor.py が生成 — map: {os.path.abspath(map_yaml)}",
@@ -154,6 +159,8 @@ def save_waypoints(path, pts, manual, map_yaml):
         ]
         if manual[i] is not None:
             lines.append("    yaw_manual: true")
+        if stops[i]:
+            lines.append("    stop: true")
     with open(path, "w") as f:
         f.write("\n".join(lines) + "\n")
     # コンテナ (root) で書いても所有者をホスト側の親ディレクトリに合わせる (他 tools と同じ)
@@ -168,8 +175,8 @@ def keepout_hit(ko, x, y):
     return ko is not None and (ko.cell(x, y) or 0.0) > ko.occ_th
 
 
-def report(gm, ko, pts, manual):
-    """各点の判定と区間長を表で出す。戻り値 = 問題のある点の数。yaw の * = 手動指定。"""
+def report(gm, ko, pts, manual, stops):
+    """各点の判定と区間長を表で出す。戻り値 = 問題のある点の数。yaw の * = 手動指定、■ = 停止点。"""
     bad = 0
     total = 0.0
     print(f"{'#':>3} {'x':>9} {'y':>9} {'yaw[deg]':>10} {'区間[m]':>8}  判定")
@@ -182,8 +189,9 @@ def report(gm, ko, pts, manual):
         mark = "✔" if st == "空き" else ("▲" if st == "未観測" else "✘")
         bad += mark != "✔"
         ym = "*" if manual[i] is not None else " "
-        print(f"{i:>3} {x:>9.2f} {y:>9.2f} {math.degrees(yaw):>9.1f}{ym} {seg:>8.2f}  {mark} {st}")
-    print(f"計 {len(pts)} 点, 総延長 {total:.1f} m, 要確認 {bad} 点")
+        sm = "  ■停止" if stops[i] else ""
+        print(f"{i:>3} {x:>9.2f} {y:>9.2f} {math.degrees(yaw):>9.1f}{ym} {seg:>8.2f}  {mark} {st}{sm}")
+    print(f"計 {len(pts)} 点, 総延長 {total:.1f} m, 要確認 {bad} 点, 停止点 {sum(stops)} 点")
     return bad
 
 
@@ -193,10 +201,11 @@ def report(gm, ko, pts, manual):
 class Editor:
     PICK_PX = 10  # 点をつかむ判定半径 [画面 px]
 
-    def __init__(self, plt, gm, ko, traj, out, pts, manual, radius):
+    def __init__(self, plt, gm, ko, traj, out, pts, manual, stops, radius):
         self.plt, self.gm, self.ko, self.out, self.radius = plt, gm, ko, out, radius
         self.pts = list(pts)
         self.manual = list(manual)  # pts と同じ長さ。手動 yaw [rad] or None (全編集で同期させる)
+        self.stops = list(stops)  # pts と同じ長さ。停止点なら True (manual と同様に全編集で同期)
         self.undo = []
         self.drag = None
         self.rot = None  # Ctrl + ドラッグで向きを決めている点の index
@@ -204,7 +213,8 @@ class Editor:
         self.show_radius = True
         self.artists = []
 
-        for k in ("keymap.save", "keymap.quit", "keymap.back", "keymap.home", "keymap.yscale"):
+        for k in ("keymap.save", "keymap.quit", "keymap.back", "keymap.home", "keymap.yscale",
+                  "keymap.pan"):  # claude: p = 停止点トグルに使う (パンはツールバーの十字)
             plt.rcParams[k] = []  # s / q / 等を本ツールの操作に使うため既定キーを外す
         # 日本語タイトル用のフォールバック (rerobot_env に入っている CJK フォント)
         plt.rcParams["font.family"] = ["DejaVu Sans", "Droid Sans Fallback"]
@@ -260,6 +270,10 @@ class Editor:
                                           zorder=5))
             self.artists.append(ax.scatter(xs, ys, s=36, zorder=3, edgecolors="k",
                                            c=[self.color(x, y) for x, y in self.pts]))
+            sp = [p for p, st in zip(self.pts, self.stops) if st]
+            if sp:  # 停止点 = 赤い四角の枠
+                self.artists.append(ax.scatter(*zip(*sp), s=180, marker="s", zorder=4,
+                                               facecolors="none", edgecolors="red", linewidths=2))
             for i, (x, y) in enumerate(self.pts):
                 self.artists.append(ax.annotate(str(i), (x, y), xytext=(5, 5),
                                                 textcoords="offset points", fontsize=8,
@@ -274,12 +288,13 @@ class Editor:
         nman = sum(m is not None for m in self.manual)
         ax.set_title(f"{'* ' if self.dirty else ''}{os.path.basename(self.out)} — "
                      f"{len(self.pts)} 点 / {total:.1f} m / 要確認 {bad} 点 / 向き手動 {nman} 点"
+                     f" / 停止 {sum(self.stops)} 点"
                      f"   (h: 操作説明)")
         self.fig.canvas.draw_idle()
 
     # --- 編集 ---------------------------------------------------------------
     def push(self):
-        self.undo.append((list(self.pts), list(self.manual)))
+        self.undo.append((list(self.pts), list(self.manual), list(self.stops)))
         self.dirty = True
 
     def nearest(self, ev):
@@ -327,14 +342,17 @@ class Editor:
                 j = self.insert_index(p)
                 self.pts.insert(j, p)
                 self.manual.insert(j, None)
+                self.stops.insert(j, False)
             else:
                 self.pts.append(p)
                 self.manual.append(None)
+                self.stops.append(False)
             self.redraw()
         elif ev.button == 3 and i is not None:
             self.push()
             del self.pts[i]
             del self.manual[i]
+            del self.stops[i]
             self.redraw()
 
     def on_motion(self, ev):
@@ -358,23 +376,30 @@ class Editor:
     def on_key(self, ev):
         k = ev.key
         if k == "u" and self.undo:
-            self.pts, self.manual = self.undo.pop()
+            self.pts, self.manual, self.stops = self.undo.pop()
             self.dirty = True
         elif k == "s":
-            save_waypoints(self.out, self.pts, self.manual, self.gm.path)
+            save_waypoints(self.out, self.pts, self.manual, self.stops, self.gm.path)
             self.dirty = False
             print(f"保存: {self.out}")
-            report(self.gm, self.ko, self.pts, self.manual)
+            report(self.gm, self.ko, self.pts, self.manual, self.stops)
         elif k == "a":
             i = self.nearest(ev)
             if i is None or self.manual[i] is None:
                 return
             self.push()
             self.manual[i] = None
+        elif k == "p":
+            i = self.nearest(ev)
+            if i is None:
+                return
+            self.push()
+            self.stops[i] = not self.stops[i]
         elif k == "r" and self.pts:
             self.push()
             self.pts.reverse()
             self.manual.reverse()  # 手動の向きは絶対方位のまま (逆走でも同じ向きを向かせる)
+            self.stops.reverse()
         elif k == "o":
             self.show_radius = not self.show_radius
         elif k == "h":
@@ -417,13 +442,14 @@ def main():
     gm = GridMap(args.map_yaml)
     ko_path = None if args.no_keepout else (args.keepout or find_keepout(args.map_yaml))
     ko = GridMap(ko_path) if ko_path else None
-    pts, manual = load_waypoints(args.out_yaml) if os.path.exists(args.out_yaml) else ([], [])
+    pts, manual, stops = (load_waypoints(args.out_yaml) if os.path.exists(args.out_yaml)
+                          else ([], [], []))
     print(f"地図: {args.map_yaml} ({gm.w}x{gm.h}, {gm.res} m/px)")
     print(f"keepout: {ko_path or 'なし'}")
     print(f"waypoint: {args.out_yaml} ({'既存 ' + str(len(pts)) + ' 点' if pts else '新規'})")
 
     if args.check:
-        sys.exit(1 if report(gm, ko, pts, manual) else 0)
+        sys.exit(1 if report(gm, ko, pts, manual, stops) else 0)
 
     import matplotlib
     if args.render:
@@ -431,7 +457,7 @@ def main():
     import matplotlib.pyplot as plt
 
     traj = load_traj(args.traj) if args.traj else None
-    ed = Editor(plt, gm, ko, traj, args.out_yaml, pts, manual, args.radius)
+    ed = Editor(plt, gm, ko, traj, args.out_yaml, pts, manual, stops, args.radius)
     if args.render:
         ed.fig.savefig(args.render, dpi=150, bbox_inches="tight")
         print(f"描画: {args.render}")

@@ -122,6 +122,40 @@ RViz 操作:
 3. 非常時は joy の deadman (LB) を離す / `robot_speed_cmd` が 0.5 s 途絶すると controller が自動停止
 4. 走行中に見るもの: `/amcl_pose` が飛ばないか、local costmap に地図に無い障害物が出ているか
 
+<!-- claude: 2026-10-04 追加 (ユーザ依頼)。仕様は docs/text/waypoint_nav/waypoint_nav.md -->
+### 7.1 waypoint 走行 (停止点で止まり、キーで再開)
+
+指定した waypoint (停止点) で止まり、キーを押すと次の停止点まで進む。仕組み・制約は
+[waypoint 走行 仕様書](../text/waypoint_nav/waypoint_nav.md)。⚠️ 2026-10-04 時点で実機未検証 — 本番前に屋内で一度通すこと。
+
+**事前 (屋内・机上)**: waypoint_editor でコースを作り、止めたい点の上で `p` → 赤い四角が付く → `s` で保存
+([第10章](10_nav2.md))。出発前に `--check` で全点 `✔` と `■停止` の位置を確認する:
+```
+python3 /workspace/tools/waypoint_editor/waypoint_editor.py \
+  /workspace/maps/2d/glim/<name>/nav2/my_map.yaml /workspace/maps/2d/glim/<name>/waypoints/<course>.yaml --check
+```
+
+**当日**: 7 の 1)〜3) を起動 → RViz の「2D Pose Estimate」で AMCL を収束させる → 4 本目のターミナルで:
+```
+docker exec -it rerobot_env bash -c "source /workspace/install/setup.bash && \
+  ros2 run rerobot_bringup waypoint_runner.py /workspace/maps/2d/glim/<name>/waypoints/<course>.yaml"
+```
+* `-it` 必須 (キーを読むため)。地図は waypoint を打ったときと**同じ** `map_dir` で Nav2 を起動していること
+* RViz パネルの「Start Nav Through Poses」は使わない (停止点を読まずに素通りする)
+
+| いつ | キー | 動作 |
+|---|---|---|
+| 起動直後・停止点に着いた後 | `g` | 次の停止点 (または終点) まで走る |
+| 待機中 | `q` | 終了 |
+| 走行中 | `p` | 一時停止 (その場で止まる)。`g` で残りの点から再開 |
+| いつでも | Ctrl-C | 走行中のゴールを取り消して終了 |
+
+* 起動しただけでは走り出さない。最初も `g` 待ち
+* 区間が失敗した (`✘ 区間失敗`) ときも待機に入る。障害物が退いたら `g` で残りの点から送り直す
+* 途中からやり直したいとき: `q` で終了 → 末尾に `--start N` (waypointN から) を付けて起動し直す
+* 再開キーを変えたいとき: `--resume-key <1文字>` (`q` と `p` は不可)
+* ⚠️ 停止中は「速度指令が 0」なだけで非常停止ではない。joy や RViz の Nav2 Goal を触ると動く。危ないときは物理の非常停止
+
 bag を同時に録るなら 2 のコマンドを 4 本目のターミナルで。
 
 ← [第11章 amcl](11_amcl.md) | → [第13章 トラブルシューティング](13_troubleshooting.md)

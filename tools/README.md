@@ -212,9 +212,23 @@ NavigateThroughPoses 全体が止まる)。keepout は `<map_dir>/keep_out/keep_
 python3 /workspace/tools/waypoint_editor/waypoint_editor.py \
     /workspace/maps/2d/glim/<map>/nav2/my_map.yaml /workspace/maps/2d/glim/<map>/waypoints/course.yaml \
     [--traj <dump>/traj_lidar.txt]      # 走行軌跡を重ねる
-# 操作: 左クリック=追加 / ドラッグ=移動 / Shift+左=区間に挿入 / 右クリック=削除 / Ctrl+ドラッグ=向き指定 / a=向き自動 / u=戻す / s=保存 / q=終了
+# 操作: 左クリック=追加 / ドラッグ=移動 / Shift+左=区間に挿入 / 右クリック=削除 / Ctrl+ドラッグ=向き指定 / a=向き自動 / p=停止点 ON/OFF / u=戻す / s=保存 / q=終了
 # GUI なし: --check (判定表、要確認があれば exit 1) / --render out.png
 ```
 
 当日: nav2 起動 → AMCL 初期位置合わせ → Nav2 パネル「Waypoint / Nav Through Poses Mode」→ **Load WPs** →
 「Start Nav Through Poses」。waypoint は作成時の地図の map 座標に紐づく (地図を作り直したら打ち直し)。
+
+<!-- claude: 2026-10-04 追加 -->
+**停止点 (一時停止 → キーで再開)**: エディタで点の上にカーソルを置いて `p` を押すと停止点になり (赤い四角)、
+`stop: true` 付きで保存される。停止点で止めたいときは RViz パネルの Start ではなく (パネルは stop を読まずに素通りする)
+`waypoint_runner.py` で走らせる。コースを停止点で区間に分け、区間ごとに NavigateThroughPoses を送る
+(停止点の向き = YAML の orientation まで旋回して止まる)。
+
+```bash
+# rerobot_env 内 (nav2.launch.py 起動 + AMCL 初期位置合わせ済み。キー入力のため -it 必須)
+docker exec -it rerobot_env bash -c "source /workspace/install/setup.bash && \
+  ros2 run rerobot_bringup waypoint_runner.py /workspace/maps/2d/glim/<map>/waypoints/course.yaml"
+# キー: g=開始/再開 (--resume-key で変更) / q=終了 (待機中) / p=一時停止 (走行中、残りの点から再開) / Ctrl-C=ゴールをキャンセルして終了
+# 区間失敗 (ABORTED) も待機に入り、g で残りの点から再送。--start N で waypointN から始める
+```

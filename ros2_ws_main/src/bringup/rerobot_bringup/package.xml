@@ -27,6 +27,11 @@
   <exec_depend>sensor_msgs</exec_depend>
   <exec_depend>nav_msgs</exec_depend>
   <exec_depend>canopen_interfaces</exec_depend>
+  <!-- claude: scripts/waypoint_runner.py (停止点つき waypoint 走行, 2026-10-04) -->
+  <exec_depend>nav2_msgs</exec_depend>
+  <exec_depend>action_msgs</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
   <!-- claude: slam_toolbox 系は rerobot_slamtoolbox (ros2_ws_slamtoolbox) に分離済み -->
   <!-- claude: Nav2 最小構成 (nav2.launch.py) で起動するサーバ群 -->
   <exec_depend>nav2_map_server</exec_depend>
