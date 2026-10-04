@@ -42,7 +42,7 @@ def generate_launch_description():
     )
     max_height_arg = DeclareLaunchArgument(
         "max_height",
-        default_value="1.5",
+        default_value="6.0",
         description="採用する点の高さ帯の上限 [m] (base_link 基準。地図スライス帯と揃える)。",
     )
     # claude: 2026-10-04 AMCL 専用スキャン (/scan_all, /scan_far) の高さ帯を /scan と分ける。
@@ -63,7 +63,7 @@ def generate_launch_description():
     )
     range_max_arg = DeclareLaunchArgument(
         "range_max",
-        default_value="30.0",
+        default_value="150.0",
         description="スキャンの最大距離 [m]。amcl の laser_max_range と一致させる。",
     )
 

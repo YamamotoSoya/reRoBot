@@ -134,6 +134,22 @@ Visualization Manager:
         Value: /map_updates
       Use Timestamp: false
       Value: true
+    # claude: 2026-10-04 AMCL 専用地図 (map_server_loc → /map_loc、loc_map_yaml 指定時のみ配信)。
+    #   /map と見分けるため costmap 配色 (空き=透明・占有=色付き) で上に重ねる。未指定時は No map received のまま無害。
+    - Alpha: 0.5
+      Class: rviz_default_plugins/Map
+      Color Scheme: costmap
+      Draw Behind: false
+      Enabled: true
+      Name: AMCL Map (/map_loc)
+      Topic:
+        Depth: 1
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /map_loc
+      Use Timestamp: false
+      Value: true
     # keepout (進入禁止帯) マスク (filter_mask_server → /keepout_filter_mask)。
     - Alpha: 0.5
       Class: rviz_default_plugins/Map

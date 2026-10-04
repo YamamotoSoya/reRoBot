@@ -30,7 +30,61 @@
 
 ### 改善点
 
-- [ ]
+- [ ]   若干斜めってるからLaserを低い高さで区切ると市役所の壁映らない。
+- [ ]   建物もあるが。植木や木が建物の壁より手前にあるため、スタート地点近くは自己位置推定しにくい。
+- [ ]   スタート前、コントローラ->自律移動の切り替えがスムーズにいくように（cmd_velの干渉）
+- [ ]   起動の簡素化
+- [ ]   途中復帰も含めてwaypointの計画
+- [ ]   非常停止後の再起動不要へ
+- [ ]   usbぶっこ抜いても止まるように
+- [ ]   林原研の話、R-Fans16を用いている班はmap生成の段階ですでに2d。3dを挟まない。200mのうち20mを使用。localizationはslamtoolboxで10m。最初建物の近くでmattingしてからスタートへ。
+- [ ]   建物の近くではマッチングする。keepoutのズレをにより草地走行
+- [ ]   障害物検知は既知の問題
+- [ ]   狭い場所では完全に膨張のいたばさみ。
+- [ ]   狭い空間でロボットが待つという動作の導入
+- [ ]   /scanallの常時表示
+- [ ]   bagの起動コマンドが長い
+- [ ]   waypoint editorの位置ずれ
+- [ ]   ギヤの段付きシャフト非固定によるギヤの遊びからの騒音
+- [ ]   キャスタ固定具の再設計
+- [ ]   タイヤカバー、外装作成
+- [ ]   ThinkPad chrome remote desktop GNOME問題
+```
+Chrome Remote Desktop (CRD) のLinuxホストは、通常の画面とは別に、同じユーザーで仮想デスクトップセッションを起動します。すると同じユーザーのGNOMEセッションが2つ同時に動き、それぞれの gnome-settings-daemon が夜間モード、電源プロファイル、明るさ、色管理を管理しようとして、設定を奪い合う状態になりえます。「変えても3秒で戻る」症状とよく合います。
+```
+- [ ]   
+
+### メモ
+今日使ったコマンド
+```
+ros2 bag record -s mcap -o /workspace/bags/raw/$(TZ=Asia/Tokyo date +%F_%H%M)_tukuba_yakusho /rfans_driver/rfans_points /rfans_driver/rfans_packets /scan /imu/data /imu_wit/data /imu_wit/mag /odom /tf /tf_static /diagnostics /robot_speed_cmd
+
+B=2026-10-04_1056_tukuba_yakusho
+
+maps/2d/glim/2026-10-03_1126_tsukuba_dumpbase
+
+python3 /workspace/tools/waypoint_editor/waypoint_editor.py \
+  /workspace/maps/2d/glim/2026-10-03_1126_tsukuba_dumpbase/nav2/map.yaml /workspace/maps/2d/glim/2026-10-03_1126_tsukuba_dumpbase/waypoints/course.yaml --check
+  
+  
+  # 1) bringup (3D LiDAR + IMU + EKF)
+ros2 launch rerobot_bringup rerobot_bringup.launch.py lidar_2d:=false lidar_3d:=true imu:=true ekf:=true
+# 2) R-Fans 点群 → /scan (costmap 用) + /scan_all (AMCL 用、全点)
+ros2 launch rerobot_bringup rfans_scan.launch.py allpoints:=true
+
+  
+  ros2 launch rerobot_bringup nav2.launch.py map_dir:=/workspace/maps/2d/glim/2026-10-03_1126_tsukuba_dumpbase/waypoint/course.yaml
+  
+  ros2 launch rerobot_bringup nav2.launch.py \
+  map_yaml:=maps/2d/glim/2026-10-03_1126_tsukuba_dumpbase/
+  loc_map_yaml:=maps/2d/glim/2026-10-03_1126_tsukuba_dumpbase/loc_0.3-1.5/map.yaml \
+  amcl_scan:=all
+  
+  ros2 launch rerobot_bringup nav2.launch.py \
+  map_dir:=/workspace/maps/2d/glim/2026-10-03_1126_tsukuba_dumpbase \
+  loc_map_yaml:=/workspace/maps/2d/glim/2026-10-03_1126_tsukuba_dumpbase/loc_0.3-1.5/map.yaml \
+  amcl_scan:=all
+```
 
 ---
 
@@ -111,3 +165,4 @@ R-Fans 点群 (/rfans_driver/rfans_points)
 
 **改善点との対応**: 30 m 帯の誤マッチ・地図分離 → P1 / 坂の見えない壁 → P0① (応急)・P3・P4 (根本) / 相対高さと機体の傾き → P3・P4 / 足元 UTM と草 → 保留 (P2) / ススキ → P2 (2 m までは避ける対象として正しく扱う)
 
+ans用いてるチームはmap生成の時点で2d、20mくらい。自己位置推定はslamtoolboxで10mくらい。一度建物の近くでmattingしてからスタートへ。
