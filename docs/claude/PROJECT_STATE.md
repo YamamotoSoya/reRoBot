@@ -373,6 +373,8 @@ EPOS4 ×2                     │
 
 **✅ IMU 前提整備 (09-24→27 完了)**: auto_tare off / URDF 実測 / accel 再較正 / 診断指標 0.91° / BNO≈WT / R-Fans stamp live 確認。✅ acc_scale 0.9705 → 0 (自動 1.0) を live 反映 (09-27)。残作業: submodule `surestar_rfans_ros2` コミット。
 
+**GLIM GPU 版の立ち上げ (10-07〜、構成のみ済み)**: `./scripts/build.sh glim_gpu` で CUDA 版イメージを建てる (`jazzy_cuda12.5` を 4.4 GB pull、展開後 10 GB 前後 — ディスク残量に注意) → `docker compose --profile glim_gpu up -d glim_gpu` → `ls /root/ros2_ws/install/glim/lib | grep gpu` で `libodometry_estimation_gpu.so` を確認 → `glim_rosbag` を `config_path:=/glim_config`・`dump_path:=…_dump/gpu` で実行。⚠️ 再ビルド時に確認すべき 2 点: Dockerfile_glim が後から入れている apt (rviz2 / PCL / VirtualGL / mesa-utils) が CUDA 土台で通るか、`.bashrc` の `/root/ros2_ws/install/setup.bash` のパスが同じか。⚠️ GPU 用 config 3 本は上流デフォルトで CPU 側の調整が入っていないため、**CPU 版との比較をするなら条件を揃えてから** (09-21 の「GPU に替えても k を上げない限り同じ坂」の検証に使う場合は特に)。⚠️ CPU 版コンテナと同時起動しない。
+
 **🔴 次の本題: LiDAR 側の坂 L (09-27〜)** — 5号館 1 周で A ≈ 4°@+70 (BNO・WT で一致、IMU 入力正)。IMU が正しい状態で GLIM の LiDAR 側パラメータ (k_correspondences・前処理ダウンサンプル・登録解像度・global 段) を同一 bag (`2026-09-27_1651_5goukan`) で A/B し、A と診断指標で評価する。09-10 issue §11/§12/§14 の候補を順に。(旧: (b) GLIM 側吸収は棄却、tare 時代 bag は legacy 設定のまま A 解析に使える)
 
 **比較用 IMU (09-23)**: 次回実機で (1) `sudo cp tools/99-wt901.rules /etc/udev/rules.d/` → (2) bringup `imu:=true imu_rate:=200` + `wt901_imu.launch.py` 同時起動 → (3) 両 IMU 30 s 静置込みで bag (`bags/<場所>/2d3d_imu_wit/`、topic に `/imu_wit/data` `/imu_wit/mag` 追加) → (4) 静置 |g| (BNO086 +3% 問題の裏取り)・gyro_z 重ね描き・GLIM `imu_topic` 差替え run。手順 `docs/features/2026-09-23_wt901c_comparison_imu.md` §5〜7。
