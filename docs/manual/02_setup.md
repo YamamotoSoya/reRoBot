@@ -33,10 +33,31 @@ docker compose up -d main     # 常用コンテナ (profile なし)
 | コンテナ | 起動 | 用途 |
 |---|---|---|
 | `rerobot_env` | `docker compose up -d main` | CAN モータ制御・センサ・Nav2・teleop |
-| `slamtoolbox_env` | `docker compose --profile slamtoolbox up -d slamtoolbox` | 2D 地図作成 |
-| `glim_env` | `docker compose --profile glim up -d glim` | 3D SLAM GLIM (CPU) |
-| `glim_gpu_env` | `docker compose --profile glim_gpu up -d glim_gpu` | 3D SLAM GLIM (GPU) |
-| `liosam_env` | `docker compose --profile liosam up -d liosam` | LIO-SAM (凍結中) |
+| `slamtoolbox_env` | `docker compose up -d slamtoolbox` | 2D 地図作成 |
+| `glim_env` | `docker compose up -d glim` | 3D SLAM GLIM (CPU) |
+| `glim_gpu_env` | `docker compose up -d glim_gpu` | 3D SLAM GLIM (GPU) |
+| `liosam_env` | `docker compose up -d liosam` | LIO-SAM (凍結中) |
+
+### profile について
+
+`main` 以外のサービスには `profiles:` の札が付いていて、札を有効にしない限り Compose の操作対象から外れる (GPU なし PC が `glim_gpu` の定義を読んでも無視されるのはこの仕組み)。
+
+- **サービス名を書くコマンドでは `--profile` は不要**。名前を書けば札は自動で有効になる。
+- **サービス名を書かない一括操作では必要**。付けないと札付きが対象から漏れる。
+
+| コマンド | `--profile` なしの対象 |
+|---|---|
+| `docker compose up -d` | `main` のみ |
+| `docker compose stop` | `rerobot_env` のみ |
+| `docker compose down` | `rerobot_env` のみ。**GLIM 系のコンテナは消えずに残る** |
+
+全部を消すときは札を並べる:
+
+```
+docker compose --profile slamtoolbox --profile glim --profile glim_gpu --profile liosam down
+```
+
+`docker compose ps` は札に関係なく動いているコンテナを表示する。
 
 ## 2. イメージをビルドする
 
@@ -59,22 +80,21 @@ Dockerfile を 1 つ直しただけのときはこちら。`build.sh images` の
 | 対象 | コマンド | できるイメージ |
 |---|---|---|
 | main | `docker compose build main` | `rerobot-main` |
-| slamtoolbox | `docker compose --profile slamtoolbox build slamtoolbox` | `rerobot-slamtoolbox` |
-| GLIM (CPU) | `docker compose --profile glim build glim` | `rerobot-glim` |
-| GLIM (GPU) | `docker compose --profile glim_gpu build glim_gpu` | `rerobot-glim_gpu` |
-| liosam | `docker compose --profile liosam build liosam` | `rerobot-liosam` |
+| slamtoolbox | `docker compose build slamtoolbox` | `rerobot-slamtoolbox` |
+| GLIM (CPU) | `docker compose build glim` | `rerobot-glim` |
+| GLIM (GPU) | `docker compose build glim_gpu` | `rerobot-glim_gpu` |
+| liosam | `docker compose build liosam` | `rerobot-liosam` |
 
-profile を持つサービスは、サービス名を書けばその profile が自動で有効になる。`--profile` を付けているのは明示のため。
+**サービス名を書くときは `--profile` は要らない** — 名前を書けば、そのサービスの profile は Compose が自動で有効にする。`build` も `up` も同じ。
 
 ### 2-3. CPU 版と GPU 版の違い (GLIM)
 
 **コマンドの形は同じで、profile とサービス名だけが違う。**
 
 ```
-./scripts/build.sh glim           # ← 無い。CPU 版は images に含まれる
-docker compose --profile glim     build glim        # CPU 版
-docker compose --profile glim_gpu build glim_gpu    # GPU 版
-./scripts/build.sh glim_gpu       # GPU 版はこの短縮形も用意してある
+docker compose build glim        # CPU 版
+docker compose build glim_gpu    # GPU 版
+./scripts/build.sh glim_gpu      # GPU 版はこの短縮形も用意してある (CPU 版は images に含まれる)
 ```
 
 中身の違いは**土台のイメージだけ**。`docker/Dockerfile_glim` は 1 本を共用し、`FROM` を `ARG GLIM_BASE` 経由にしてある。既定値が CPU 版なので、GPU を持たない PC は何も渡さず従来どおりに建つ。GPU 版だけが `docker-compose.yml` の `glim_gpu` サービスで CUDA 版のタグを渡す。

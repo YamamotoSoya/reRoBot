@@ -7,7 +7,7 @@
 ## GLIM 各操作
 ### CPU mode
 
-コンテナは `glim_env`。`docker compose --profile glim up -d glim` で起動し、`docker exec -it glim_env bash` の中で以下を実行する。
+コンテナは `glim_env`。`docker compose up -d glim` で起動し、`docker exec -it glim_env bash` の中で以下を実行する。
 
 ② **GLIM オンライン** → bags/glim/<日付_時分>_<場所>_live_dump/
 
@@ -41,12 +41,12 @@ ros2 run glim_ros offline_viewer /workspace/bags/glim/${B}_dump/default
 
 ### GPU mode
 
-CPU 版とは**別コンテナ** (`glim_gpu_env`)。イメージのビルドは [第2章](02_setup.md#gpu-版-glim-gpu-搭載機のみ) を参照。
+CPU 版とは**別コンテナ** (`glim_gpu_env`)。イメージのビルドは [第2章 2-3 / 2-4](02_setup.md) を参照。
 コマンドは CPU 版と同じで、入る先のコンテナだけが違う (設定の入口は中で差し替わるので `config_path` は同じ `/glim_config`)。
 
 ```
-docker compose --profile glim_gpu up -d glim_gpu   # 起動 (CPU 版は止めておく)
-docker exec -it glim_gpu_env bash                  # 以降はこの中で実行
+docker compose up -d glim_gpu       # 起動 (CPU 版は止めておく)
+docker exec -it glim_gpu_env bash    # 以降はこの中で実行
 ```
 
 ⑤ **GLIM オフライン評価 (GPU)** → bags/glim/<元bag名>_dump/gpu/
