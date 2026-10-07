@@ -7,6 +7,8 @@
 ## GLIM 各操作
 ### CPU mode
 
+コンテナは `glim_env`。`docker compose --profile glim up -d glim` で起動し、`docker exec -it glim_env bash` の中で以下を実行する。
+
 ② **GLIM オンライン** → bags/glim/<日付_時分>_<場所>_live_dump/
 
 ```
@@ -38,6 +40,29 @@ ros2 run glim_ros offline_viewer /workspace/bags/glim/${B}_dump/default
 ```
 
 ### GPU mode
+
+CPU 版とは**別コンテナ** (`glim_gpu_env`)。イメージのビルドは [第2章](02_setup.md#gpu-版-glim-gpu-搭載機のみ) を参照。
+コマンドは CPU 版と同じで、入る先のコンテナだけが違う (設定の入口は中で差し替わるので `config_path` は同じ `/glim_config`)。
+
+```
+docker compose --profile glim_gpu up -d glim_gpu   # 起動 (CPU 版は止めておく)
+docker exec -it glim_gpu_env bash                  # 以降はこの中で実行
+```
+
+⑤ **GLIM オフライン評価 (GPU)** → bags/glim/<元bag名>_dump/gpu/
+
+```
+B=2026-09-27_1651_5goukan # 評価対象 bag のディレクトリ名 (bags/raw/ 直下)
+ros2 run glim_ros glim_rosbag /workspace/bags/raw/$B \
+ --ros-args -p config_path:=/glim_config \
+ -p auto_quit:=false \
+ -p dump_path:=/workspace/bags/glim/${B}_dump/gpu
+```
+
+- ⚠️ **CPU 版コンテナと同時に起動しない**。どちらも network_mode: host + 同じ ROS_DOMAIN_ID なのでトピックが衝突する。
+- ⚠️ GPU 用の config 3 本 (`config_{odometry,sub_mapping,global_mapping}_gpu.json`) は**上流デフォルトのまま**で、CPU 側の調整は入っていない。パラメータ名の体系が違うため単純移植もできない (例: `create_between_factors` が CPU true / GPU false、`randomsampling_rate` が 0.2 / 1.0、`submap_downsample_resolution` が 0.3 / 0.1)。**CPU 版と比較するなら条件を揃えてから**。
+- 動いているのが GPU かの確認は、別端末で `nvidia-smi` を見る (`glim_rosbag` のプロセスが GPU メモリを掴んでいる)。
+- オンライン実行 (②) と offline_viewer (④) も同じコンテナで同じコマンドが使える。
 
 ## 各種パラメータ
 
