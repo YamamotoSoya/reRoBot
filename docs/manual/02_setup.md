@@ -42,15 +42,56 @@ docker compose up -d main     # 常用コンテナ (profile なし)
 
 初回、または Dockerfile を変更したとき。
 
+### 2-1. まとめて建てる
+
 ```
 ./scripts/build.sh images       # main / slamtoolbox / glim / liosam を直列ビルド
 ```
 
-⚠️ `docker compose build` を引数なしで直接叩かない。3 イメージが並列で走り、このマシンは落ちる。`build.sh` は 1 本ずつ直列に建てるようにしてある。
+⚠️ `docker compose build` を**引数なしで直接叩かない**。全イメージが並列で走り、このマシンは落ちる。`build.sh` は `COMPOSE_PARALLEL_LIMIT=1` を効かせて 1 本ずつ建てるようにしてある。
 
-### GPU 版 GLIM (GPU 搭載機のみ)
+⚠️ GPU 版 GLIM はこの `images` に**含まれない**。2-3 を参照。
 
-`images` には含まれていない。CUDA 版の公式イメージが約 4.4 GB あり、GPU を持たない PC が巻き込まれないように分けてある。
+### 2-2. 1 つだけ建てる
+
+Dockerfile を 1 つ直しただけのときはこちら。`build.sh images` の中身も同じコマンドを順に叩いているだけ。
+
+| 対象 | コマンド | できるイメージ |
+|---|---|---|
+| main | `docker compose build main` | `rerobot-main` |
+| slamtoolbox | `docker compose --profile slamtoolbox build slamtoolbox` | `rerobot-slamtoolbox` |
+| GLIM (CPU) | `docker compose --profile glim build glim` | `rerobot-glim` |
+| GLIM (GPU) | `docker compose --profile glim_gpu build glim_gpu` | `rerobot-glim_gpu` |
+| liosam | `docker compose --profile liosam build liosam` | `rerobot-liosam` |
+
+profile を持つサービスは、サービス名を書けばその profile が自動で有効になる。`--profile` を付けているのは明示のため。
+
+### 2-3. CPU 版と GPU 版の違い (GLIM)
+
+**コマンドの形は同じで、profile とサービス名だけが違う。**
+
+```
+./scripts/build.sh glim           # ← 無い。CPU 版は images に含まれる
+docker compose --profile glim     build glim        # CPU 版
+docker compose --profile glim_gpu build glim_gpu    # GPU 版
+./scripts/build.sh glim_gpu       # GPU 版はこの短縮形も用意してある
+```
+
+中身の違いは**土台のイメージだけ**。`docker/Dockerfile_glim` は 1 本を共用し、`FROM` を `ARG GLIM_BASE` 経由にしてある。既定値が CPU 版なので、GPU を持たない PC は何も渡さず従来どおりに建つ。GPU 版だけが `docker-compose.yml` の `glim_gpu` サービスで CUDA 版のタグを渡す。
+
+| | CPU 版 | GPU 版 |
+|---|---|---|
+| サービス / profile | `glim` | `glim_gpu` |
+| コンテナ | `glim_env` | `glim_gpu_env` |
+| イメージ | `rerobot-glim` | `rerobot-glim_gpu` |
+| 土台 | `koide3/glim_ros2:jazzy` | `koide3/glim_ros2:jazzy_cuda12.5` |
+| 容量 | 5.5 GB | 15.6 GB |
+| `images` に含まれる | はい | **いいえ** (明示ビルドのみ) |
+| GPU 必須 | いいえ | はい |
+
+`images` に GPU 版を入れていないのは、GPU を持たない PC が約 4.4 GB の pull に巻き込まれないようにするため。CUDA 版は CPU 版の上位互換なので、GPU 機で CPU 版も残すかは好みでよい (同時起動はしないこと)。
+
+### 2-4. GPU 版 GLIM の注意 (GPU 搭載機のみ)
 
 ```
 ./scripts/build.sh glim_gpu
