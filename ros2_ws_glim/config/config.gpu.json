@@ -1,0 +1,35 @@
+{
+  /*** Global Configuration (GPU 版) ***/
+  // claude: GPU 運用の入口ファイル (2026-10-03 追加 / 10-07 方式変更)。CPU 版 config.json を
+  // 書き換えずに済ませるため、コンテナを分けて入口だけ差し替える方式にしてある。
+  //
+  //   CPU: glim_env     (profile: glim)      … config.json がそのまま読まれる
+  //   GPU: glim_gpu_env (profile: glim_gpu)  … このファイルが config.json として被さる
+  //
+  // 被せは docker-compose.yml の glim_gpu サービス (git 管理下) の入れ子 bind で行う。
+  // config_path はどちらのコンテナでも /glim_config で同じなので、実行コマンドは変わらない。
+  // 共有される設定 (sensors / preprocess / ros / logging / viewer) は CPU 側と同一実体なので、
+  // 取付プリセットの切替などは CPU・GPU の両方に自動で効く。
+  //
+  // ⚠️ 前提: glim コンテナが CUDA ビルド版イメージであること (libodometry_estimation_gpu.so が
+  // 必要。sub/global mapping は CPU と同じ .so を使い VGICP_GPU 係数だけ GPU になる)。
+  // CPU ビルド版のまま指定すると odometry の .so ロードで失敗する。
+  //
+  // ⚠️ GPU 用 3 本は上流デフォルトのままで、CPU 側の調整は入っていない。パラメータ名の
+  // 体系が違うため単純移植はできない (例: create_between_factors が CPU true / GPU false、
+  // randomsampling_rate が 0.2 / 1.0、submap_downsample_resolution が 0.3 / 0.1)。
+  // CPU 版との比較をするときは条件を揃えてから。
+  "global": {
+    "config_path": "",
+    "config_ros": "config_ros.json",
+    "config_logging": "config_logging.json",
+    "config_viewer": "config_viewer.json",
+    "config_sensors": "config_sensors.json",
+    "config_preprocess": "config_preprocess.json",
+    // claude: GPU 運用 + BNO086 IMU あり LIO 構成。CPU 版 (config.json) と同じく
+    // sub/global mapping は enable_imu:true。odometry のみ専用 .so に替わる。
+    "config_odometry": "config_odometry_gpu.json",
+    "config_sub_mapping": "config_sub_mapping_gpu.json",
+    "config_global_mapping": "config_global_mapping_gpu.json"
+  }
+}

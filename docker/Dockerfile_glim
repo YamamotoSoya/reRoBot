@@ -2,7 +2,17 @@
 # (GLIM ビルド済みバイナリ + GTSAM 4.3a0 同梱) — GLIM 本体はここではビルドしない。
 # 他コンテナと構成を揃えるための薄い層: 可視化 (rviz2) + 対話シェル環境のみ追加。
 # ROS 環境の正は /ros_entrypoint.sh (/opt/ros/jazzy と /root/ros2_ws/install を source)。
-FROM koide3/glim_ros2:jazzy
+# claude: ベースイメージは ARG で切替可能 (2026-10-03)。既定は CPU ビルド版 —
+# GPU を持たない PC はこのまま何も渡さずに従来どおり動く。
+# GPU 機のみ docker-compose.override.yml (git 管理外) で
+#   build.args.GLIM_BASE: koide3/glim_ros2:jazzy_cuda12.5
+# を渡して CUDA ビルド版にする。CUDA 版は CPU 版の上位互換 (GLIM の CMake は
+# CPU 系モジュールを無条件にビルドし、BUILD_WITH_CUDA で GPU 版を追加する) なので、
+# CUDA イメージのまま CPU 設定で走らせても挙動は変わらない。
+# ⚠️ GTX 1080 等の Pascal 世代 (compute capability 6.1) では cuda13.x は不可
+# (CUDA 13 で Pascal のサポートが削除された) — cuda12.x を選ぶこと。
+ARG GLIM_BASE=koide3/glim_ros2:jazzy
+FROM ${GLIM_BASE}
 
 RUN apt-get update && apt-get install -y \
     ros-jazzy-rviz2 \

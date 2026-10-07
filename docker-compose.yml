@@ -63,7 +63,9 @@ services:
     network_mode: host
     ipc: host
     # claude: GPU 描画の有効化は docker-compose.override.yml (git 管理外、GPU 機のみに置く) で行う。
-    # ここに gpus: を直書きすると GPU なし PC で glim コンテナが作成不能になるため書かないこと (2026-08-17)
+    # ここに gpus: を直書きすると GPU なし PC で glim コンテナが作成不能になるため書かないこと (2026-08-17)。
+    # claude: GPU で「演算」まで行う構成は下の glim_gpu サービス (profile: glim_gpu) を使う (2026-10-07)。
+    # こちらの glim は全 PC 共通の CPU 構成として維持する。
     # claude: koide3 公式イメージ (GLIM ビルド済み + GTSAM 4.3a0 同梱) ベースの薄い Dockerfile。
     # GLIM 本体はビルドしない。設定は ./ros2_ws_glim/config を bind mount し、glim_rosnode に config_path で渡す。
     build:
@@ -81,6 +83,48 @@ services:
       - ./maps:/workspace/maps # claude: 2026-08-15 他コンテナと同じ /workspace 配下に統一
       - ./bags:/workspace/bags # claude: glim_rosbag でのオフライン評価用
       - ./tools:/workspace/tools # claude: 2026-08-17 pointcloud_to_2dmap (3D 地図→2D 占有格子変換) のビルド場所。成果物をホスト側に永続化
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    command: bash
+
+  # claude: GLIM の GPU 版 (2026-10-07 追加、profile: glim_gpu)。CPU 版 (glim) とは
+  # イメージもコンテナも分ける方式 — 同じ Dockerfile_glim を ARG GLIM_BASE で CUDA ビルド版に
+  # 差し替えて建てる。profile を有効にしない限り compose はこのサービスを一切触らないので、
+  # GPU を持たない PC では存在しないのと同じ (gpus: を直書きしても作成不能にならないのはこのため)。
+  # scripts/build.sh の images ループにも入れていない — GPU 機だけが明示的に建てる。
+  #   建て方: ./scripts/build.sh glim_gpu   (= docker compose --profile glim_gpu build glim_gpu)
+  #   起動  : docker compose --profile glim_gpu up -d glim_gpu
+  # ⚠️ CUDA 13 は Pascal (GTX 1080 = compute capability 6.1) のサポートを削除済み → cuda12.x を使う。
+  # ⚠️ CPU 版と同時に起動しない (どちらも network_mode: host + 同じ ROS_DOMAIN_ID でトピックが衝突する)。
+  glim_gpu:
+    container_name: glim_gpu_env
+    profiles: [glim_gpu]
+    network_mode: host
+    ipc: host
+    gpus: all # claude: CUDA 演算 (VGICP_GPU) と GL 描画の両方に必要
+    build:
+      context: ./docker
+      dockerfile: Dockerfile_glim
+      args:
+        # claude: CUDA ビルド版は CPU 版の上位互換 (GLIM の CMake は CPU 系モジュールを無条件に
+        # ビルドし、BUILD_WITH_CUDA で GPU 版 odometry を追加する)。
+        GLIM_BASE: koide3/glim_ros2:jazzy_cuda12.5
+    tty: true
+    stdin_open: true
+    environment:
+      - DISPLAY=${DISPLAY}
+      - QT_X11_NO_MITSHM=1
+      - ROS_DOMAIN_ID=150
+      - GSK_RENDERER=cairo
+      - NVIDIA_DRIVER_CAPABILITIES=all # claude: 既定 (compute,utility) だと libnvidia-gl が注入されず GL が CPU 描画に落ちる
+    volumes:
+      # claude: 設定は CPU 版と同じディレクトリを共有し、入口の config.json だけ GPU 版を被せる
+      # (入れ子 bind)。sensors / preprocess / ros 等の調整は両方に同時に効き、二重管理にならない。
+      # 被せているおかげで config_path は CPU 版と同じ /glim_config のままで済む。
+      - ./ros2_ws_glim/config:/glim_config
+      - ./ros2_ws_glim/config/config.gpu.json:/glim_config/config.json:ro
+      - ./maps:/workspace/maps
+      - ./bags:/workspace/bags
+      - ./tools:/workspace/tools
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
     command: bash
 

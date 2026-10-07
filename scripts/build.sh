@@ -39,8 +39,18 @@ case "$ws" in
       docker compose --profile slamtoolbox --profile glim --profile liosam build "$svc"
     done
     ;;
+  glim_gpu)
+    # claude: GLIM の GPU 版イメージ (2026-10-07)。CUDA ビルド版の公式イメージ (約 4.4 GB の pull)
+    # を土台にするため、GPU 機でのみ明示的に建てる。上の images ループには意図的に入れていない
+    # — GPU を持たない PC が巻き込まれて巨大イメージを引かないようにするため。
+    export COMPOSE_PARALLEL_LIMIT=1
+    docker compose --profile glim_gpu build glim_gpu
+    ;;
   *)
-    echo "usage: $0 [main|slamtoolbox|liosam|images]  (glim の colcon build は不要 — イメージは images に含む)"
+    echo "usage: $0 [main|slamtoolbox|liosam|images|glim_gpu]"
+    echo "  images   : main/slamtoolbox/glim/liosam のイメージを直列ビルド (CPU 構成。全 PC 共通)"
+    echo "  glim_gpu : GLIM の GPU 版イメージ (CUDA。GPU 機のみ。images には含まれない)"
+    echo "  (glim の colcon build は不要 — イメージは images に含む)"
     exit 1
     ;;
 esac
