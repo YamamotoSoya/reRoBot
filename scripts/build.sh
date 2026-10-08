@@ -12,10 +12,15 @@ BUILD_JOBS="${BUILD_JOBS:-2}"
 
 case "$ws" in
   main)
+    # claude: 2026-10-08 --metas で src/colcon.meta (パッケージ別 cmake-args) を読む。
+    #   emcl2 (submodule) は <cstdint> の include 漏れで GCC 13 (Jazzy) だと uint16_t 未定義エラー →
+    #   submodule を直接パッチせず (上流 commit を pristine に保つ)、emcl2 だけ -include cstdint を強制する。
+    #   meta の cmake-args は下の --cmake-args と合算される (2026-10-08 CMakeCache で確認)。
     docker compose up -d main
     docker exec -e MAKEFLAGS="-j${BUILD_JOBS}" -it rerobot_env bash -c \
       'source /opt/ros/jazzy/setup.bash && cd /workspace && \
        nice -n 10 colcon build --symlink-install --executor sequential \
+         --metas ./src/colcon.meta \
          --cmake-args -DCMAKE_EXPORT_COMPILE_COMMANDS=ON'
     ;;
   slamtoolbox)

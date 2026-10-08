@@ -39,8 +39,8 @@ docker compose up -d main
 - **並列度は控えめに** — このマシンは重いビルドで落ちる。make は `BUILD_JOBS` (既定 2)、colcon は 1 パッケージずつ、イメージビルドは 1 サービスずつ。`docker compose build` を引数なしで直接叩かない (3 イメージ並列になる)。
 
 git submodule は**各 workspace の src/ 直下に直接配置** (旧 symlink 方式は 2026-07-26 に撤廃):
-`ros2_ws_main/src/drivers/{epos4compact50-5can, surestar_rfans_ros2, StarROS2, realsense-ros}`, `ros2_ws_liosam/src/LIO-SAM`。例外として ROS ws 外のツールは `tools/` 直下 (`tools/pointcloud_to_2dmap` — GLIM 3D 地図→2D 占有格子変換、glim コンテナでビルド。手順は `tools/README.md`、2026-08-17)。
-`ros2_ws_main/src/` は `app/` (自作 C++) / `bringup/` (launch 資産) / `drivers/` (submodule) の 3 グループ構成 (colcon は src を再帰探索するので階層はビルドに無影響)。
+`ros2_ws_main/src/drivers/{epos4compact50-5can, surestar_rfans_ros2, StarROS2, realsense-ros, witmotion_ros}`, `ros2_ws_main/src/localization/emcl2_ros2` (2026-10-08)、`ros2_ws_liosam/src/LIO-SAM`。例外として ROS ws 外のツールは `tools/` 直下 (`tools/pointcloud_to_2dmap` — GLIM 3D 地図→2D 占有格子変換、glim コンテナでビルド。手順は `tools/README.md`、2026-08-17)。
+`ros2_ws_main/src/` は `app/` (自作 C++) / `bringup/` (launch 資産) / `drivers/` (センサ・モータの submodule) / `localization/` (自己位置推定の submodule、2026-10-08) の 4 グループ構成 (colcon は src を再帰探索するので階層はビルドに無影響)。⚠️ emcl2 は上流の `<cstdint>` 漏れで GCC 13 だと落ちるため、`ros2_ws_main/src/colcon.meta` で emcl2 だけ `-include cstdint` を強制している (submodule は無改変。`scripts/build.sh main` が `--metas` で読む — 素の colcon build なら `--metas ./src/colcon.meta` を付ける)。
 旧モノリシック構成は `archive/monolithic` ブランチ + タグ `v1-monolithic` に恒久保存されている (参照専用 — 触るなら `git worktree` で別ツリーへ)。
 
 ## Running the Stack
@@ -88,13 +88,20 @@ Keyboard teleop (publishes Twist on `/robot_speed_cmd`, prints per-wheel travele
 ros2 run epos4_teleop teleop_keyboard --ros-args --params-file src/app/epos4_teleop/config/params.yaml
 ```
 
+robot 側は全部入り 1 本 + nav 側は構成別 (2026-10-08、main コンテナ。使い分けは docs/manual 第15章、トピック表は第4章・第10章):
+```bash
+ros2 launch rerobot_bringup rerobot_bringup.launch.py      # 既定で全センサ + rfans_scan + IMU×2 + EKF。外すときだけ lidar_2d:=false 等
+ros2 launch rerobot_bringup nav_amcl.launch.py map_dir:=... # nav 構成: nav_amcl / nav_amcl_scanall / nav_emcl2 / nav_lidar3d (仮置き)
+```
+⚠️ **裸の `/scan` は誰も出さない規約** (2026-10-08): urg = `/urg_front/scan` (将来 `/urg_left|right/scan`)、R-Fans 3D→2D = `/rfans/scan` (+ `/rfans/scan_all` は `rfans_scan_all:=true` 時のみ、`/rfans/scan_far`)。costmap は `observation_sources` に全部並べる。AMCL/emcl2 は nav 構成の `scan_topic` で地図に合う 1 本を選ぶ (GLIM 地図 = `/rfans/scan`、slam_toolbox 地図 = `/urg_front/scan`)。slam_toolbox は `/urg_front/scan`。過去 bag の `/scan` は `--remap` で再生。
+
 個別 launch (どのコンテナで動くかに注意):
 ```bash
 ros2 launch rerobot_slamtoolbox slam.launch.py       # slamtoolbox コンテナ: slam_toolbox mapping + slam.rviz
 ros2 launch rerobot_bringup nav2.launch.py           # main コンテナ: map_server + amcl + Nav2 (keepout 込み) + nav2.rviz
 ros2 launch rerobot_bringup joy_teleop.launch.py     # main コンテナ: Xbox pad (LB=deadman, RB=turbo)
 ros2 launch rerobot_bringup realsense_imu.launch.py  # main コンテナ: RealSense IMU → madgwick → /imu/data (LIO/GLIM 系入力用)
-ros2 launch rerobot_bringup rfans_scan.launch.py     # main コンテナ: R-Fans 点群 → /scan (GLIM 由来 3D 地図で Nav2 を回す用。urg_node と /scan 衝突するので lidar_2d:=false 前提。2026-08-17)
+ros2 launch rerobot_bringup rfans_scan.launch.py     # main コンテナ: R-Fans 点群 → /rfans/scan (2026-10-08 から rerobot_bringup に同梱 — 単体起動すると二重になるので通常は使わない)
 ```
 
 (旧 `epos4_vel_ros2` の単体テストは 2026-07-26 に削除 — 必要なら `v1-monolithic` から復元)
@@ -133,7 +140,8 @@ is involved (the old `/robot_encoder_states` fan-in design is gone).
 - **`ros2_ws_main/src/bringup/rerobot_bringup`** — system bringup assets (no C++ code). Owns:
   - `launch/rerobot_bringup.launch.py` — **統合 composite bringup (実体)** (2026-08-10 に 2d/3d launch を統合)。bus_config + 5 s TimerAction + controller + odometry + robot_state_publisher に加え、boolean 引数でセンサドライバを選択: `lidar_2d` → `urg_node` (frame_id `laser`, `/scan`)、`lidar_3d` → `surestar_rfans_ros2` の 2 ノード (R-Fans, `drivers/surestar_rfans_ros2`, frame_id `rfans`, PointCloud2 `/rfans_driver/rfans_points`。2026-08-14 刷新 — LD_PRELOAD と旧 typo topic `/sdk_could` は廃止)、`imu` → `bno086_imu_driver` (`/imu/data`)。`imu_wit` (既定 true、**imu:=true のときだけ有効**、2026-10-01 デフォルト構成化) → 比較用 WT901C を `wt901_imu.launch.py` 経由で並走 (`/imu_wit/data`, frame `imu_wit_link`, ポートは `imu_wit_port` 既定 `ttyUSB-wt901`)。`ekf` → `robot_localization` の EKF (車輪 odom + IMU 融合, `config/ekf.yaml`, 2026-08-11 追加) — true で `/odometry/filtered` + TF odom→base_link を EKF が出し、`epos4_odometry` の publish_tf は launch 側で自動 false (TF 二重配信防止。既定 false)。接続系引数 `serial_port` / `device_ip` / `rps` / `model` / `imu_port` で上書き可。`imu_rate` (既定 **200.0 Hz** — 2026-09-24 に 100 から変更) で BNO086 の報告レートを指定 — 基板 firmware の実用上限 200 Hz (実機 199.9 Hz 確認 2026-09-13)、250 以上は SHTP 飽和で逆に落ちる。`scripts/bringup{2d,3d}.sh` は env `IMU` (既定 true、2026-09-24 変更) / `IMU_RATE` (既定 200) で渡す。⚠️ BNO086 は `rerobot_bringup/config/bno086.yaml` で **`auto_tare: off`** (2026-09-24。既定 all だと accel/gyro が起動時姿勢の座標に回される — `docs/issue/2026-09-24_bno086_auto_tare_rotates_motion_outputs.md`)。URDF の imu_joint は **上下逆 + yaw −93° = rpy (π,0,−1.6257)** (同日実測)。起動時に構成バナーを出し、`check_delay` (既定 15 s) 後に `scripts/bringup_check.py` が EPOS4 statusword (SDO 0x6041) と有効センサのトピック周波数を ✔/▲/✘ の表で表示して終了する (2026-10-01。単体でも `ros2 run rerobot_bringup bringup_check.py` で再確認可)。⚠️ include の launch 引数は後続 include に漏れる — 子 launch の引数は省略せず明示する (WT901C が bno086.yaml を拾った実例あり)。Does **not** launch RViz; visualization is owned by `nav2.launch.py` / `slam.launch.py` so the two don't open duplicate windows。`/scan` は 2D LiDAR のみ (3D 点群の LaserScan 変換は含まない)。
   - `launch/rerobot_bringup_{2d,3d}.launch.py` — 構成別ラッパ (IMU なし、`scripts/bringup{2d,3d}.sh` 互換)。`launch/rerobot_bringup_{2d_imu,3d_imu,2d3d_imu}.launch.py` — IMU 込みの構成別ラッパ。全て実体 launch に boolean を固定して渡すだけ。
-  - `launch/nav2.launch.py` — map_server + amcl + Nav2 (RPP controller, keepout フィルタ込み) + `nav2.rviz`。config は `config/nav2_params.yaml`。**odom 入力は `/odometry/filtered` (EKF 出力) が標準** (2026-08-11) — `nav2d.sh` が bringup を `imu:=true ekf:=true` で起動する前提。EKF なし運用に戻すときは bt_navigator / controller_server の `odom_topic` を `/odom` に戻す。⚠️ `bt_navigator` の `plugin_lib_names` を列挙すると Jazzy では二重登録 segfault — デフォルトに任せる。
+  - **構成別 launch (2026-10-08)** — robot 側は `rerobot_bringup.launch.py` 1 本 (同日、構成別 robot_*.launch.py を作ったが全部入りに一本化して削除。ekf / rfans_scan 既定 true、rfans_scan_all 既定 false、urg は `/urg_front/scan` へ remap)。nav 側は `launch/nav/nav_*.launch.py` (部品の組み合わせを固定、入力スキャンは `scan_topic` 引数) + `launch/parts/` (部品: `map_keepout` / `navigation` / `rviz_nav` / `localization/loc_{amcl,emcl2,lidar3d,map}`)。ros2 launch はファイル名 (basename) で探すのでサブディレクトリ名は不要。自己位置推定部品の約束 = 出力 TF map->odom は 1 つだけ・入力 /initialpose + odom->base_link・lifecycle 管理は部品内で完結。パラメータは `config/localization/{amcl,emcl2}.yaml` (amcl 節は nav2_params.yaml から移設)。⚠️ include は `GroupAction(scoped=True)` で包む — 包まないと子に渡した `params_file` が親に漏れ、後続 include (navigation) が amcl.yaml を読んで controller_server が落ちる (2026-10-08 実測)。旧 `rerobot_bringup_*.launch.py` ラッパは削除候補として残置 (ekf:=false を明示して従来挙動維持)。`scripts/bringup3d.sh` も ekf:=false を明示。
+  - `launch/nav2.launch.py` — (2026-10-08 から部品を include する互換ファイル。引数は従来どおり、amcl パラメータは `amcl_params_file`) map_server + amcl + Nav2 (RPP controller, keepout フィルタ込み) + `nav2.rviz`。config は `config/nav2_params.yaml`。**odom 入力は `/odometry/filtered` (EKF 出力) が標準** (2026-08-11) — `nav2d.sh` が bringup を `imu:=true ekf:=true` で起動する前提。EKF なし運用に戻すときは bt_navigator / controller_server の `odom_topic` を `/odom` に戻す。⚠️ `bt_navigator` の `plugin_lib_names` を列挙すると Jazzy では二重登録 segfault — デフォルトに任せる。
   - `launch/joy_teleop.launch.py` + `config/joy_teleop.yaml` — Xbox ゲームパッド teleop (joy + teleop_twist_joy, LB=deadman, RB=turbo)。
   - `launch/realsense_imu.launch.py` — RealSense を 6 軸 IMU として起動し `imu_filter_madgwick` (use_mag=false) で orientation を合成して `/imu/data` に出す (LIO-SAM の imuTopic 既定と一致)。
   - `config/params.yaml` — 統合パラメータ (2026-08-10 に params_2d/3d を 1 本化)。chassis parameters (`epos4_controller` / `epos4_odometry`) + `rfans_driver` / `rfans_calculation` セクション (新ドライバの機種/接続/frame_id `rfans`/`vangle_override`。2026-08-14 刷新で旧 theta remap は廃止)。 `vangle_override` は 2026-09-13 に有効化 (リング 0〜5 = 09-02 実測、6〜15 = 公称。odometry 段の傾き −20%、global 地図には中立。z ドリフトの主因ではない)。

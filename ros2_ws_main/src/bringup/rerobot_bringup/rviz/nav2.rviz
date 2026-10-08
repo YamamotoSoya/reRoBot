@@ -213,7 +213,7 @@ Visualization Manager:
       Color Transformer: FlatColor
       Decay Time: 0
       Enabled: true
-      Name: LaserScan
+      Name: Scan urg_front
       Position Transformer: XYZ
       Selectable: true
       Size (Pixels): 3
@@ -224,7 +224,37 @@ Visualization Manager:
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Best Effort
-        Value: /scan
+        Value: /urg_front/scan
+      Use Fixed Frame: true
+      Use rainbow: true
+      Value: true
+    # amcl パーティクル群 (自己位置推定の収束を目視確認)。
+    # claude: 2026-10-08 R-Fans 3D→2D (/rfans/scan)。urg と色違い。
+    - Alpha: 1
+      Autocompute Intensity Bounds: true
+      Autocompute Value Bounds:
+        Max Value: 10
+        Min Value: -10
+        Value: true
+      Axis: Z
+      Channel Name: intensity
+      Class: rviz_default_plugins/LaserScan
+      Color: 255; 0; 255
+      Color Transformer: FlatColor
+      Decay Time: 0
+      Enabled: true
+      Name: Scan rfans
+      Position Transformer: XYZ
+      Selectable: true
+      Size (Pixels): 3
+      Size (m): 0.03
+      Style: Points
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+        Value: /rfans/scan
       Use Fixed Frame: true
       Use rainbow: true
       Value: true
@@ -243,6 +273,22 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Best Effort
         Value: /particle_cloud
+      Value: true
+    # claude: 2026-10-08 emcl2 パーティクル群 (nav_emcl2 構成のとき。amcl 構成では No messages のまま)。
+    - Class: rviz_default_plugins/PoseArray
+      Arrow Length: 0.1
+      Axes Length: 0.3
+      Axes Radius: 0.01
+      Color: 255; 170; 0
+      Enabled: true
+      Name: Emcl2 Particles
+      Shape: Arrow (Flat)
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+        Value: /particlecloud
       Value: true
     # 大域経路 (planner → bt_navigator → /plan)。
     - Alpha: 1

@@ -30,6 +30,7 @@ def generate_launch_description():
             "lidar_2d": "false",
             "lidar_3d": "true",
             "imu": "false",
+            "ekf": "false",  # claude: 2026-10-08 実体の ekf 既定が true になったため明示 (従来挙動維持)
             "device_ip": LaunchConfiguration("device_ip"),
             "rps": LaunchConfiguration("rps"),
             "model": LaunchConfiguration("model"),

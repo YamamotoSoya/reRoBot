@@ -14,13 +14,18 @@
 #   EPOS4 状態と各トピック周波数を表で表示 (scripts/bringup_check.py)。
 #   URDF は rerobot.urdf 1 本 (laser / rfans / imu_link を常に含む — 使わないセンサの
 #   静的 TF が出ていても無害)。params は config/params.yaml 1 本。
-#   直接叩いてもよいが、構成別ラッパ (rerobot_bringup_{2d,3d}{,_imu}.launch.py /
-#   rerobot_bringup_2d3d_imu.launch.py) を使うのが推奨。
+# claude: 2026-10-08 「全部入り」の robot bringup に変更 (構成別ラッパは不要になった)。
+#   既定で全センサ + EKF + rfans_scan (3D→2D) を起動する。外すのは故障・未接続・CPU を空けたいときだけ。
+#   LaserScan は裸の /scan を誰も出さない規約 (urg と 3D→2D の衝突を名前で避ける。将来 urg を増やしても同じ):
+#     urg (前)            → /urg_front/scan   (将来 /urg_left/scan, /urg_right/scan を足す)
+#     R-Fans 3D→2D 最近点 → /rfans/scan       (costmap 用。rfans_scan:=true 既定)
+#     R-Fans 3D→2D 全点   → /rfans/scan_all   (AMCL 全点版。rfans_scan_all:=true のときだけ — 重いので既定 off)
+#   使う側 (costmap / AMCL / slam_toolbox) がどれを読むかを明示する。旧ラッパ rerobot_bringup_*.launch.py は削除候補。
 import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import (DeclareLaunchArgument, IncludeLaunchDescription, LogInfo,
+from launch.actions import (DeclareLaunchArgument, GroupAction, IncludeLaunchDescription, LogInfo,
                             OpaqueFunction, TimerAction)
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
@@ -59,8 +64,29 @@ def generate_launch_description():
     # ekf_node が /odometry/filtered と TF odom->base_link を出し、epos4_odometry の
     # publish_tf を自動で false にする (TF 二重配信の防止。/odom topic 自体は残る)。
     ekf_arg = DeclareLaunchArgument(
-        "ekf", default_value="false",
+        "ekf", default_value="true",  # claude: 2026-10-08 既定 false → true (全部入り化)
         description="Fuse wheel odom + IMU with robot_localization EKF")
+
+    # claude: 2026-10-08 R-Fans 点群 → 2D LaserScan (rfans_scan.launch.py) を同梱。lidar_3d と AND で効く。
+    rfans_scan_arg = DeclareLaunchArgument(
+        "rfans_scan", default_value="true",
+        description="R-Fans 点群 → /rfans/scan (最近点, costmap 用) を出す。lidar_3d:=true のときだけ有効")
+    rfans_scan_all_arg = DeclareLaunchArgument(
+        "rfans_scan_all", default_value="false",
+        description="/rfans/scan_all (全点 3.9 万本, AMCL 全点版 nav_amcl_scanall 用) も出す。重いので既定 off")
+    # ⚠ 整合条件: scan_min/max_height = 経路計画用 /map の帯、scan_all_min/max_height = 自己位置推定用地図 (loc_map_yaml) の帯。
+    scan_min_height_arg = DeclareLaunchArgument(
+        "scan_min_height", default_value="0.3",
+        description="/rfans/scan の高さ帯の下限 [m] (base_link 基準)")
+    scan_max_height_arg = DeclareLaunchArgument(
+        "scan_max_height", default_value="6.0",
+        description="/rfans/scan の高さ帯の上限 [m]")
+    scan_all_min_height_arg = DeclareLaunchArgument(
+        "scan_all_min_height", default_value=LaunchConfiguration("scan_min_height"),
+        description="/rfans/scan_all の高さ帯の下限 [m] (既定 = scan_min_height)")
+    scan_all_max_height_arg = DeclareLaunchArgument(
+        "scan_all_max_height", default_value=LaunchConfiguration("scan_max_height"),
+        description="/rfans/scan_all の高さ帯の上限 [m] (既定 = scan_max_height)")
 
     # claude: HOKUYO シリアルポート。udev rule (/etc/udev/rules.d/99-hokuyo-devices.rules,
     # Hokuyo VID 15d1 → /dev/ttyUSB-utm-30lx) が整備済みなので、USB を挿せば自動で
@@ -175,8 +201,26 @@ def generate_launch_description():
             "angle_min": -1.5708,
             "angle_max": 1.5708,
         }],
+        remappings=[("scan", "/urg_front/scan")],  # claude: 2026-10-08 裸の /scan を出さない規約
         output="screen",
     )
+
+    # claude: 2026-10-08 R-Fans 点群 → /rfans/scan (+ /rfans/scan_all)。scoped GroupAction で包み、
+    #   渡した引数 (min_height 等) が後続 include に漏れないようにする。
+    rfans_scan_include = GroupAction([IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(os.path.join(pkg_share, "launch", "rfans_scan.launch.py")),
+        launch_arguments={
+            "min_height": LaunchConfiguration("scan_min_height"),
+            "max_height": LaunchConfiguration("scan_max_height"),
+            "amcl_min_height": LaunchConfiguration("scan_all_min_height"),
+            "amcl_max_height": LaunchConfiguration("scan_all_max_height"),
+            "range_max": "150.0",
+            "allpoints": LaunchConfiguration("rfans_scan_all"),
+            "farthest": "false",
+        }.items(),
+    )], scoped=True, condition=IfCondition(PythonExpression([
+        "'", LaunchConfiguration("lidar_3d"), "'.lower() == 'true' and '",
+        LaunchConfiguration("rfans_scan"), "'.lower() == 'true'"])))
 
     # claude: R-Fans 3D LiDAR driver (2026-08-14 に surestar_rfans_ros2 へ刷新 —
     #   経緯と新旧比較は docs/issue/2026-08-14_rfans_driver_renewal.md)。
@@ -273,8 +317,10 @@ def generate_launch_description():
             " reRoBot bringup — 起動構成",
             "=" * 64,
             f"  [{mark(True)}] EPOS4 x2 (CANopen can0) + controller / odometry",
-            f"  [{mark(on('lidar_2d'))}] 2D LiDAR UTM-30LX      port={cfg('serial_port')}",
+            f"  [{mark(on('lidar_2d'))}] 2D LiDAR UTM-30LX      port={cfg('serial_port')}  → /urg_front/scan",
             f"  [{mark(on('lidar_3d'))}] 3D LiDAR R-Fans-16     ip={cfg('device_ip')} rps={cfg('rps')}",
+            f"  [{mark(on('lidar_3d') and on('rfans_scan'))}]   └ 3D→2D /rfans/scan    帯 {cfg('scan_min_height')}〜{cfg('scan_max_height')} m",
+            f"  [{mark(on('lidar_3d') and on('rfans_scan') and on('rfans_scan_all'))}]   └ 3D→2D /rfans/scan_all 帯 {cfg('scan_all_min_height')}〜{cfg('scan_all_max_height')} m",
             f"  [{mark(on('imu'))}] IMU BNO086             port={cfg('imu_port')} rate={cfg('imu_rate')} Hz",
             f"  [{mark(on('imu') and on('imu_wit'))}] IMU WT901C             port=/dev/{cfg('imu_wit_port')}",
             f"  [{mark(on('ekf'))}] EKF (robot_localization)",
@@ -299,6 +345,8 @@ def generate_launch_description():
         parameters=[{
             "lidar_2d": _bool_param("lidar_2d"),
             "lidar_3d": _bool_param("lidar_3d"),
+            "rfans_scan": _bool_param("rfans_scan"),
+            "rfans_scan_all": _bool_param("rfans_scan_all"),
             "imu": _bool_param("imu"),
             "imu_wit": _bool_param("imu_wit"),
             "ekf": _bool_param("ekf"),
@@ -329,6 +377,12 @@ def generate_launch_description():
         imu_arg,
         imu_wit_arg,
         ekf_arg,
+        rfans_scan_arg,           # claude: 2026-10-08
+        rfans_scan_all_arg,
+        scan_min_height_arg,
+        scan_max_height_arg,
+        scan_all_min_height_arg,
+        scan_all_max_height_arg,
         serial_port_arg,
         device_ip_arg,
         rps_arg,
@@ -345,6 +399,7 @@ def generate_launch_description():
         urg_node_node,
         rfans_node,
         rfans_calc_node,
+        rfans_scan_include,  # claude: 2026-10-08
         imu_include,
         imu_wit_include,
         delayed_check,

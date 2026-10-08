@@ -131,4 +131,4 @@ R-Fans の 3D 点群を、AMCL と costmap が読める 2D の `LaserScan` に�
 
 ---
 
-← [第13章 トラブルシューティング](13_troubleshooting.md) | ↑ [目次](00_index.md)
+← [第13章 トラブルシューティング](13_troubleshooting.md) | → [第15章 launch の使い分け](15_launch_guide.md) | ↑ [目次](00_index.md)

@@ -1,6 +1,6 @@
-# claude: R-Fans 3D 点群 → 2D LaserScan (/scan) 変換 (2026-08-17 追加)。
+# claude: R-Fans 3D 点群 → 2D LaserScan (/rfans/scan) 変換 (2026-08-17 追加、2026-10-08 改名)。
 # GLIM 由来の 3D 地図で Nav2 を走らせる「最短案」の自己位置入力を作る:
-#   /rfans_driver/rfans_points → pointcloud_to_laserscan → /scan → AMCL + costmap
+#   /rfans_driver/rfans_points → pointcloud_to_laserscan → /rfans/scan → AMCL + costmap
 #
 # 仕組み: ① 点群を target_frame (base_link) へ TF 変換 (URDF が取付角を吸収するので
 # rfans プリセット tilted45/tilted15/flat のどれでも設定は共通)、② base_link 基準の
@@ -12,8 +12,9 @@
 #   自己位置が暴れる (docs/features/2026-08-17_glim_map_to_nav2.md 参照)。
 # ⚠️ range_max=30.0 は nav2_params.yaml の amcl laser_max_range=30.0 に合わせた値。
 #   変えるなら両方セットで。
-# ⚠️ /scan は HOKUYO urg_node と同名トピック。同時起動しないこと —
-#   bringup は lidar_2d:=false lidar_3d:=true で使う。
+# claude: 2026-10-08 出力名を /rfans/scan・/rfans/scan_all・/rfans/scan_far に変更 (旧 /scan・/scan_all・/scan_far)。
+#   urg は /urg_front/scan。裸の /scan は誰も出さない規約にしたので、urg と同時起動してよい。
+#   通常は rerobot_bringup.launch.py が include する (rfans_scan:=true 既定)。過去 bag の /scan は remap して再生。
 #
 # claude: 2026-10-01 追加 — allpoints:=true で「全点版」/scan_all も同時に出す (AMCL 専用)。
 #   方位ビンを R-Fans の方位刻み (0.00016 rad ≈ 0.009°) まで細かくし、同じ方位ビンで最近点 1 点に
@@ -54,12 +55,12 @@ def generate_launch_description():
     amcl_min_height_arg = DeclareLaunchArgument(
         "amcl_min_height",
         default_value=min_height,
-        description="/scan_all・/scan_far の高さ帯の下限 [m] (既定 = min_height)。AMCL 用地図の帯と揃える。",
+        description="/rfans/scan_all・/rfans/scan_far の高さ帯の下限 [m] (既定 = min_height)。AMCL 用地図の帯と揃える。",
     )
     amcl_max_height_arg = DeclareLaunchArgument(
         "amcl_max_height",
         default_value=max_height,
-        description="/scan_all・/scan_far の高さ帯の上限 [m] (既定 = max_height)。AMCL 用地図の帯と揃える。",
+        description="/rfans/scan_all・/rfans/scan_far の高さ帯の上限 [m] (既定 = max_height)。AMCL 用地図の帯と揃える。",
     )
     range_max_arg = DeclareLaunchArgument(
         "range_max",
@@ -74,7 +75,7 @@ def generate_launch_description():
         output="screen",
         remappings=[
             ("cloud_in", "/rfans_driver/rfans_points"),
-            ("scan", "/scan"),
+            ("scan", "/rfans/scan"),
         ],
         parameters=[{
             "target_frame": "base_link",   # 取付角の吸収は URDF (TF) に任せる
@@ -97,7 +98,7 @@ def generate_launch_description():
     allpoints_arg = DeclareLaunchArgument(
         "allpoints",
         default_value="false",
-        description="true で /scan_all (方位ビン 0.00016 rad = ほぼ全点) も出す。AMCL 側は nav2.launch.py amcl_scan:=all",
+        description="true で /rfans/scan_all (方位ビン 0.00016 rad = ほぼ全点) も出す。AMCL 側は nav2.launch.py amcl_scan:=all",
     )
     pointcloud_to_laserscan_all = Node(
         package="pointcloud_to_laserscan",
@@ -106,7 +107,7 @@ def generate_launch_description():
         output="screen",
         remappings=[
             ("cloud_in", "/rfans_driver/rfans_points"),
-            ("scan", "/scan_all"),
+            ("scan", "/rfans/scan_all"),
         ],
         parameters=[{
             "target_frame": "base_link",
@@ -131,7 +132,7 @@ def generate_launch_description():
     farthest_arg = DeclareLaunchArgument(
         "farthest",
         default_value="false",
-        description="true で /scan_far (方位ビン 0.0035 rad 内の最遠点) も出す。AMCL 側は nav2.launch.py amcl_scan:=far",
+        description="true で /rfans/scan_far (方位ビン 0.0035 rad 内の最遠点) も出す。AMCL 側は nav2.launch.py amcl_scan:=far",
     )
     scan_far = Node(
         package="rfans_scan_modes",
@@ -140,7 +141,7 @@ def generate_launch_description():
         output="screen",
         parameters=[{
             "cloud_topic": "/rfans_driver/rfans_points",
-            "scan_topic": "/scan_far",
+            "scan_topic": "/rfans/scan_far",
             "target_frame": "base_link",
             "mode": "farthest",
             "min_height": amcl_min_height,  # claude: 2026-10-04 AMCL 専用帯

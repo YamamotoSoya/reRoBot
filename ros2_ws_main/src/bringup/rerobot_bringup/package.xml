@@ -36,6 +36,8 @@
   <!-- claude: Nav2 最小構成 (nav2.launch.py) で起動するサーバ群 -->
   <exec_depend>nav2_map_server</exec_depend>
   <exec_depend>nav2_amcl</exec_depend>
+  <!-- claude: 2026-10-08 自己位置推定の方式別部品 (parts/localization/loc_emcl2) 用。submodule src/localization/emcl2_ros2 -->
+  <exec_depend>emcl2</exec_depend>
   <exec_depend>nav2_controller</exec_depend>
   <exec_depend>nav2_planner</exec_depend>
   <exec_depend>nav2_behaviors</exec_depend>

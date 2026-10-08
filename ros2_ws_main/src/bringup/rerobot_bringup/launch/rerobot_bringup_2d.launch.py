@@ -26,6 +26,7 @@ def generate_launch_description():
             "lidar_2d": "true",
             "lidar_3d": "false",
             "imu": "false",
+            "ekf": "false",  # claude: 2026-10-08 実体の ekf 既定が true になったため明示 (従来挙動維持)
             "serial_port": LaunchConfiguration("serial_port"),
         }.items(),
     )

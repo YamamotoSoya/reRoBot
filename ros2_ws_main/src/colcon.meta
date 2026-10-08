@@ -1,0 +1,7 @@
+{
+  "names": {
+    "emcl2": {
+      "cmake-args": ["-DCMAKE_CXX_FLAGS=-include cstdint"]
+    }
+  }
+}

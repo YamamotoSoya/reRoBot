@@ -1,0 +1,43 @@
+# claude: 2026-10-08 新設。emcl2 (ryuichiueda/emcl2_ros2, submodule: ros2_ws_main/src/localization/)
+# のパラメータ。読み手: launch/parts/localization/loc_emcl2.launch.py。
+# 既定値は上流 config/emcl2.param.yaml を起点に、本機の差分だけ変えている (未チューニング)。
+#
+# 入出力 (全 localization 方式共通の約束): 出力 = TF map->odom、入力 = /initialpose + TF odom->base_link。
+#   emcl2 固有の出力: /mcl_pose (PoseWithCovarianceStamped), /particlecloud (PoseArray), /alpha (Float32 = 尤度の平均)
+#   ⚠ emcl2 は lifecycle ノードではない (起動直後から動き、TF を出す)。lifecycle_manager の管理対象に入れない。
+emcl2:
+  ros__parameters:
+    odom_freq: 20                  # odom→パーティクル更新の周期 [Hz]
+    transform_tolerance: 0.2       # publish する TF の未来側有効時間 [s]
+    global_frame_id: "map"
+    odom_frame_id: "odom"
+    base_frame_id: "base_link"
+    footprint_frame_id: "base_link"  # 本機 URDF に base_footprint は無い (上流既定は base_footprint)
+
+    # ---- スキャン ----
+    laser_min_range: 0.0
+    laser_max_range: 30.0          # amcl の laser_max_range と同値 (上流既定は事実上無制限)
+    scan_increment: 1              # 何本おきにビームを使うか
+
+    # ---- 初期姿勢 (起動直後はここ。以後は RViz の 2D Pose Estimate = /initialpose) ----
+    initial_pose_x: 0.0
+    initial_pose_y: 0.0
+    initial_pose_a: 0.0
+
+    # ---- パーティクル / 膨張リセット ----
+    num_particles: 500
+    alpha_threshold: 0.5           # 平均尤度 alpha がこれを下回ると膨張リセット
+    expansion_radius_position: 0.1
+    expansion_radius_orientation: 0.2
+    extraction_rate: 0.1
+    range_threshold: 0.3
+    sensor_reset: false
+
+    # ---- 運動モデルのノイズ ----
+    odom_fw_dev_per_fw: 0.19
+    odom_fw_dev_per_rot: 0.0001
+    odom_rot_dev_per_fw: 0.13
+    odom_rot_dev_per_rot: 0.2
+
+    # ---- 尤度場 ----
+    laser_likelihood_max_dist: 0.2

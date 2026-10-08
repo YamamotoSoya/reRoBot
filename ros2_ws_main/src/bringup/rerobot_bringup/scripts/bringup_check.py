@@ -44,6 +44,8 @@ class BringupCheck(Node):
         super().__init__("bringup_check")
         self.declare_parameter("lidar_2d", True)
         self.declare_parameter("lidar_3d", True)
+        self.declare_parameter("rfans_scan", True)       # claude: 2026-10-08
+        self.declare_parameter("rfans_scan_all", False)  # claude: 2026-10-08
         self.declare_parameter("imu", True)
         self.declare_parameter("imu_wit", True)
         self.declare_parameter("ekf", False)
@@ -62,12 +64,20 @@ class BringupCheck(Node):
              "epos4_odometry が落ちていないか (params の ros__parameters 綴り)"),
         ]
         if p("lidar_2d"):
-            self.topics.append(("2D LiDAR (UTM-30LX) /scan", "/scan", LaserScan, 40.0,
+            # claude: 2026-10-08 /scan → /urg_front/scan (裸の /scan は誰も出さない規約)
+            self.topics.append(("2D LiDAR (UTM-30LX) /urg_front/scan", "/urg_front/scan", LaserScan, 40.0,
                                 "USB 接続 / /dev/ttyUSB-utm-30lx の有無"))
         if p("lidar_3d"):
             self.topics.append(("3D LiDAR (R-Fans-16) 点群", "/rfans_driver/rfans_points",
                                 PointCloud2, float(p("rps")),
                                 "LiDAR 電源 / Ethernet / device_ip (192.168.0.3)"))
+            # claude: 2026-10-08 3D→2D (rfans_scan.launch.py)
+            if p("rfans_scan"):
+                self.topics.append(("3D→2D /rfans/scan", "/rfans/scan", LaserScan, float(p("rps")),
+                                    "点群が出ているか / TF base_link->rfans"))
+                if p("rfans_scan_all"):
+                    self.topics.append(("3D→2D 全点 /rfans/scan_all", "/rfans/scan_all", LaserScan,
+                                        float(p("rps")), "点群が出ているか / TF base_link->rfans"))
         if p("imu"):
             self.topics.append(("IMU (BNO086) /imu/data", "/imu/data", Imu,
                                 float(p("imu_rate")), "USB 接続 / imu_port (/dev/ttyACM0)"))

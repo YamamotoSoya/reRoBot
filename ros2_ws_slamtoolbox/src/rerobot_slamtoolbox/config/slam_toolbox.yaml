@@ -15,7 +15,7 @@ slam_toolbox:
     odom_frame: odom
     map_frame: map
     base_frame: base_link        # 既定 base_footprint からの上書き (本件の本丸)
-    scan_topic: /scan
+    scan_topic: /urg_front/scan  # claude: 2026-10-08 /scan → /urg_front/scan (裸の /scan 廃止)
     use_map_saver: true
     mode: mapping                # mapping or localization
     # claude: Jazzy 配布の slam_toolbox では autostart パラメータが機能しなかった

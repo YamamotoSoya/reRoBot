@@ -1,0 +1,45 @@
+# claude: 2026-10-08 nav2_params.yaml から amcl 節を移設 (自己位置推定の方式別ファイル化)。
+# 読み手: launch/parts/localization/loc_amcl.launch.py (本番) / launch/amcl_variants.launch.py (並走比較)。
+# 入出力の約束 (全 localization 方式共通): 出力 = TF map->odom、入力 = /initialpose + TF odom->base_link。
+
+# ============================================================================
+# amcl : Adaptive Monte Carlo Localization。/scan と /map を突き合わせて自己位置を
+#   推定し、map->odom TF を publish する (slam_toolbox の代替)。
+# ============================================================================
+amcl:
+  ros__parameters:
+    global_frame_id: map         # 推定結果を表現する地図フレーム
+    odom_frame_id: odom          # オドメトリフレーム
+    base_frame_id: base_link     # ロボット基準フレーム
+    scan_topic: /rfans/scan      # 入力 LaserScan (claude: 2026-10-08 scan → /rfans/scan。実際は nav 構成の scan_topic 引数で上書き)
+    robot_model_type: nav2_amcl::DifferentialMotionModel  # 差動二輪の運動モデル
+
+    # ---- パーティクル数 ----
+    min_particles: 500           # 最小パーティクル数
+    max_particles: 2000          # 最大パーティクル数
+    update_min_d: 0.25           # この距離 [m] 動いたら更新
+    update_min_a: 0.2            # この角度 [rad] 回ったら更新
+    resample_interval: 1         # 何回更新ごとにリサンプリングするか
+    transform_tolerance: 1.0     # publish する TF の未来側有効時間 [s]
+
+    # ---- レーザ尤度モデル (likelihood_field) ----
+    laser_model_type: likelihood_field  # 尤度場モデル
+    laser_likelihood_max_dist: 2.0      # 尤度場で考慮する最大距離 [m]
+    laser_max_range: 30.0               # 採用する最大レーザ距離 [m]
+    laser_min_range: -1.0               # -1=デバイス既定の最小距離を使用
+    max_beams: 60                       # 1 スキャンで使うビーム本数
+    z_hit: 0.5                          # ヒット項の重み
+    z_rand: 0.5                         # ランダムノイズ項の重み
+    sigma_hit: 0.2                      # ヒット項のガウス標準偏差 [m]
+
+    # ---- 差動運動モデルのノイズ ----
+    alpha1: 0.2  # 回転に対する回転ノイズ
+    alpha2: 0.2  # 並進に対する回転ノイズ
+    alpha3: 0.2  # 並進に対する並進ノイズ
+    alpha4: 0.2  # 回転に対する並進ノイズ
+
+    # ---- 自己位置喪失からの復帰 ----
+    recovery_alpha_slow: 0.0     # 低速平均尤度 (0=無効)
+    recovery_alpha_fast: 0.0     # 高速平均尤度 (0=無効)
+    set_initial_pose: false      # 起動時に初期姿勢を固定値で与えるか
+    always_reset_initial_pose: false  # 再起動時に初期姿勢を毎回リセットするか

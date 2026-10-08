@@ -245,7 +245,8 @@ def generate_launch_description():
             DeclareLaunchArgument("urdf", default_value=os.path.join(share, "urdf", "rerobot.urdf")),
             rsp,
             DeclareLaunchArgument(
-                "params_file", default_value=os.path.join(share, "config", "nav2_params.yaml")
+                # claude: 2026-10-08 amcl 節は nav2_params.yaml から config/localization/amcl.yaml へ移設
+                "params_file", default_value=os.path.join(share, "config", "localization", "amcl.yaml")
             ),
             DeclareLaunchArgument(
                 "variants_file", default_value=os.path.join(share, "config", "amcl_variants.yaml")
