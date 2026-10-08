@@ -34,7 +34,7 @@
     "between_registration_type": "GICP",
     // Registration error factors
     "registration_error_factor_type": "VGICP_GPU",
-    "randomsampling_rate": 1.0,
+    "randomsampling_rate": 0.2, // claude: 2026-10-08 上流既定 1.0 から CPU 版と同値へ。tsukuba bag (86 分) の 97% 地点で global 最適化が cudaErrorIllegalAddress 落ち、直前に GPU メモリ 99.5%。1 係数の source_inliers は sizeof(int)×点数なので 1.0 だと 1 係数 200 KB、復路のループ閉じ込みで係数が一気に増えると GB 級になる。原因は未確定 (docs/issue 参照) だが、まず消費側を CPU 版と揃える
     "submap_voxel_resolution": 0.5,
     "submap_voxel_resolution_max": 1.0,
     "submap_voxel_resolution_dmin": 5.0,
