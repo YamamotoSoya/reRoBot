@@ -16,7 +16,7 @@ ros2_ws_main/src/bringup/rerobot_bringup/urdf/rerobot.urdf
 
 | joint | 現行 xyz [m] | 現行 rpy | rpy の決め方 |
 |---|---|---|---|
-| laser | (0.067, 0, 0.09406) | (π, 0, 0) | 天地逆さ取付なら roll=π。RViz で /scan の左右が反転していないか確認 |
+| laser | (0.067, 0, 0.09406) | (π, 0, 0) | 天地逆さ取付なら roll=π。RViz で /urg_front/scan の左右が反転していないか確認 |
 | rfans | (0, 0, 0.80246) | (0, 0, 0) | RViz で /rfans_driver/rfans_points を見て、前方障害物が +X に出れば 0。ケーブル向きが変わると yaw=π |
 | imu_link | (0, 0, 0.74196) | (0, 0, π/2) | 静止 accel z ≈ +9.8 なら正立。yaw は基板の刻印 X が車体のどちらを向くか (現行は imu_X → base_Y) |
 

@@ -29,9 +29,10 @@ ros2 topic list
 <!-- claude: 2026-10-01 NTP 停止のチェックを追加 -->
 * 記録前に **ホストで NTP を止める** (同期済みを確認 → `sudo timedatectl set-ntp false`、走行後に `true` で戻す)。走行中の時刻ジャンプ対策。手順は [第5章 記録前: NTP の自動時刻合わせを止める](05_bag_recording.md#記録前-ntp-の自動時刻合わせを止める)
 ```
-ros2 bag record -s mcap -o /workspace/bags/raw/$(TZ=Asia/Tokyo date +%F_%H%M)_<場所> /rfans_driver/rfans_points /rfans_driver/rfans_packets /scan /imu/data /imu_wit/data /imu_wit/mag /odom /tf /tf_static /diagnostics /robot_speed_cmd /scan_all /amcl_pose
+ros2 bag record -s mcap -o /workspace/bags/raw/$(TZ=Asia/Tokyo date +%F_%H%M)_<場所> /rfans_driver/rfans_points /rfans_driver/rfans_packets /urg_front/scan /rfans/scan /imu/data /imu_wit/data /imu_wit/mag /odom /tf /tf_static /diagnostics /robot_speed_cmd /rfans/scan_all /amcl_pose
 ```
 <!-- claude: 2026-10-01 全点版の AMCL 入力 /scan_all と推定結果 /amcl_pose を追加 (第14章 2.5) -->
+<!-- claude: 2026-10-08 /scan → /urg_front/scan + /rfans/scan、/scan_all → /rfans/scan_all に改名 (裸の /scan 廃止) -->
 
 ## 3. 3D SLAM
 ### **GLIM**
@@ -99,22 +100,24 @@ git checkout <hash> -- glim/<name>/nav2/my_map.pgm   # 任意の版に戻す
   * <!-- claude: 2026-10-02 追記 (ユーザ依頼) --> 未観測域の自動 keepout + 走路の操作者跡の除去は `tools/map_to_keepout` ([第9章 9.3](09_map2d_compression.md))。芝生などは出来たマスクに描き足す
 
 ## 6. Nav2,slamtoolbox反映
-* GLIM 由来 (3D) 地図: 5 のディレクトリを `map_dir:=` で渡す (7 参照)。amcl の入力スキャンは 2D LiDAR ではなく `rfans_scan.launch.py` で作る (当日は全点版 `/scan_all`。[第14章](14_pointcloud_to_laserscan.md))
-* slam_toolbox 由来 (2D) 地図の場合: `maps/2d/slam_toolbox/<name>/nav2/my_map.{pgm,yaml}` に同じ規約で置き、bringup は 2D (`lidar_2d:=true`)、rfans_scan は不要
-* 地図の高さ帯 (4 の `--min/max_height 0.3 1.5`) と `rfans_scan.launch.py` の既定 (0.3 / 1.5) は揃えておく。片方だけ変えない
+* GLIM 由来 (3D) 地図: 5 のディレクトリを `map_dir:=` で渡す (7 参照)。amcl の入力スキャンは 2D LiDAR ではなく R-Fans 由来 (当日は全点版 `/rfans/scan_all`。[第14章](14_pointcloud_to_laserscan.md))。R-Fans→2D 変換は bringup に入っている
+* slam_toolbox 由来 (2D) 地図の場合: `maps/2d/slam_toolbox/<name>/nav2/my_map.{pgm,yaml}` に同じ規約で置き、Nav2 は `nav_amcl.launch.py ... scan_topic:=/urg_front/scan` (urg で作った地図なので urg のスキャンで合わせる)
+* 地図の高さ帯 (4 の `--min/max_height`) と bringup の `scan_min_height` / `scan_max_height` (既定 0.3 / 6.0) と `scan_all_min_height` / `scan_all_max_height` (既定 = 前者) は揃えておく。片方だけ変えない。例: 地図を 0.3〜1.5 で作ったら bringup に `scan_max_height:=1.5` を渡す
 
 ## 7. 自律移動
-main コンテナで 3 本 (別ターミナル)。`lidar_2d:=false` 必須 (`/scan` が urg_node と衝突する)
+<!-- claude: 2026-10-08 書き換え (ユーザ依頼) — bringup が全部入りになり rfans_scan を同梱、/scan 改名。3 本 → 2 本 -->
+main コンテナで 2 本 (別ターミナル)。urg と R-Fans は名前が分かれたので同時に起動してよい (`lidar_2d:=false` は不要。costmap は両方を使う)
 ```
-# 1) bringup (3D LiDAR + IMU + EKF)
-ros2 launch rerobot_bringup rerobot_bringup.launch.py lidar_2d:=false lidar_3d:=true imu:=true ekf:=true
-# 2) R-Fans 点群 → /scan (costmap 用) + /scan_all (AMCL 用、全点)
-ros2 launch rerobot_bringup rfans_scan.launch.py allpoints:=true
-# 3) Nav2 + RViz (AMCL は /scan_all を max_beams 2000 で読む)
-ros2 launch rerobot_bringup nav2.launch.py map_dir:=/workspace/maps/2d/glim/<name> use_keepout:=false amcl_scan:=all
+# 1) bringup (全部入り: urg + R-Fans + R-Fans→2D + IMU + EKF)。rfans_scan_all:=true で AMCL 用の全点 /rfans/scan_all も出す
+ros2 launch rerobot_bringup rerobot_bringup.launch.py rfans_scan_all:=true
+# 2) Nav2 + RViz (AMCL は /rfans/scan_all を max_beams 2000 で読む)
+ros2 launch rerobot_bringup nav_amcl_scanall.launch.py map_dir:=/workspace/maps/2d/glim/<name> use_keepout:=false
 ```
-<!-- claude: 2026-10-01 全点版に変更 (ユーザ指示)。従来 (最近点) に戻すなら 2) の allpoints:=true と 3) の amcl_scan:=all を外す。引数の意味と最遠点版は第14章 -->
-起動確認: `ros2 param get /amcl scan_topic` が `/scan_all`、`ros2 topic hz /scan_all` が約 10 Hz。従来の最近点に戻すなら 2) の `allpoints:=true` と 3) の `amcl_scan:=all` を外す ([第14章](14_pointcloud_to_laserscan.md))
+⚠️ `rfans_scan.launch.py` を別に起動しないこと (bringup に入っているので二重になる)。
+
+起動確認: `ros2 param get /amcl scan_topic` が `/rfans/scan_all`、`ros2 topic hz /rfans/scan_all` が約 10 Hz。
+従来の最近点に戻すなら 1) の `rfans_scan_all:=true` を外し、2) を `nav_amcl.launch.py` にする (入力 `/rfans/scan`。[第14章](14_pointcloud_to_laserscan.md))。
+自己位置推定専用地図 (屋根込みの広い帯) を使うなら 2) に `loc_map_yaml:=<map_dir>/loc_0.3-3.0/map.yaml`、1) に `scan_all_min_height:=0.3 scan_all_max_height:=3.0` を足す ([第15章](15_launch_guide.md))。
 
 RViz 操作:
 1. 「2D Pose Estimate」で現在地と向きをクリック → amcl の粒子 (赤矢印) が数秒で収束することを確認。しなければもう一度

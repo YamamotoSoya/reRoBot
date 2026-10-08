@@ -86,6 +86,8 @@ ros2 launch rerobot_bringup nav_amcl_scanall.launch.py \
 
 ## 15.6 互換のために残しているもの (新しく使う理由はない)
 
+`launch/legacy/` にまとめてある (2026-10-08)。名前だけで起動できるのは変わらない。
+
 | launch | 代わりに使うもの |
 |---|---|
 | `nav2` | `nav_amcl` (`amcl_scan:=all` を付けていたら `nav_amcl_scanall`)。既定の入力は `/urg_front/scan` なので GLIM 地図なら `scan_topic:=/rfans/scan` |

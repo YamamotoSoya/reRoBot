@@ -32,10 +32,14 @@ sudo timedatectl set-ntp true
 
 ### 記録対象topic
 
+<!-- claude: 2026-10-08 /scan → /urg_front/scan + /rfans/scan に改名 (裸の /scan 廃止。第4章) -->
+2026-10-08 より前の bag は `/scan` (日付によって urg か R-Fans 由来)・`/scan_all` で入っている。今の launch / RViz と組み合わせて再生するときは `ros2 bag play ... --remap /scan:=/rfans/scan /scan_all:=/rfans/scan_all` (urg の日は `/scan:=/urg_front/scan`)。
+
 | topic | 型 | 内容 |
 |---|---|---|
 | **`/rfans_driver/rfans_points`** | `sensor_msgs/PointCloud2` | R-Fans-16 の 1 回転分の点群 (frame_id `rfans`、10 Hz)。各点に `x y z intensity ring time` を持ち、`time` はスキャン開始からの相対秒。GLIM / LIO-SAM の主入力 |
-| **`/scan`** | `sensor_msgs/LaserScan` | UTM-30LX の 2D スキャン (frame_id `laser`、40 Hz)。slam_toolbox と amcl の入力。3D bringup では出ないので記録しても空 |
+| **`/urg_front/scan`** | `sensor_msgs/LaserScan` | UTM-30LX の 2D スキャン (frame_id `laser`、40 Hz)。slam_toolbox と costmap の入力 (slam_toolbox 地図で走るときは amcl も)。`lidar_2d:=false` では出ない |
+| **`/rfans/scan`** | `sensor_msgs/LaserScan` | R-Fans 点群を 2D に落としたスキャン (最近点、frame_id `base_link`、10 Hz)。costmap と amcl (GLIM 地図) の入力 |
 | **`/imu/data`** | `sensor_msgs/Imu` | BNO086 の角速度・加速度・姿勢 (frame_id `imu_link`、`IMU_RATE` 既定 100 Hz、GLIM 用は 200 Hz)。EKF と GLIM の入力 |
 | **`/odom`** | `nav_msgs/Odometry` | 車輪エンコーダから `epos4_odometry` が積分した 2D 位置と速度 (odom → base_link)。twist は位置差分から計算した値 |
 | **`/tf`** | `tf2_msgs/TFMessage` | 動く座標変換。odom → base_link (EKF あり時は EKF が出す)。SLAM 中は map → odom も流れる |
@@ -62,7 +66,7 @@ sudo timedatectl set-ntp true
 ### 参考：すべての対象topicを記録
 * 本番bag　必要最低限
 ```
-ros2 bag record -s mcap -o /workspace/bags/raw/$(TZ=Asia/Tokyo date +%F_%H%M)_<場所> /rfans_driver/rfans_points /scan /imu/data /odom /tf /tf_static /diagnostics /robot_speed_cmd
+ros2 bag record -s mcap -o /workspace/bags/raw/$(TZ=Asia/Tokyo date +%F_%H%M)_<場所> /rfans_driver/rfans_points /urg_front/scan /rfans/scan /imu/data /odom /tf /tf_static /diagnostics /robot_speed_cmd
 ```
 容量目安 — **約 8.9 MB/s ≈ 32 GB/h** (既存 bag の実測平均。ほぼ全部が `/rfans_driver/rfans_points`):
 
@@ -76,7 +80,7 @@ ros2 bag record -s mcap -o /workspace/bags/raw/$(TZ=Asia/Tokyo date +%F_%H%M)_<�
 
 * 実験用bag 前必要topic記録 (witmotion, 生R-Fansデータ)
 ```
-ros2 bag record -s mcap -o /workspace/bags/raw/$(TZ=Asia/Tokyo date +%F_%H%M)_<場所> /rfans_driver/rfans_points /rfans_driver/rfans_packets /scan /imu/data /imu_wit/data /imu_wit/mag /odom /tf /tf_static /diagnostics /robot_speed_cmd
+ros2 bag record -s mcap -o /workspace/bags/raw/$(TZ=Asia/Tokyo date +%F_%H%M)_<場所> /rfans_driver/rfans_points /rfans_driver/rfans_packets /urg_front/scan /rfans/scan /imu/data /imu_wit/data /imu_wit/mag /odom /tf /tf_static /diagnostics /robot_speed_cmd
 ```
 容量目安 — **約 10 MB/s ≈ 36 GB/h** (本番 + 生パケット約 1 MB/s + witmotion 約 0.1 MB/s):
 
@@ -93,11 +97,11 @@ ros2 bag record -s mcap -o /workspace/bags/raw/$(TZ=Asia/Tokyo date +%F_%H%M)_<�
 
 * 自律移動 (Nav2) 用bag　本番 + Nav2 の判断過程
 ```
-ros2 bag record -s mcap -o /workspace/bags/raw/$(TZ=Asia/Tokyo date +%F_%H%M)_<場所>_auto /rfans_driver/rfans_points /scan /imu/data /odom /odometry/filtered /tf /tf_static /diagnostics /robot_speed_cmd /behavior_tree_log /rosout /plan /amcl_pose /initialpose /goal_pose /map /keepout_filter_mask /local_costmap/costmap /local_costmap/published_footprint
+ros2 bag record -s mcap -o /workspace/bags/raw/$(TZ=Asia/Tokyo date +%F_%H%M)_<場所>_auto /rfans_driver/rfans_points /urg_front/scan /rfans/scan /imu/data /odom /odometry/filtered /tf /tf_static /diagnostics /robot_speed_cmd /behavior_tree_log /rosout /plan /amcl_pose /initialpose /goal_pose /map /keepout_filter_mask /local_costmap/costmap /local_costmap/published_footprint
 ```
 容量目安 — **本番 bag とほぼ同じ (約 8.9 MB/s ≈ 32 GB/h)**。追加した Nav2 系 topic は合計でも数十 KB/s 程度で、容量のほぼ全部は `/rfans_driver/rfans_points` のまま。R-Fans の生データも残したいときは `/rfans_driver/rfans_packets` を足す (+約 1 MB/s)。
 
-※ 記録は **nav2.launch.py を起動する前に開始する**。`/map` と `/keepout_filter_mask` は起動時に 1 回しか出ないので、後から記録を始めると入らない。
+※ 記録は **Nav2 (nav_*.launch.py / nav2.launch.py) を起動する前に開始する**。全点 AMCL (`nav_amcl_scanall`) で走るなら末尾に `/rfans/scan_all` を足す。`/map` と `/keepout_filter_mask` は起動時に 1 回しか出ないので、後から記録を始めると入らない。
 ※ 走行が止まったときは、`/behavior_tree_log` でどの BT ノードが FAILURE になったかを見て、`/rosout` で同じ時刻の WARN/ERROR 行を確認する。`/robot_speed_cmd` が 10 Hz・1.0 rad/s の出力に変わっていたら復帰行動の Spin (behavior_server)。EPOS 側の異常かどうかは `/diagnostics` の statusword (正常 = `0x1237`) で切り分ける。
 
 ← [第4章 起動と手動操作](04_startup_teleop.md) | → [第6章 SLAM_toolbox](06_slam_toolbox.md)

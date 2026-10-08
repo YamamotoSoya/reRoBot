@@ -8,12 +8,12 @@ GLIM で作った 3D 地図を、Nav2 (map_server / amcl) が読める **2D 占�
 
 | ツール (`tools/`) | 点の出どころ | 高さ帯の基準 | 必要なもの | 所要 | 向き |
 |---|---|---|---|---|---|
-| [glim_dump_to_2dmap](../../tools/glim_dump_to_2dmap/) | GLIM dump の submap 点群 (0.3 m 間引き済み) | **base_link (実機 /scan と同じ)**、または submap 原点 z からの相対 | dump のみ (numpy) | 数秒 | まず形を見る / bag が無い |
-| [glim_traj_to_2dmap](../../tools/glim_traj_to_2dmap/) | **bag の生点群** (間引き前) | **base_link (実機 /scan と同じ)**、地面平面からの高さ、センサ座標 z | dump の `traj_lidar.txt` + 元 bag (ROS 環境) | 25〜45 s | **Nav2 用の本番地図 (推奨)** |
+| [glim_dump_to_2dmap](../../tools/glim_dump_to_2dmap/) | GLIM dump の submap 点群 (0.3 m 間引き済み) | **base_link (実機 /rfans/scan と同じ)**、または submap 原点 z からの相対 | dump のみ (numpy) | 数秒 | まず形を見る / bag が無い |
+| [glim_traj_to_2dmap](../../tools/glim_traj_to_2dmap/) | **bag の生点群** (間引き前) | **base_link (実機 /rfans/scan と同じ)**、地面平面からの高さ、センサ座標 z | dump の `traj_lidar.txt` + 元 bag (ROS 環境) | 25〜45 s | **Nav2 用の本番地図 (推奨)** |
 
 ## 9.1 仕組み
 
-- **dump 版**: submap ごとに `T_world_origin` (submap 原点の姿勢) が残っているので、点を世界座標に置いたあと原点の z を引いてから帯で切る (`--height_mode sensor`)。帯が車体と一緒に上下するので z ドリフトに強い。⚠️ **原点の z は LiDAR の高さではない** (09-18 5号館で床は原点基準 −0.65 m、LiDAR 基準 −0.81 m、submap ごとに ±0.2 m ぶれる)。`--height_mode base_link` (2026-10-02 追加) は submap 内スキャンの最適化後 LiDAR 姿勢 (`traj_lidar.txt` を stamp で引く) へ点を戻し、実機 /scan と同じ base_link 基準の高さで切る。ただし点は GLIM が間引いた後なので、画素の濃さが「壁の密度」ではなく「重なった submap 数」になり、区間によって壁が点線になる。
+- **dump 版**: submap ごとに `T_world_origin` (submap 原点の姿勢) が残っているので、点を世界座標に置いたあと原点の z を引いてから帯で切る (`--height_mode sensor`)。帯が車体と一緒に上下するので z ドリフトに強い。⚠️ **原点の z は LiDAR の高さではない** (09-18 5号館で床は原点基準 −0.65 m、LiDAR 基準 −0.81 m、submap ごとに ±0.2 m ぶれる)。`--height_mode base_link` (2026-10-02 追加) は submap 内スキャンの最適化後 LiDAR 姿勢 (`traj_lidar.txt` を stamp で引く) へ点を戻し、実機 /rfans/scan と同じ base_link 基準の高さで切る。ただし点は GLIM が間引いた後なので、画素の濃さが「壁の密度」ではなく「重なった submap 数」になり、区間によって壁が点線になる。
 - **traj 版**: 点は bag の生スキャン、姿勢だけを GLIM の最適化後軌跡 `traj_lidar.txt` (TUM 形式、1 行 = 1 スキャン) から借りる。GLIM のループクロージングは点を書き換えず submap 姿勢を動かすだけなので、生スキャンをこの姿勢で置き直せば LC 反映済みかつ生密度の地図になる。`--deskew` で回転中のにじみも補正できる。
 
 なぜ 2 つ残っているか、スキャンマッチング上の得失は [読本 第3章 §3.4〜3.5](../text/map3d_to_nav2/03_map_conversion.md) を参照。
@@ -50,8 +50,8 @@ docker exec glim_env python3 /workspace/tools/glim_dump_to_2dmap/glim_dump_to_2d
 - 1 つ目の引数が dump、**2 つ目が地図一式の親 `<name>`** (`--map_only` を付けると、その場所に地図だけを書く従来動作)
 
 - `-r 0.10` を推奨 (0.05 だと間引きのせいで壁が点線になる)
-- 帯 (`--min/max_height`) は **base_link 基準 = 実機 `rfans_scan.launch.py` と同じ値** (既定 0.3 / 1.5) をそのまま書く
-- `--range_max 30` は実機 /scan と同じ距離上限。付けないと 30 m 以遠の地面が帯に入りノイズになる (base_link 基準では遠方ほど持ち上がる。原因未特定)
+- 帯 (`--min/max_height`) は **base_link 基準 = 実機 bringup の `scan_min_height` / `scan_max_height` と同じ値** を書く。bringup の既定は 0.3 / 6.0 なので、地図を 0.3 / 1.5 で作ったら起動時に `scan_max_height:=1.5` を渡す (2026-10-08、[第14章 3.1](14_pointcloud_to_laserscan.md))
+- `--range_max 30` は実機 AMCL (`laser_max_range` 30 m) と同じ距離上限。付けないと 30 m 以遠の地面が帯に入りノイズになる (base_link 基準では遠方ほど持ち上がる。原因未特定)
 - `--base_to_sensor_z` は URDF `rfans_joint` の z (**bag の日付の値**: 〜09-30 は 0.80246、10-01 以降は 0.79396)。取付が flat (rpy=0) 前提
 - 旧方式 `--height_mode sensor --min_height -0.25 --max_height 0.95` は submap 原点基準で、値が実機と一致しない (09-18 では地上 ≈0.40〜1.60 に相当)
 - base_link 基準は 0.3 m 間引きの地面点が帯の下端に入りやすい。しきい値 (`--min/max_points_in_pix`、既定 2/5) と合わせて画像で確認する (比較: [features 2026-10-02](../features/2026-10-02_2dmap_threshold_unknown_keepout.md))
@@ -75,7 +75,7 @@ python3 $T $B $D $M \
   --range_max 30 --deskew --min_points_in_pix 4 --max_points_in_pix 12 --mark_unknown
 ```
 
-- `--height_frame ground` は地面平面からの高さ。実機 `/scan` (pointcloud_to_laserscan) は車体基準 (base_link) なので、厳密に揃えるなら `--height_frame base_link --base_to_sensor_z <URDF rfans z>` (値は実機と同じ 0.3 / 1.5)。平坦な 5号館 09-18 では両者の地図は占有一致 0.99
+- `--height_frame ground` は地面平面からの高さ。実機 `/rfans/scan` (pointcloud_to_laserscan) は車体基準 (base_link) なので、厳密に揃えるなら `--height_frame base_link --base_to_sensor_z <URDF rfans z>` (帯は実機 bringup の `scan_min_height` / `scan_max_height` と揃える)。平坦な 5号館 09-18 では両者の地図は占有一致 0.99
 - Nav2 用に 0.10 m 格子にするなら `-r 0.10 --min_points_in_pix 8 --max_points_in_pix 24`
 - `--height_frame sensor` は LiDAR 座標の z で切る (値 = 実機の値 − rfans 取付高)
 
@@ -92,18 +92,18 @@ python3 $T $B $D $M \
 
 ## 9.4 Nav2 に渡す
 
-`nav2.launch.py` の規約は `<map_dir>/nav2/my_map.yaml` + `<map_dir>/keep_out/keep_out.yaml`。9.2 の手順ならそのまま揃っている。
+Nav2 の地図規約は `<map_dir>/nav2/map.yaml` + `<map_dir>/keep_out/keep_out.yaml`。9.2 の手順ならそのまま揃っている。
 
 ```bash
-# 起動 (main コンテナ)。keepout 込み (use_keepout は既定 true)
-ros2 launch rerobot_bringup nav2.launch.py map_dir:=/workspace/maps/2d/glim/<name>
+# 起動 (main コンテナ)。keepout 込み (use_keepout は既定 true)。AMCL は /rfans/scan を読む
+ros2 launch rerobot_bringup nav_amcl.launch.py map_dir:=/workspace/maps/2d/glim/<name>
 # keepout なしで試すなら
-ros2 launch rerobot_bringup nav2.launch.py map_dir:=/workspace/maps/2d/glim/<name> use_keepout:=false
+ros2 launch rerobot_bringup nav_amcl.launch.py map_dir:=/workspace/maps/2d/glim/<name> use_keepout:=false
 ```
 
 `--map_only` で作った地図や 2026-10-02 以前の地図 (`nav2/map.yaml` だけ) は `map_yaml:=/workspace/maps/2d/glim/<name>/nav2/map.yaml use_keepout:=false` で直接指定する。
 
-3D 地図由来なので、amcl の入力 `/scan` は 2D LiDAR ではなく `rfans_scan.launch.py` (R-Fans 点群 → LaserScan、`lidar_2d:=false` 前提) で作る。→ [第10章 Nav2](10_nav2.md) / [第11章 amcl](11_amcl.md)
+3D 地図由来なので、amcl の入力は 2D LiDAR ではなく R-Fans 点群を 2D に落とした `/rfans/scan` (bringup に同梱、`nav_amcl` の既定)。⚠️ 互換の `nav2.launch.py` は既定が urg (`/urg_front/scan`) なので、GLIM 地図で使うなら `scan_topic:=/rfans/scan` を付ける (2026-10-08)。→ [第10章 Nav2](10_nav2.md) / [第11章 amcl](11_amcl.md)
 
 ## 9.5 注意
 
