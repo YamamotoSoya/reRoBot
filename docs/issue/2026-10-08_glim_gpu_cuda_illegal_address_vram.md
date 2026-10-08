@@ -116,11 +116,171 @@ ros2_ws_glim/config/config_global_mapping_gpu.json
 
 dump: `bags/glim/2026-10-03_1126_tsukuba_dump/gpu/` (1.8 GB)。所要 45 分。GPU のプロセス別記録では利用者は `glim_rosbag` 単独。
 
+## 6.5 同一 bag での CPU/GPU 比較 (2026-10-08、実測)
+
+同じ bag の CPU dump が **10-03 に既に存在していた** (`bags/glim/2026-10-03_1126_tsukuba_dump/default`、CPU 既定設定、サブマップ 816 個)。GPU dump と同じ指標で測った結果:
+
+| 指標 | CPU 既定 (`default`) | GPU (`gpu`) |
+|---|---|---|
+| matching cost 因子 (ユニーク対) | 1186 | 14729 |
+| うち **長距離 (\|i−j\| > 100)** | **0 対** | **1215 対** |
+| 再訪 \|Δz\| 中央値 (traj、xy<1 m・Δt>300 s) | **8.92 m** (n=371) | **0.09 m** (n=146) |
+| 再訪 \|Δz\| 中央値 (odom 段) | 13.16 m (n=379) | 1.10 m (n=8) |
+| traj の z 範囲 | 0.1 〜 **79.9 m** | −0.8 〜 **35.4 m** |
+| odom 段の z 範囲 | 0.1 〜 70.1 m | −5.7 〜 30.7 m |
+
+**CPU 既定では長距離の閉合が 1 対も立っていない** (因子 1186 対はすべて近接 submap 間)。§5 H-A の予測どおりで、09-20 の CPU 実測「周回を結ぶ因子 0 本」とも整合。ユーザの目視 (「行きと帰りが同じ z 平面」) は定量でも再現し、差は目視以上 (8.92 m → 0.09 m)。
+
+⚠️ ただし **odom 段の z 範囲自体が CPU 70 m / GPU 30.7 m と 2 倍以上違う**。閉合の有無だけでなく**前段の推定精度も違う**ので、「閉合が立ったから揃った」と「前段が良いから揃った」が分離できていない。
+
+### CPU 版に GPU と同じパラメータを入れる実験 → **ホスト RAM 不足で失敗**
+
+`config_global_mapping_cpu.json` に `submap_voxelmap_levels: 2` + `submap_voxel_resolution_max: 1.0` (dmin 5 / dmax 20) + `create_between_factors: false`、`config_sub_mapping_cpu.json` に `submap_downsample_resolution: 0.1` + `submap_target_num_points: 50000` を入れて同 bag を実行:
+
+```
+[mem] [warning] CPU memory usage: 31987.59 / 32070.71 MB 99.74%
+Out of memory: Killed process 1217234 (glim_rosbag) anon-rss:26684480kB
+[ros2run]: Killed
+```
+
+bag の **68% 地点 (3499/5149 s)** で OOM kill。**dump は保存されず全損** (§8 と同じ事情)。RSS 26.7 GB に対しホスト 32 GB。
+
+**判明したこと**: GPU 版の密度設定は、CPU 版では**主記憶に載りきらない**。GPU 版が 8 GB の VRAM で足りたのは `randomsampling_rate` を 0.2 に下げた後だから。したがって **「GPU は不要で設定の問題」とは言えない** — 密度を上げることと、それを保持できることの組み合わせが要る。
+
+**未実施 (次の実験)**: 密度は CPU 既定のまま、**閉合判定のボクセルだけ**粗くする (`submap_voxelmap_levels` と `submap_voxel_resolution_max` の 2 つだけ)。判定は `voxelmaps.back()` の重なりで決まるので、これだけなら記憶消費はほとんど増えない。→ §7.5
+
 ## 7. 残っている確認事項
 
 1. **確保失敗の警告の有無** — 修正前の構成で stderr をファイルに保存して再現し、最初の `cudaErrorIllegalAddress` の直前に `warning: cudaErrorMemoryAllocation` があるか見る。**あれば §3 の経路が確定し「原因 = GPU 係数のメモリ消費」が確定に昇格**。無ければ §5 (b) が本命に戻る。35 分 × 1 本。
 2. **sm_61 での再ビルド** — `-DCMAKE_CUDA_ARCHITECTURES=61` で gtsam_points を建て直し、JIT キャッシュ (`/root/.nv/ComputeCache`) を消して同じ bag を流す。§5 (c) の確認。イメージ再ビルドのコストが高く確率は低いので後回し。
 3. **GPU プリセット全体の見直し** — 今回下げたのは `randomsampling_rate` だけ。`submap_downsample_resolution` (0.1 vs CPU 0.3) も残っており、**CPU 版との結果比較をするなら条件を揃える作業が別途必要**。
+
+## 7.5 別 PC 向け実験手順 (エージェントへの依頼仕様)
+
+**この節だけ読めば実行できるように書いてある。** このリポジトリの他の節を読む必要はない。
+
+### 目的
+
+同一 bag で「**行きと帰りの z が揃うのは閉合判定のボクセル解像度が原因か**」を判定する。現状、CPU 既定では長距離閉合 0 対・再訪 \|Δz\| 8.92 m、GPU では 1215 対・0.09 m (§6.5)。ただし CPU/GPU は 10 以上の設定が同時に違い、前段の推定精度も違うため、何が効いたか分離できていない。
+
+### 必要な環境
+
+| 項目 | 要件 |
+|---|---|
+| ホスト RAM | **64 GB 以上を推奨** (32 GB では E2 が OOM kill される実績あり。E1/E3 は 32 GB で足りる見込みだが未確認) |
+| ディスク | 100 GB 以上 (bag 48 GB + dump 2 GB × 本数) |
+| GPU | **不要** (全 run が CPU 構成)。GPU 機なら E4 も可 |
+| Docker | リポジトリ同梱の `glim_env` (profile: `glim`) |
+
+### 準備
+
+```bash
+git clone --recursive https://github.com/YamamotoSoya/reRoBot.git && cd reRoBot
+docker compose up -d glim          # イメージが無ければ docker compose build glim (約 5 GB)
+
+# bag を Drive から取得 (rclone remote: cit-share-bags。無ければリポジトリ管理者に依頼)
+mkdir -p bags/raw && cd bags/raw
+rclone copy cit-share-bags:bags/raw/2026-10-03_1126_tsukuba.tar.zst .   # 26.5 GiB
+tar -I zstd -xf 2026-10-03_1126_tsukuba.tar.zst && rm 2026-10-03_1126_tsukuba.tar.zst
+cd ../..
+# 展開後: bags/raw/2026-10-03_1126_tsukuba/{metadata.yaml, *_0.mcap}  (mcap 48 GB、収録 5149 s)
+```
+
+### 変更する設定 (ベースは CPU 既定。`ros2_ws_glim/config/`)
+
+**どの run も `config.json` は既定のまま** (= `config_odometry_cpu.json` / `config_sub_mapping_cpu.json` / `config_global_mapping_cpu.json` を読む)。
+
+| run | `config_global_mapping_cpu.json` | `config_sub_mapping_cpu.json` | 狙い |
+|---|---|---|---|
+| **E1** (本命) | `submap_voxelmap_levels: 1→2`、`submap_voxel_resolution_max: 1.0` / `_dmin: 5.0` / `_dmax: 20.0` を追加 | 変更なし | 閉合判定のものさしだけ粗くする。**これで閉合が立てば原因確定** |
+| **E2** (再挑戦) | E1 と同じ + `create_between_factors: true→false` | `submap_downsample_resolution: 0.3→0.1`、`submap_target_num_points: 50000` を追加 | GPU プリセット完全模倣。32 GB では 68% で OOM。64 GB での完走可否を見る |
+| **E3** (対照) | 変更なし (既定) | 変更なし | 同一環境でのベースライン再取得。既存 `default` dump と一致するか確認 |
+| **E4** (任意、GPU 機のみ) | `create_between_factors: false→true` (GPU 側 `config_global_mapping_gpu.json` を編集し `config.json` を GPU 構成に) | 変更なし | between フラグ単独の寄与を見る (§5 H-D の判別) |
+
+⚠️ **1 run につき表の 1 行だけを適用すること**。複数を混ぜると分離できない (それが今の行き詰まりの原因)。
+
+### 実行
+
+```bash
+B=2026-10-03_1126_tsukuba
+TAG=e1_coarse_voxel          # run ごとに変える: e1_coarse_voxel / e2_gpu_mimic / e3_baseline / e4_between_on
+
+docker exec -it glim_env /ros_entrypoint.sh \
+  ros2 run glim_ros glim_rosbag /workspace/bags/raw/$B \
+  --ros-args -p config_path:=/glim_config \
+  -p auto_quit:=true \
+  -p dump_path:=/workspace/bags/glim/${B}_dump/${TAG} \
+  2>&1 | tee ~/glim_${TAG}.log
+```
+
+- **所要**: 1 run あたり 30〜60 分 (bag 86 分ぶん)。
+- **開始の判定**: `opening /workspace/bags/raw/...` と `detected storage_id=mcap` の 2 行が出ること。出なければパスが違う (bag 名を 2 回書く間違いが頻発)。
+- **途中で出力先が空なのは正常**。dump は終了時に一括で書かれる。
+- **RAM 監視を別端末で**: `while true; do free -g | sed -n 2p; sleep 30; done | tee ~/mem_${TAG}.log`
+- OOM kill されたら `[ros2run]: Killed` で終わり **dump は残らない**。その場合は到達した bag 時刻 (`tee` したログ末尾の `stamp=`) と RSS を記録して報告する。
+
+### 評価 (目視を使わないこと)
+
+dump ができたら、次のスクリプトを `glim_env` 内で実行して 3 指標を出す。
+
+```python
+# docker cp して docker exec glim_env python3 /tmp/cmp.py
+import numpy as np, re
+TAGS = ["default", "e1_coarse_voxel"]          # 比較したい dump のタグを列挙
+B = "2026-10-03_1126_tsukuba"
+for tag in TAGS:
+    b = f"/workspace/bags/glim/{B}_dump/{tag}/"
+    out = [tag]
+    for name in ("odom_lidar.txt", "traj_lidar.txt"):
+        a = np.loadtxt(b + name); t, xyz = a[:, 0], a[:, 1:4]
+        s = max(1, len(t) // 3000); t2, p2 = t[::s], xyz[::s]
+        d = []
+        for i in range(len(t2)):
+            m = (np.abs(t2 - t2[i]) > 300) & (np.linalg.norm(p2[:, :2] - p2[i, :2], axis=1) < 1.0)
+            if m.any(): d.append(np.abs(p2[m, 2] - p2[i, 2]).min())
+        med = np.median(d) if d else float("nan")
+        out.append(f"{name.split('_')[0]}: z {xyz[:,2].min():.1f}..{xyz[:,2].max():.1f} n={len(d)} med|dz|={med:.2f}")
+    pairs = set()
+    for line in open(b + "graph.txt", encoding="utf-8", errors="ignore"):
+        m = re.search(r"vgicp\w*\D+(\d+)\D+(\d+)", line)
+        if m:
+            i, j = int(m.group(1)), int(m.group(2)); pairs.add((min(i, j), max(i, j)))
+    out.append(f"因子 {len(pairs)} 対 / |i-j|>100 は {sum(1 for i, j in pairs if j - i > 100)} 対")
+    print(" | ".join(out))
+```
+
+**報告してほしい値** (run ごと):
+
+| 指標 | 取り方 |
+|---|---|
+| 長距離閉合の対数 (\|i−j\| > 100) | 上のスクリプト |
+| 再訪 \|Δz\| 中央値 (traj / odom 段) | 上のスクリプト |
+| z 範囲 (traj / odom 段) | 上のスクリプト |
+| ピーク RAM | `mem_*.log` の最大値 |
+| 所要時間 | 実行の開始〜終了 |
+| 完走したか / 落ちた位置 | ログ末尾 |
+
+### 判定基準 (事前に決めておく)
+
+- **E1 で長距離閉合が 100 対以上立ち、traj 再訪 \|Δz\| 中央値が 1 m 未満**になれば → **「閉合判定のボクセル解像度が原因」が確定**。GPU は不要で、CPU 既定に 2 行足すだけで同じ効果が得られることになる (**この場合 CPU 既定の設定を見直す価値が大きい**)。
+- **E1 で閉合が 0〜数十対にとどまる**なら → ボクセル解像度だけでは足りない。GPU 枝が voxelmap に全点を入れる実装差 (`global_mapping.cpp:244-270`) か、サブマップ密度が効いている。E2 の結果と突き合わせる。
+- **E3 が既存 `default` と一致しない**なら → 環境差があるので E1/E2 の解釈を保留する。
+
+### 成果物の戻し方
+
+```bash
+# dump を Drive へ (1 run 約 2 GB)
+rclone copy bags/glim/2026-10-03_1126_tsukuba_dump/<TAG> \
+  cit-share-bags:bags/glim/2026-10-03_1126_tsukuba_dump/<TAG> --progress
+```
+
+ログ (`~/glim_<TAG>.log`、`~/mem_<TAG>.log`) と上の指標表をあわせて報告すること。**設定変更は差分が分かる形で残す** (変更した json を dump 内の `config/` と一緒に上げれば自動で残る)。
+
+### やらないこと
+
+- **実機・CAN・モータには一切触れない**。bag 再生のみ。
+- `config.json` の既定 (CPU 構成) を恒久的に変えない。実験後は元に戻す。
+- 複数 run を同時に走らせない (RAM と I/O を食い合う)。
 
 ## 8. 併せて記録しておく別件
 
