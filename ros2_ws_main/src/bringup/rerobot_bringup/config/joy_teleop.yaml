@@ -42,3 +42,10 @@ teleop_twist_joy_node:
     enable_button: 4         # LB ボタン: これを押している間だけ走行
     enable_turbo_button: 5   # RB ボタン: 押すと turbo スケールに切替
     require_enable_button: true
+
+# claude: 2026-10-09 停止点ティーチング用マーカー (scripts/teach_marker.py)
+teach_marker:
+  ros__parameters:
+    button: 3              # Y ボタン: 押した瞬間に /teach_marker を 1 本出す (LB/RB と被らない)
+    label_prefix: teach    # ラベル = teach_00, teach_01, ... (起動ごとに 00 から)
+    still_time: 1.0        # [s] 押す前にこの時間静止していなければ WARN + "(moving)"

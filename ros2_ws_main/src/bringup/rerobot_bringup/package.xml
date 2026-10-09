@@ -51,6 +51,7 @@
        config/joy_teleop.yaml を削除すれば完全に撤去できます。 -->
   <exec_depend>joy</exec_depend>
   <exec_depend>teleop_twist_joy</exec_depend>
+  <exec_depend>visualization_msgs</exec_depend>  <!-- claude: teach_marker.py (2026-10-09) -->
 
   <export>
     <build_type>ament_cmake</build_type>

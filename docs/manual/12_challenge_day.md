@@ -29,10 +29,11 @@ ros2 topic list
 <!-- claude: 2026-10-01 NTP 停止のチェックを追加 -->
 * 記録前に **ホストで NTP を止める** (同期済みを確認 → `sudo timedatectl set-ntp false`、走行後に `true` で戻す)。走行中の時刻ジャンプ対策。手順は [第5章 記録前: NTP の自動時刻合わせを止める](05_bag_recording.md#記録前-ntp-の自動時刻合わせを止める)
 ```
-ros2 bag record -s mcap -o /workspace/bags/raw/$(TZ=Asia/Tokyo date +%F_%H%M)_<場所> /rfans_driver/rfans_points /rfans_driver/rfans_packets /urg_front/scan /rfans/scan /imu/data /imu_wit/data /imu_wit/mag /odom /tf /tf_static /diagnostics /robot_speed_cmd /rfans/scan_all /amcl_pose
+ros2 bag record -s mcap -o /workspace/bags/raw/$(TZ=Asia/Tokyo date +%F_%H%M)_<場所> /rfans_driver/rfans_points /rfans_driver/rfans_packets /urg_front/scan /rfans/scan /imu/data /imu_wit/data /imu_wit/mag /odom /tf /tf_static /diagnostics /robot_speed_cmd /rfans/scan_all /amcl_pose /teach_marker
 ```
 <!-- claude: 2026-10-01 全点版の AMCL 入力 /scan_all と推定結果 /amcl_pose を追加 (第14章 2.5) -->
 <!-- claude: 2026-10-08 /scan → /urg_front/scan + /rfans/scan、/scan_all → /rfans/scan_all に改名 (裸の /scan 廃止) -->
+<!-- claude: 2026-10-09 停止点ティーチングの印 /teach_marker を追加 (joy の Y ボタン、第5章の topic 表) -->
 
 ## 3. 3D SLAM
 ### **GLIM**

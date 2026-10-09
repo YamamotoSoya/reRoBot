@@ -44,4 +44,14 @@ def generate_launch_description():
         output='screen',
     )
 
-    return LaunchDescription([joy_node, teleop_node])
+    # claude: 2026-10-09 停止点ティーチング用マーカー。Y ボタンで /teach_marker (時刻 + ラベル) を出す。
+    #   地図作成 bag に /teach_marker を記録しておき、座標は後で GLIM 軌跡から引く (scripts/teach_marker.py)
+    teach_node = Node(
+        package='rerobot_bringup',
+        executable='teach_marker.py',
+        name='teach_marker',
+        parameters=[params_file],
+        output='screen',
+    )
+
+    return LaunchDescription([joy_node, teleop_node, teach_node])

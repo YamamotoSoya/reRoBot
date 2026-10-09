@@ -45,6 +45,7 @@ sudo timedatectl set-ntp true
 | **`/tf`** | `tf2_msgs/TFMessage` | 動く座標変換。odom → base_link (EKF あり時は EKF が出す)。SLAM 中は map → odom も流れる |
 | **`/tf_static`** | `tf2_msgs/TFMessage` | 固定の座標変換 (base_link → laser / rfans / imu_link)。URDF からの取付位置なので、**これが無いと再生時にセンサ位置が復元できない** |
 | **`/diagnostics`** | `diagnostic_msgs/DiagnosticArray` | `epos4_controller` の watchdog 出力。EPOS4 のフォルトコード・CAN リンク断・指令途絶を残す。走行中に止まった原因を後から追う用 |
+| **`/teach_marker`** | `visualization_msgs/Marker` | 停止点ティーチングの印。joy の **Y ボタン**を押した瞬間に 1 本出る (`joy_teleop.launch.py` に同梱の `teach_marker.py`)。中身は押した時刻 (header.stamp) とラベル (`teach_00` …) だけで、座標は地図を作った後に GLIM の軌跡から引く。停止線の前で止めて押し、2 s 以上静止してから走り出す。押さなければ 1 本も出ないので容量は増えない <!-- claude: 2026-10-09 追加 --> |
 
 用途によって足す topic:
 
@@ -66,7 +67,7 @@ sudo timedatectl set-ntp true
 ### 参考：すべての対象topicを記録
 * 本番bag　必要最低限
 ```
-ros2 bag record -s mcap -o /workspace/bags/raw/$(TZ=Asia/Tokyo date +%F_%H%M)_<場所> /rfans_driver/rfans_points /urg_front/scan /rfans/scan /imu/data /odom /tf /tf_static /diagnostics /robot_speed_cmd
+ros2 bag record -s mcap -o /workspace/bags/raw/$(TZ=Asia/Tokyo date +%F_%H%M)_<場所> /rfans_driver/rfans_points /urg_front/scan /rfans/scan /imu/data /odom /tf /tf_static /diagnostics /robot_speed_cmd /teach_marker
 ```
 容量目安 — **約 8.9 MB/s ≈ 32 GB/h** (既存 bag の実測平均。ほぼ全部が `/rfans_driver/rfans_points`):
 
@@ -80,7 +81,7 @@ ros2 bag record -s mcap -o /workspace/bags/raw/$(TZ=Asia/Tokyo date +%F_%H%M)_<�
 
 * 実験用bag 前必要topic記録 (witmotion, 生R-Fansデータ)
 ```
-ros2 bag record -s mcap -o /workspace/bags/raw/$(TZ=Asia/Tokyo date +%F_%H%M)_<場所> /rfans_driver/rfans_points /rfans_driver/rfans_packets /urg_front/scan /rfans/scan /imu/data /imu_wit/data /imu_wit/mag /odom /tf /tf_static /diagnostics /robot_speed_cmd
+ros2 bag record -s mcap -o /workspace/bags/raw/$(TZ=Asia/Tokyo date +%F_%H%M)_<場所> /rfans_driver/rfans_points /rfans_driver/rfans_packets /urg_front/scan /rfans/scan /imu/data /imu_wit/data /imu_wit/mag /odom /tf /tf_static /diagnostics /robot_speed_cmd /teach_marker
 ```
 容量目安 — **約 10 MB/s ≈ 36 GB/h** (本番 + 生パケット約 1 MB/s + witmotion 約 0.1 MB/s):
 
@@ -97,7 +98,7 @@ ros2 bag record -s mcap -o /workspace/bags/raw/$(TZ=Asia/Tokyo date +%F_%H%M)_<�
 
 * 自律移動 (Nav2) 用bag　本番 + Nav2 の判断過程
 ```
-ros2 bag record -s mcap -o /workspace/bags/raw/$(TZ=Asia/Tokyo date +%F_%H%M)_<場所>_auto /rfans_driver/rfans_points /urg_front/scan /rfans/scan /imu/data /odom /odometry/filtered /tf /tf_static /diagnostics /robot_speed_cmd /behavior_tree_log /rosout /plan /amcl_pose /initialpose /goal_pose /map /keepout_filter_mask /local_costmap/costmap /local_costmap/published_footprint
+ros2 bag record -s mcap -o /workspace/bags/raw/$(TZ=Asia/Tokyo date +%F_%H%M)_<場所>_auto /rfans_driver/rfans_points /urg_front/scan /rfans/scan /imu/data /odom /odometry/filtered /tf /tf_static /diagnostics /robot_speed_cmd /behavior_tree_log /rosout /plan /amcl_pose /initialpose /goal_pose /map /keepout_filter_mask /local_costmap/costmap /local_costmap/published_footprint /teach_marker
 ```
 容量目安 — **本番 bag とほぼ同じ (約 8.9 MB/s ≈ 32 GB/h)**。追加した Nav2 系 topic は合計でも数十 KB/s 程度で、容量のほぼ全部は `/rfans_driver/rfans_points` のまま。R-Fans の生データも残したいときは `/rfans_driver/rfans_packets` を足す (+約 1 MB/s)。
 
