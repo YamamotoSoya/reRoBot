@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # claude: ティーチング用マーカー (2026-10-09 追加)。
 #   地図作成用の bag を撮りながら、停止線など「止まりたい場所」に印を付ける。
-#   joy のボタン (既定 Y) を押した瞬間に /teach_marker (visualization_msgs/Marker) を 1 本出す。
+#   joy のボタン (既定 button 3 = 手元パッドの印字「2-Y」) を押した瞬間に /teach_marker (visualization_msgs/Marker) を 1 本出す。
 #
 #   bag に残すのは「押した時刻 (header.stamp) + ラベル (text)」だけ。座標は地図を作った後に
 #   GLIM dump の軌跡 (traj_lidar.txt) からその時刻の姿勢を引いて決める (抽出ツールは別途)。
@@ -15,6 +15,7 @@
 #   起動: joy_teleop.launch.py に同梱 (単体なら ros2 run rerobot_bringup teach_marker.py)。
 #   記録: ros2 bag record の topic に /teach_marker を足す (docs/manual 第5章)。
 import rclpy
+from rclpy.executors import ExternalShutdownException
 from nav_msgs.msg import Odometry
 from rclpy.node import Node
 from sensor_msgs.msg import Joy
@@ -24,7 +25,9 @@ from visualization_msgs.msg import Marker
 class TeachMarker(Node):
     def __init__(self):
         super().__init__("teach_marker")
-        self.button = self.declare_parameter("button", 3).value  # Xbox Y (A=0 B=1 X=2 Y=3 LB=4 RB=5)
+        # claude: 2026-10-09 手元のパッドで button 3 = 印字「2-Y」のボタンを実機確認
+        self.button = self.declare_parameter("button", 3).value
+        self.button_name = self.declare_parameter("button_name", "2-Y").value  # ログ表示用。button を変えたら合わせる
         self.prefix = self.declare_parameter("label_prefix", "teach").value
         self.still_time = self.declare_parameter("still_time", 1.0).value  # [s] 押す前に必要な静止時間
         self.still_lin = self.declare_parameter("still_lin", 0.02).value  # [m/s] これ未満を静止とみなす
@@ -39,7 +42,7 @@ class TeachMarker(Node):
         self.odom = None  # 最新の Odometry
         self.odom_time = None  # その受信時刻
         self.last_moving = None  # 最後に「動いている」と判定した時刻
-        self.get_logger().info(f"ready: button {self.button} で /teach_marker を出す")
+        self.get_logger().info(f"ready: {self.button_name} ボタン (button {self.button}) で /teach_marker を出す")
 
     def on_odom(self, msg):
         now = self.get_clock().now()
@@ -79,7 +82,7 @@ class TeachMarker(Node):
         m.color.r, m.color.g, m.color.b, m.color.a = 1.0, 0.8, 0.0, 1.0
         m.text = label + flags
         self.pub.publish(m)
-        self.get_logger().info(f"marked {m.text}  stamp={m.header.stamp.sec}.{m.header.stamp.nanosec:09d}")
+        self.get_logger().info(f"marked {m.text} ({self.button_name} ボタン)  stamp={m.header.stamp.sec}.{m.header.stamp.nanosec:09d}")
         self.count += 1
 
 
@@ -88,7 +91,7 @@ def main():
     node = TeachMarker()
     try:
         rclpy.spin(node)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, ExternalShutdownException):  # claude: SIGTERM 停止時の traceback を出さない
         pass
     finally:
         node.destroy_node()

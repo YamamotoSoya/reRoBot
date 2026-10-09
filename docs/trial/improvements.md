@@ -116,6 +116,7 @@ ros2 launch rerobot_bringup rfans_scan.launch.py allpoints:=true
 - [ ] Parsec導入
 - [ ] ロボットの側面にメジャーを取り付け、カメラで記録し、waypoint微調整
 - [ ] bag記録時に停止位置を記録(ティーチング)
+- [ ] 一時停止後に自律移動再開できるように
 
 ### メモ
 

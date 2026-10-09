@@ -46,6 +46,7 @@ teleop_twist_joy_node:
 # claude: 2026-10-09 停止点ティーチング用マーカー (scripts/teach_marker.py)
 teach_marker:
   ros__parameters:
-    button: 3              # Y ボタン: 押した瞬間に /teach_marker を 1 本出す (LB/RB と被らない)
+    button: 3              # 印字「2-Y」のボタン (手元のパッドで 2026-10-09 実機確認): 押した瞬間に /teach_marker を 1 本出す
+    button_name: "2-Y"     # ログ表示用 (パッドの印字)。button を変えたら合わせる
     label_prefix: teach    # ラベル = teach_00, teach_01, ... (起動ごとに 00 から)
     still_time: 1.0        # [s] 押す前にこの時間静止していなければ WARN + "(moving)"

@@ -44,7 +44,7 @@ def generate_launch_description():
         output='screen',
     )
 
-    # claude: 2026-10-09 停止点ティーチング用マーカー。Y ボタンで /teach_marker (時刻 + ラベル) を出す。
+    # claude: 2026-10-09 停止点ティーチング用マーカー。「2-Y」ボタン (button 3) で /teach_marker (時刻 + ラベル) を出す。
     #   地図作成 bag に /teach_marker を記録しておき、座標は後で GLIM 軌跡から引く (scripts/teach_marker.py)
     teach_node = Node(
         package='rerobot_bringup',

@@ -33,7 +33,7 @@ ros2 bag record -s mcap -o /workspace/bags/raw/$(TZ=Asia/Tokyo date +%F_%H%M)_<�
 ```
 <!-- claude: 2026-10-01 全点版の AMCL 入力 /scan_all と推定結果 /amcl_pose を追加 (第14章 2.5) -->
 <!-- claude: 2026-10-08 /scan → /urg_front/scan + /rfans/scan、/scan_all → /rfans/scan_all に改名 (裸の /scan 廃止) -->
-<!-- claude: 2026-10-09 停止点ティーチングの印 /teach_marker を追加 (joy の Y ボタン、第5章の topic 表) -->
+<!-- claude: 2026-10-09 停止点ティーチングの印 /teach_marker を追加 (joy の「2-Y」ボタン、第5章の topic 表) -->
 
 ## 3. 3D SLAM
 ### **GLIM**

@@ -208,7 +208,7 @@ def generate_launch_description():
     # claude: 2026-10-08 R-Fans 点群 → /rfans/scan (+ /rfans/scan_all)。scoped GroupAction で包み、
     #   渡した引数 (min_height 等) が後続 include に漏れないようにする。
     rfans_scan_include = GroupAction([IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(os.path.join(pkg_share, "launch", "rfans_scan.launch.py")),
+        PythonLaunchDescriptionSource(os.path.join(pkg_share, "launch", "tools", "rfans_scan.launch.py")),  # claude: 2026-10-09 tools/ へ移動に追従
         launch_arguments={
             "min_height": LaunchConfiguration("scan_min_height"),
             "max_height": LaunchConfiguration("scan_max_height"),
@@ -292,7 +292,7 @@ def generate_launch_description():
     # config/wt901.yaml、TF は rerobot.urdf の imu_wit_joint。/imu/data とは別名なので衝突しない。
     imu_wit_include = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            os.path.join(pkg_share, "launch", "wt901_imu.launch.py")),
+            os.path.join(pkg_share, "launch", "tools", "wt901_imu.launch.py")),  # claude: 2026-10-09 tools/ へ移動に追従
         condition=IfCondition(PythonExpression([
             "'", LaunchConfiguration("imu"), "'.lower() == 'true' and '",
             LaunchConfiguration("imu_wit"), "'.lower() == 'true'"])),

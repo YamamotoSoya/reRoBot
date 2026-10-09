@@ -45,7 +45,7 @@ sudo timedatectl set-ntp true
 | **`/tf`** | `tf2_msgs/TFMessage` | 動く座標変換。odom → base_link (EKF あり時は EKF が出す)。SLAM 中は map → odom も流れる |
 | **`/tf_static`** | `tf2_msgs/TFMessage` | 固定の座標変換 (base_link → laser / rfans / imu_link)。URDF からの取付位置なので、**これが無いと再生時にセンサ位置が復元できない** |
 | **`/diagnostics`** | `diagnostic_msgs/DiagnosticArray` | `epos4_controller` の watchdog 出力。EPOS4 のフォルトコード・CAN リンク断・指令途絶を残す。走行中に止まった原因を後から追う用 |
-| **`/teach_marker`** | `visualization_msgs/Marker` | 停止点ティーチングの印。joy の **Y ボタン**を押した瞬間に 1 本出る (`joy_teleop.launch.py` に同梱の `teach_marker.py`)。中身は押した時刻 (header.stamp) とラベル (`teach_00` …) だけで、座標は地図を作った後に GLIM の軌跡から引く。停止線の前で止めて押し、2 s 以上静止してから走り出す。押さなければ 1 本も出ないので容量は増えない <!-- claude: 2026-10-09 追加 --> |
+| **`/teach_marker`** | `visualization_msgs/Marker` | 停止点ティーチングの印。joy の **「2-Y」ボタン** (パッドの印字、button 3) を押した瞬間に 1 本出る (`joy_teleop.launch.py` に同梱の `teach_marker.py`)。中身は押した時刻 (header.stamp) とラベル (`teach_00` …) だけで、座標は地図を作った後に GLIM の軌跡から引く。停止線の前で止めて押し、2 s 以上静止してから走り出す。押さなければ 1 本も出ないので容量は増えない <!-- claude: 2026-10-09 追加 --> |
 
 用途によって足す topic:
 
