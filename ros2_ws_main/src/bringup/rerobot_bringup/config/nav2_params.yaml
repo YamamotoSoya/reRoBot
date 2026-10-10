@@ -192,8 +192,14 @@ global_costmap:
         #   地面ゴースト (坂・−1° リング) で、global は累積するので見えない壁が溜まる。遠方の静的構造は
         #   static_layer (/map) が持つので、動的障害物は近距離だけ書けば足りる。
         #   (docs/trial/improvements.md 10-03 メモ P0①)。urg 側も同じ値に揃えている。
+        # claude: 2026-10-10 min_obstacle_height -0.3 (既定 0.0)。高さ判定は global_frame (map) 座標の z で行われ、
+        #   /rfans/scan の点は base_link 基準 z = 0 ちょうど → map から見たロボットの z がわずかでも負だと消える
+        #   (AMCL 構成は map->odom の z = 0 ちょうどで偶然通っていた)。3D 自己位置推定 (nav_lidar3d) では
+        #   map_level_bridge が z を ±1 cm に打ち消すが、その残差でも消えないよう下限を下げる。入力は高さ切り出し済みの
+        #   LaserScan なので、下限を下げても地面等の余計な点は入らない (docs/features/2026-10-10_lidar_localization_3d.md §2.2)。
         urg_front:
           topic: /urg_front/scan
+          min_obstacle_height: -0.3  # 採用する最小高さ [m] (map 座標)
           max_obstacle_height: 2.0   # 採用する最大高さ [m]
           clearing: true             # レイトレースで空き領域を消去
           marking: true              # 障害物として書き込み
@@ -202,6 +208,7 @@ global_costmap:
           obstacle_max_range: 5.0
         rfans:
           topic: /rfans/scan
+          min_obstacle_height: -0.3  # 採用する最小高さ [m] (map 座標、urg_front の注記参照)
           max_obstacle_height: 2.0   # 採用する最大高さ [m]
           clearing: true             # レイトレースで空き領域を消去
           marking: true              # 障害物として書き込み

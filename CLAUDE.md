@@ -39,7 +39,7 @@ docker compose up -d main
 - **並列度は控えめに** — このマシンは重いビルドで落ちる。make は `BUILD_JOBS` (既定 2)、colcon は 1 パッケージずつ、イメージビルドは 1 サービスずつ。`docker compose build` を引数なしで直接叩かない (3 イメージ並列になる)。
 
 git submodule は**各 workspace の src/ 直下に直接配置** (旧 symlink 方式は 2026-07-26 に撤廃):
-`ros2_ws_main/src/drivers/{epos4compact50-5can, surestar_rfans_ros2, StarROS2, realsense-ros, witmotion_ros}`, `ros2_ws_main/src/localization/emcl2_ros2` (2026-10-08)、`ros2_ws_liosam/src/LIO-SAM`。例外として ROS ws 外のツールは `tools/` 直下 (`tools/pointcloud_to_2dmap` — GLIM 3D 地図→2D 占有格子変換、glim コンテナでビルド。手順は `tools/README.md`、2026-08-17)。
+`ros2_ws_main/src/drivers/{epos4compact50-5can, surestar_rfans_ros2, StarROS2, realsense-ros, witmotion_ros}`, `ros2_ws_main/src/localization/emcl2_ros2` (2026-10-08)、`ros2_ws_main/src/localization/{lidar_localization_ros2 (v1.3.0 固定), ndt_omp_ros2 (humble)}` (2026-10-10、3D 自己位置推定 — 設計 `docs/features/2026-10-10_lidar_localization_3d.md`、TF は map→map_3d (z 打ち消し, `map_level_bridge.py`)→odom の 2 段)、`ros2_ws_liosam/src/LIO-SAM`。例外として ROS ws 外のツールは `tools/` 直下 (`tools/pointcloud_to_2dmap` — GLIM 3D 地図→2D 占有格子変換、glim コンテナでビルド。手順は `tools/README.md`、2026-08-17)。
 `ros2_ws_main/src/` は `app/` (自作 C++) / `bringup/` (launch 資産) / `drivers/` (センサ・モータの submodule) / `localization/` (自己位置推定の submodule、2026-10-08) の 4 グループ構成 (colcon は src を再帰探索するので階層はビルドに無影響)。⚠️ emcl2 は上流の `<cstdint>` 漏れで GCC 13 だと落ちるため、`ros2_ws_main/src/colcon.meta` で emcl2 だけ `-include cstdint` を強制している (submodule は無改変。`scripts/build.sh main` が `--metas` で読む — 素の colcon build なら `--metas ./src/colcon.meta` を付ける)。
 旧モノリシック構成は `archive/monolithic` ブランチ + タグ `v1-monolithic` に恒久保存されている (参照専用 — 触るなら `git worktree` で別ツリーへ)。
 

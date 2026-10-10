@@ -231,12 +231,15 @@ def main():
                          "map.yaml)・keep_out/ (未観測 = 進入禁止) を書く (--mark_unknown を自動で有効化)")
     ap.add_argument("--with_keepout", dest="with_keepout", action="store_true", default=True,
                     help="一式出力 (既定。互換のため残しているだけ)")
+    # claude: 2026-10-10 dump 版と traj 版の原本を同じ地図一式に並べる (raw_dump/ + raw_traj/) ための名前指定
+    ap.add_argument("--raw_name", default="raw",
+                    help="一式出力のときの原本ディレクトリ名 (既定 raw。traj 版と並べるときは raw_dump)")
     ap.add_argument("--min_unknown_area", type=float, default=1.0, help="--with_keepout: この面積 [m^2] 未満の未観測塊は keepout にしない")
     ap.add_argument("--path_clear_radius", type=float, default=0.4, help="--with_keepout: 軌跡からこの半径 [m] を keepout・壁から外す")
     args = ap.parse_args()
     if args.with_keepout:
         args.mark_unknown = True
-    out_dir = os.path.join(args.dest_dir, "raw") if args.with_keepout else args.dest_dir
+    out_dir = os.path.join(args.dest_dir, args.raw_name) if args.with_keepout else args.dest_dir
     owner_ref = existing_parent(args.dest_dir)
 
     ids = list_submaps(args.dump_dir)

@@ -36,6 +36,9 @@ build/ はホスト側に永続化されるが、`.gitignore` 対象 (バイナ�
 > `raw/` (未観測マーク付き原本)・`nav2/` (走路掃除済み本体 + `map.yaml`)・`keep_out/` を書く (内部で map_to_keepout を呼ぶ。
 > `--min_unknown_area` / `--path_clear_radius` もそのまま渡せる)。root (コンテナ) で実行しても出力の所有者は親ディレクトリに合わせる。
 > 地図だけを dest_dir に書く従来動作は `--map_only` (下の例はすべて従来動作のまま `--map_only` 付き)。
+> <!-- claude: 2026-10-10 追加 --> glim_dump_to_2dmap の `--raw_name raw_dump` で原本ディレクトリ名を変えられる (既定 `raw`)。
+> dump 版 (nav2/・keep_out/ の元) と traj 版 (`glim_traj_to_2dmap ... <地図>/raw_traj --map_only`) の原本を 1 つの地図一式に並べる用途
+> (2D 自己位置推定の地図候補を比べる)。2D (帯ごと) + 3D + 軌跡をまとめて作るコマンドとパラメータの説明は運用手引き `docs/manual/09_map2d_compression.md` §9.6〜9.7。
 
 ## glim_dump_to_2dmap (自作, 2026-08-20)
 

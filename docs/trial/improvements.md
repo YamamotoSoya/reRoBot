@@ -117,6 +117,7 @@ ros2 launch rerobot_bringup rfans_scan.launch.py allpoints:=true
 - [ ] ロボットの側面にメジャーを取り付け、カメラで記録し、waypoint微調整
 - [ ] bag記録時に停止位置を記録(ティーチング)
 - [ ] 一時停止後に自律移動再開できるように
+- [ ] R-Fansの利用可能な上限180mも自己位置推定とmap生成に含める
 
 ### メモ
 

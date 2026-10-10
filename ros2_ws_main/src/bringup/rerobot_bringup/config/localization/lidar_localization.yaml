@@ -1,0 +1,40 @@
+# claude: 2026-10-10 新設。lidar_localization_ros2 (rsasaki0109, submodule v1.3.0: ros2_ws_main/src/localization/)
+# のパラメータ。読み手: launch/parts/localization/loc_lidar3d.launch.py。
+# 上流の推奨プリセット param/nav2_ndt_urban.yaml を先に読み、このファイルを後から重ねる (= ここに書いた値が勝つ)。
+# ここに書くのは本機の差分だけ (未チューニング)。設計は docs/features/2026-10-10_lidar_localization_3d.md。
+#
+# 入出力 (全 localization 方式共通の約束): 出力 = TF map->odom、入力 = /initialpose + TF odom->base_link。
+#   ただし本方式は 2 段: 本体が TF map_3d->odom を出し、map_level_bridge.py が TF map->map_3d (z の打ち消し) を出す。
+#   lidar_localization 固有の出力: /pcl_pose (map_3d 座標), /path, /alignment_status, /reinitialization_requested, /initial_map
+lidar_localization:
+  ros__parameters:
+    # ---- 座標系 ----
+    global_frame_id: map_3d        # 3D 地図の座標系。Nav2 の map とは分け、間を map_level_bridge が繋ぐ
+    odom_frame_id: odom
+    base_frame_id: base_link       # LiDAR (rfans) / IMU (imu_link) への TF はここから引く (URDF 由来)
+    enable_map_odom_tf: true       # map_3d->odom を出す。odom->base_link は EKF が出す
+    level_map_to_odom: true        # map_3d->odom の roll / pitch を 0 にする (z は残る → bridge が消す)
+
+    # ---- 地図 ---- (map_path は launch から渡す)
+    use_pcd_map: true
+
+    # ---- 照合 ----
+    ndt_resolution: 2.0            # プリセット 1.0。16 ラインは点が疎なので粗め (つくば 2456 Abudori は 5.0、5.0 とも比べる)
+    scan_period: 0.1               # R-Fans 10 Hz
+    scan_min_range: 1.0            # 車体自身の点を除く
+    point_timestamp_unit: seconds  # R-Fans の点ごとの "time" は float32 の相対秒 (auto でも判定されるが明示する)
+
+    # ---- 予測 (照合の初期値 = seed) ---- 照合が痩せる区間を EKF (車輪 + IMU) で持ちこたえる
+    # seed の優先順 (include/lidar_localization/registration_seed_policy.hpp): odom_tf → imu → gtsam → twist_ekf
+    #   → twist_prediction → previous_delta (プリセット true = 等速外挿) → current_pose。
+    # use_odom (twist 積分) はこの順に入らず、previous_delta に負けて実質使われない (critic 査読 2026-10-10) ので、
+    # 最優先の odom_tf を使う: seed = 最後に照合が通った map_3d->odom × いまの EKF odom->base_link。
+    # 照合が 1 度も通っていない間 (起動直後) は previous_delta / 初期位置にフォールバックする。
+    use_odom_tf_prediction: true
+    use_odom: false
+    use_twist_prediction: false    # プリセットは true (/twist 入力)。seed の入口を odom_tf 1 本に絞る
+
+    # ---- IMU ---- seed の 2 番手 (odom_tf が使えるときは odom_tf が勝つ)。最初は OFF。動作確認後に ON / OFF で A/B する (2456 Abudori は安価 IMU の横移動バイアスで無効化)
+    use_imu_preintegration: false
+    # ON にするとき必須: BNO086 は上下逆 + yaw −93° 取付。false (既定) だと IMU 値をセンサ座標のまま使ってしまう
+    imu_preintegration_use_base_frame_transform: true

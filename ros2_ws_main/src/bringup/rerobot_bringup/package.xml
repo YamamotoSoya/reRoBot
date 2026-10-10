@@ -38,6 +38,10 @@
   <exec_depend>nav2_amcl</exec_depend>
   <!-- claude: 2026-10-08 自己位置推定の方式別部品 (parts/localization/loc_emcl2) 用。submodule src/localization/emcl2_ros2 -->
   <exec_depend>emcl2</exec_depend>
+  <!-- claude: 2026-10-10 3D 自己位置推定 (parts/localization/loc_lidar3d) 用。submodule src/localization/lidar_localization_ros2 (v1.3.0)。
+       map_level_bridge.py は tf2_ros (Python) を使う -->
+  <exec_depend>lidar_localization_ros2</exec_depend>
+  <exec_depend>tf2_ros</exec_depend>
   <exec_depend>nav2_controller</exec_depend>
   <exec_depend>nav2_planner</exec_depend>
   <exec_depend>nav2_behaviors</exec_depend>

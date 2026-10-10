@@ -25,3 +25,10 @@
 [submodule "ros2_ws_main/src/localization/emcl2_ros2"]
 	path = ros2_ws_main/src/localization/emcl2_ros2
 	url = https://github.com/ryuichiueda/emcl2_ros2.git
+[submodule "ros2_ws_main/src/localization/lidar_localization_ros2"]
+	path = ros2_ws_main/src/localization/lidar_localization_ros2
+	url = https://github.com/rsasaki0109/lidar_localization_ros2.git
+[submodule "ros2_ws_main/src/localization/ndt_omp_ros2"]
+	path = ros2_ws_main/src/localization/ndt_omp_ros2
+	url = https://github.com/rsasaki0109/ndt_omp_ros2.git
+	branch = humble
