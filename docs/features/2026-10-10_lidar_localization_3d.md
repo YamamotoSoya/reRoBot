@@ -30,7 +30,7 @@ AMCL / emcl2 は、3D 点群を高さ帯 1 本の 2D スキャン (/rfans/scan) 
 - 橋ノード `scripts/map_level_bridge.py`: TF `map→map_3d` で z を打ち消す + `/initialpose` (map) を `/initialpose_3d` (map_3d、z は GLIM 軌跡から) に中継する
 - nav 構成 `nav/nav_lidar3d.launch.py` (仮置きを置換): `map_name` 1 つで 2D 地図と 3D 地図を対にして起動する
 - 本機用の差分パラメータ `config/localization/lidar_localization.yaml` (上流プリセット `nav2_ndt_urban.yaml` の上に重ねる)
-- global costmap の `min_obstacle_height: -0.3` (§2.2。AMCL 構成にも効く潜在不具合の修正)
+- global costmap の `min_obstacle_height: -0.3` (§2.2。3D 構成で実際に点が消えうる設定の修正。AMCL 構成では実害なし)
 - main イメージの依存追加 (`libpcl-dev`, `ros-jazzy-pcl-conversions`)
 
 スコープ外 (意図的に未対応):
@@ -181,10 +181,10 @@ map_level_bridge の仕事
 
 - 判断: §2.1.3 のとおり、`/rfans/scan` の点は base_link 基準で z = 0 ちょうどにあり、既定の下限 0.0 と境界で接していた
   - 3D 構成では、橋の残差 (±1 cm) で負に振れたときに点が消える
-  - AMCL / emcl2 構成でも、浮動小数の誤差次第で消えうる潜在不具合だった
+  - AMCL / emcl2 構成では map→odom の z が常に 0 ちょうどで、判定 (z < 下限 で除外) を z = 0.0 が境界で通っている。実害は出ていないが、値を 1 つ変えれば消える危うい設定だった (10-10 の返信で「潜在不具合」と書いたのは言い過ぎ)
 - 下限 −0.3 m の根拠: 入力は `rfans_scan.launch.py` (地上 0.3〜1.5 m 帯) と urg の 2D スキャンで、高さはすでに切り出してある。下限を下げても地面などの余計な点は入らない。−0.3 は「残差 + 多少の z 誤差」を吸収する余裕で、精密な値ではない
 - 影響範囲: `nav2_params.yaml` を共有する nav 構成すべて (nav_amcl / nav_amcl_scanall / nav_emcl2 / nav_lidar3d) の global costmap。local costmap (odom フレーム、z = 0 ちょうど) は変更していない
-- 却下した代替案: nav_lidar3d 専用の nav2_params を作る — ファイルの重複が増える割に、他構成でも直すべき不具合だったので共通側で直した
+- 却下した代替案: nav_lidar3d 専用の nav2_params を作る — ファイルの重複が増える割に、他構成でも境界に乗せておく理由が無いので共通側で直した
 
 ### 2.3 照合の初期値 (seed) は EKF の TF から取る (`use_odom_tf_prediction: true`)
 

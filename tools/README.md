@@ -215,7 +215,7 @@ NavigateThroughPoses 全体が止まる)。keepout は `<map_dir>/keep_out/keep_
 python3 /workspace/tools/waypoint_editor/waypoint_editor.py \
     /workspace/maps/2d/glim/<map>/nav2/map.yaml /workspace/maps/2d/glim/<map>/waypoints/course.yaml \
     [--traj <dump>/traj_lidar.txt]      # 走行軌跡を重ねる
-# 操作: 左クリック=追加 / ドラッグ=移動 / Shift+左=区間に挿入 / 右クリック=削除 / Ctrl+ドラッグ=向き指定 / a=向き自動 / p=停止点 ON/OFF / u=戻す / s=保存 / q=終了
+# 操作: 左クリック=追加 / ドラッグ=移動 / Shift+左=区間に挿入 / 右クリック=削除 / Ctrl+ドラッグ=向き指定 / a=向き自動 / p=停止点 ON/OFF / n=番号振り (クリック順に並べ替え) / u=戻す / s=保存 / q=終了
 # GUI なし: --check (判定表、要確認があれば exit 1) / --render out.png
 ```
 
@@ -235,3 +235,31 @@ docker exec -it rerobot_env bash -c "source /workspace/install/setup.bash && \
 # キー: g=開始/再開 (--resume-key で変更) / q=終了 (待機中) / p=一時停止 (走行中、残りの点から再開) / Ctrl-C=ゴールをキャンセルして終了
 # 区間失敗 (ABORTED) も待機に入り、g で残りの点から再送。--start N で waypointN から始める
 ```
+
+## teach_from_traj (自作, 2026-10-11)
+<!-- claude: 2026-10-11 追加 -->
+bag 撮影中に joy の「2-Y」ボタンで付けた停止点マーカー (`/teach_marker`) を、GLIM dump の軌跡
+(`traj_lidar.txt`) からその時刻の base_link 姿勢に変換し、停止点 waypoint YAML (`stop: true` + `taught: true`) に書く。
+地図と点が同じ dump から出るので座標系が一致し、地図を作り直しても新しい dump で再実行すれば追従する。
+**dump は地図を作ったのと同じもの** (地図の `map_params.yaml` の `dump_dir`) を指定する。別の bag / 別 GLIM run のマーカーは座標系が違うので混ぜない。
+
+```bash
+# rerobot_env 内 (rosbag2_py を使う)
+python3 /workspace/tools/teach_from_traj/teach_from_traj.py \
+    /workspace/bags/raw/<bag> /workspace/bags/glim/<bag>_dump/<タグ> \
+    /workspace/maps/2d/glim/<map>/waypoints/course.yaml \
+    --map_yaml /workspace/maps/2d/glim/<map>/nav2/map.yaml
+# 押した前後 (-0.5〜+1.5 s) の軌跡を平均。広がり > 0.05 m / (moving) / (no-odom) は ▲。out_yaml が既にあれば止まる (--force で上書き)
+```
+
+続けて `waypoint_editor` で同じ course.yaml を開き、停止点の間に **Shift + クリック**で通過点を挿入する。
+ティーチング点 (金の星) は移動・向き変更・停止解除を受け付けない (右クリック削除は可)。`taught` / `label` / `teach_meta` は保存後も残る。
+
+## loc_eval (自作, 2026-10-11)
+
+<!-- claude: 2026-10-11 追加 -->
+自己位置推定 (2D AMCL / emcl2 / 3D lidar_localization) を **同じ bag・同じ物差しで** 比べる再生評価ツール。
+出力 TF map→base_link を GLIM 軌跡 (地図の座標系の基準) と位置合わせなしで突き合わせ、xy/yaw 誤差の
+中央値・p95・見失い回数・自己申告の当たり率を表にし、誤差の時系列・CDF・地図上の色分け軌跡を図にする。
+別 bag で評価するときは 2D 地図同士の ICP (`register_maps2d.py`) で座標を合わせてから。
+詳細と手順は `tools/loc_eval/README.md`。

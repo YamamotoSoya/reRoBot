@@ -17,6 +17,12 @@
 # claude: 2026-10-04 停止点 (p キー) を追加。`stop: true` を付けて保存し、rerobot_bringup の
 #   waypoint_runner.py がその点で止まって再開キー待ちになる (panel は stop を読まない = 素通り)。
 #   停止点は区間の終点として送られるので、その点の向きも効く (旋回してから止まる)。
+# claude: 2026-10-11 ティーチング点 (`taught: true`、tools/teach_from_traj が bag マーカーから生成) に対応。
+#   taught 点は実機の停止位置そのものなので、移動・向き変更・停止解除を受け付けない (削除は可)。
+#   `taught` / `label` / `teach_meta` は保存しても保持する。間の通過点は Shift + クリックで挿入する。
+# claude: 2026-10-11 番号振りモード (n キー) を追加。点をクリックした順に 0, 1, 2… を振り、Enter で
+#   その順に並べ替える (振らなかった点は元の順で後ろに付く)。モード中に空きをクリックすると新しい点を置いて
+#   次の番号を振る → 「好きな所に点を置いてから順番を決める」が反転操作なしでできる。
 #
 # 点の色: 緑 = 空き / 橙 = 未観測 (地図の灰) / 赤 = 壁 or keepout 上。赤い点は
 #   ComputePathThroughPoses が失敗して NavigateThroughPoses 全体が止まる原因になるので避ける。
@@ -50,6 +56,10 @@ HELP = """\
   Ctrl + ドラッグ (点の上)  向きを手動指定 (マウスの方向を向く。紫の矢印)
   a  (点の上で)          向きを自動 (次の点の方向) に戻す
   p  (点の上で)          停止点の ON/OFF (赤い四角。waypoint_runner.py がここで止まりキー待ち)
+  ★ (金の星) = ティーチング点 (bag マーカー由来)。移動・向き・停止 ON/OFF は不可、右クリック削除のみ可
+  n  番号振りモード開始: 点をクリックした順に 0, 1, 2… (空きをクリック = 新しい点を置いて番号)
+       右クリック = その点の番号を外す / Enter (または n) = その順に確定 / Esc = 取り消し
+       番号を振らなかった点は、元の順のまま後ろに付く
   u  元に戻す    s  保存    r  順序を反転    o  通過半径の表示切替
   h  この説明    q  終了 (未保存なら警告)
   ズーム/パンはツールバー (虫眼鏡/十字)。そのモード中はクリック編集を無視する。"""
@@ -128,11 +138,15 @@ def headings(pts, manual=None):
     return yaws
 
 
+EXTRA_KEYS = ("taught", "label", "teach_meta")  # claude: 2026-10-11 保存で保持する追加キー
+
+
 def load_waypoints(path):
-    """戻り値 (pts, manual, stops)。manual[i] = 手動 yaw [rad] または None (自動)、stops[i] = 停止点か。
+    """戻り値 (pts, manual, stops, extras)。manual[i] = 手動 yaw [rad] または None (自動)、stops[i] = 停止点か、
+    extras[i] = EXTRA_KEYS の dict (ティーチング点の印)。
     panel で保存したファイル (yaw_manual / stop 無し) は全点自動・停止なしとして読む。"""
     d = yaml.safe_load(open(path)) or {}
-    pts, manual, stops = [], [], []
+    pts, manual, stops, extras = [], [], [], []
     for _, wp in (d.get("waypoints") or {}).items():  # PyYAML は記述順を保つ
         pts.append((float(wp["pose"][0]), float(wp["pose"][1])))
         if wp.get("yaw_manual"):
@@ -141,10 +155,11 @@ def load_waypoints(path):
         else:
             manual.append(None)
         stops.append(bool(wp.get("stop", False)))
-    return pts, manual, stops
+        extras.append({k: wp[k] for k in EXTRA_KEYS if k in wp})
+    return pts, manual, stops, extras
 
 
-def save_waypoints(path, pts, manual, stops, map_yaml):
+def save_waypoints(path, pts, manual, stops, map_yaml, extras=None):
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     lines = [
         f"# claude: waypoint_editor.py が生成 — map: {os.path.abspath(map_yaml)}",
@@ -161,6 +176,9 @@ def save_waypoints(path, pts, manual, stops, map_yaml):
             lines.append("    yaw_manual: true")
         if stops[i]:
             lines.append("    stop: true")
+        for k, v in (extras[i] if extras else {}).items():  # claude: ティーチング点の印を保持
+            lines.append(f"    {k}: " + yaml.safe_dump(v, default_flow_style=True, allow_unicode=True,
+                                                    width=10**9).strip().removesuffix("\n..."))
     with open(path, "w") as f:
         f.write("\n".join(lines) + "\n")
     # コンテナ (root) で書いても所有者をホスト側の親ディレクトリに合わせる (他 tools と同じ)
@@ -175,7 +193,7 @@ def keepout_hit(ko, x, y):
     return ko is not None and (ko.cell(x, y) or 0.0) > ko.occ_th
 
 
-def report(gm, ko, pts, manual, stops):
+def report(gm, ko, pts, manual, stops, extras=None):
     """各点の判定と区間長を表で出す。戻り値 = 問題のある点の数。yaw の * = 手動指定、■ = 停止点。"""
     bad = 0
     total = 0.0
@@ -190,6 +208,8 @@ def report(gm, ko, pts, manual, stops):
         bad += mark != "✔"
         ym = "*" if manual[i] is not None else " "
         sm = "  ■停止" if stops[i] else ""
+        if extras and extras[i].get("taught"):
+            sm += f" ★{extras[i].get('label', '')}"
         print(f"{i:>3} {x:>9.2f} {y:>9.2f} {math.degrees(yaw):>9.1f}{ym} {seg:>8.2f}  {mark} {st}{sm}")
     print(f"計 {len(pts)} 点, 総延長 {total:.1f} m, 要確認 {bad} 点, 停止点 {sum(stops)} 点")
     return bad
@@ -201,14 +221,17 @@ def report(gm, ko, pts, manual, stops):
 class Editor:
     PICK_PX = 10  # 点をつかむ判定半径 [画面 px]
 
-    def __init__(self, plt, gm, ko, traj, out, pts, manual, stops, radius):
+    def __init__(self, plt, gm, ko, traj, out, pts, manual, stops, radius, extras=None):
         self.plt, self.gm, self.ko, self.out, self.radius = plt, gm, ko, out, radius
         self.pts = list(pts)
         self.manual = list(manual)  # pts と同じ長さ。手動 yaw [rad] or None (全編集で同期させる)
         self.stops = list(stops)  # pts と同じ長さ。停止点なら True (manual と同様に全編集で同期)
+        # claude: pts と同じ長さ。EXTRA_KEYS の dict (ティーチング点の印)。manual と同様に全編集で同期
+        self.extras = [dict(e) for e in extras] if extras is not None else [{} for _ in self.pts]
         self.undo = []
         self.drag = None
         self.rot = None  # Ctrl + ドラッグで向きを決めている点の index
+        self.order = None  # claude: 番号振りモード中は「振った順の点 index」のリスト、通常時は None
         self.dirty = False
         self.show_radius = True
         self.artists = []
@@ -270,14 +293,28 @@ class Editor:
                                           zorder=5))
             self.artists.append(ax.scatter(xs, ys, s=36, zorder=3, edgecolors="k",
                                            c=[self.color(x, y) for x, y in self.pts]))
+            tp = [p for p, e in zip(self.pts, self.extras) if e.get("taught")]
+            if tp:  # claude: ティーチング点 = 金の星 (動かせない)
+                self.artists.append(ax.scatter(*zip(*tp), s=260, marker="*", zorder=6,
+                                               c="gold", edgecolors="k", linewidths=0.8))
             sp = [p for p, st in zip(self.pts, self.stops) if st]
             if sp:  # 停止点 = 赤い四角の枠
                 self.artists.append(ax.scatter(*zip(*sp), s=180, marker="s", zorder=4,
                                                facecolors="none", edgecolors="red", linewidths=2))
             for i, (x, y) in enumerate(self.pts):
-                self.artists.append(ax.annotate(str(i), (x, y), xytext=(5, 5),
+                lab = str(i) + (f" {self.extras[i].get('label', '')}" if self.extras[i].get("taught") else "")
+                if self.order is not None:  # claude: 番号振りモード中は振った番号を大きく赤で、未指定は灰で
+                    if i in self.order:
+                        self.artists.append(ax.annotate(f"→{self.order.index(i)}", (x, y), xytext=(6, -14),
+                                                        textcoords="offset points", fontsize=13,
+                                                        fontweight="bold", color="red", zorder=7,
+                                                        path_effects=OUTLINE))
+                    lab_col = "gray"
+                else:
+                    lab_col = "k"
+                self.artists.append(ax.annotate(lab, (x, y), xytext=(5, 5),
                                                 textcoords="offset points", fontsize=8,
-                                                color="k", zorder=4, path_effects=OUTLINE))
+                                                color=lab_col, zorder=4, path_effects=OUTLINE))
                 if self.show_radius:
                     circ = self.plt.Circle((x, y), self.radius, fill=False, color="tab:blue",
                                            lw=0.6, alpha=0.5)
@@ -286,6 +323,12 @@ class Editor:
         total = sum(math.dist(a, b) for a, b in zip(self.pts, self.pts[1:]))
         bad = sum(self.color(x, y) != "limegreen" for x, y in self.pts)
         nman = sum(m is not None for m in self.manual)
+        if self.order is not None:
+            ax.set_title(f"【番号振り】{len(self.order)} / {len(self.pts)} 点に番号済み — "
+                         "クリック = 次の番号 / 右クリック = 外す / Enter = 確定 / Esc = 取消",
+                         color="red")
+            self.fig.canvas.draw_idle()
+            return
         ax.set_title(f"{'* ' if self.dirty else ''}{os.path.basename(self.out)} — "
                      f"{len(self.pts)} 点 / {total:.1f} m / 要確認 {bad} 点 / 向き手動 {nman} 点"
                      f" / 停止 {sum(self.stops)} 点"
@@ -294,7 +337,7 @@ class Editor:
 
     # --- 編集 ---------------------------------------------------------------
     def push(self):
-        self.undo.append((list(self.pts), list(self.manual), list(self.stops)))
+        self.undo.append((list(self.pts), list(self.manual), list(self.stops), list(self.extras)))
         self.dirty = True
 
     def nearest(self, ev):
@@ -318,6 +361,14 @@ class Editor:
                 best, idx = d, i + 1
         return idx
 
+    def locked(self, i):
+        """claude: ティーチング点は実機の停止位置そのものなので動かさない。True なら操作を拒否して表示。"""
+        if i is not None and self.extras[i].get("taught"):
+            print(f"★ #{i} {self.extras[i].get('label', '')} はティーチング点 — 移動・向き・停止の変更は不可"
+                  " (位置を変えるならマーカーを取り直す。消すなら右クリック)")
+            return True
+        return False
+
     def toolbar_busy(self):
         tb = getattr(self.fig.canvas, "toolbar", None)
         return tb is not None and str(getattr(tb, "mode", "")) != ""
@@ -326,13 +377,18 @@ class Editor:
         if ev.inaxes is not self.ax or self.toolbar_busy():
             return
         i = self.nearest(ev)
+        if self.order is not None:
+            self.press_order(ev, i)
+            return
         if ev.button == 1 and ev.key == "control":
-            if i is not None:
+            if i is not None and not self.locked(i):
                 self.push()
                 self.rot = i
             return
         if ev.button == 1:
             if i is not None and ev.key != "shift":
+                if self.locked(i):
+                    return
                 self.push()
                 self.drag = i
                 return
@@ -343,17 +399,57 @@ class Editor:
                 self.pts.insert(j, p)
                 self.manual.insert(j, None)
                 self.stops.insert(j, False)
+                self.extras.insert(j, {})
             else:
                 self.pts.append(p)
                 self.manual.append(None)
                 self.stops.append(False)
+                self.extras.append({})
             self.redraw()
         elif ev.button == 3 and i is not None:
             self.push()
             del self.pts[i]
             del self.manual[i]
             del self.stops[i]
+            del self.extras[i]
             self.redraw()
+
+    # --- 番号振りモード (claude: 2026-10-11) ---------------------------------
+    def start_order(self):
+        self.push()  # モード全体 (新しく置いた点も含む) を u / Esc 1 回で戻せるように
+        self.order = []
+        print("番号振りモード: 通りたい順に点をクリック (空きクリック = 新しい点)。Enter で確定、Esc で取消")
+
+    def press_order(self, ev, i):
+        if ev.button == 1:
+            if i is None:  # 空き → 新しい点を末尾に置いて、次の番号を振る
+                self.pts.append((ev.xdata, ev.ydata))
+                self.manual.append(None)
+                self.stops.append(False)
+                self.extras.append({})
+                i = len(self.pts) - 1
+            if i not in self.order:
+                self.order.append(i)
+        elif ev.button == 3 and i is not None and i in self.order:
+            self.order.remove(i)  # 後ろの番号は 1 つずつ詰まる
+        self.redraw()
+
+    def finish_order(self):
+        rest = [i for i in range(len(self.pts)) if i not in self.order]
+        idx = self.order + rest  # 振らなかった点は元の順で後ろへ
+        self.pts = [self.pts[i] for i in idx]
+        self.manual = [self.manual[i] for i in idx]
+        self.stops = [self.stops[i] for i in idx]
+        self.extras = [self.extras[i] for i in idx]
+        print(f"並べ替え確定: 番号を振った {len(self.order)} 点が先頭" +
+              (f"、残り {len(rest)} 点は元の順で後ろ ({len(self.order)}〜)" if rest else ""))
+        self.order = None
+        self.dirty = True
+
+    def cancel_order(self):
+        self.pts, self.manual, self.stops, self.extras = self.undo.pop()  # start_order の push
+        self.order = None
+        print("番号振りを取り消した")
 
     def on_motion(self, ev):
         if ev.inaxes is not self.ax:
@@ -375,23 +471,35 @@ class Editor:
 
     def on_key(self, ev):
         k = ev.key
-        if k == "u" and self.undo:
-            self.pts, self.manual, self.stops = self.undo.pop()
+        if self.order is not None:  # claude: 番号振りモード中は確定 / 取消だけ受け付ける
+            if k in ("enter", "n"):
+                self.finish_order()
+            elif k == "escape":
+                self.cancel_order()
+            else:
+                print("番号振りモード中 — Enter で確定 / Esc で取消してから他の操作を")
+                return
+            self.redraw()
+            return
+        if k == "n":
+            self.start_order()
+        elif k == "u" and self.undo:
+            self.pts, self.manual, self.stops, self.extras = self.undo.pop()
             self.dirty = True
         elif k == "s":
-            save_waypoints(self.out, self.pts, self.manual, self.stops, self.gm.path)
+            save_waypoints(self.out, self.pts, self.manual, self.stops, self.gm.path, self.extras)
             self.dirty = False
             print(f"保存: {self.out}")
-            report(self.gm, self.ko, self.pts, self.manual, self.stops)
+            report(self.gm, self.ko, self.pts, self.manual, self.stops, self.extras)
         elif k == "a":
             i = self.nearest(ev)
-            if i is None or self.manual[i] is None:
+            if i is None or self.manual[i] is None or self.locked(i):
                 return
             self.push()
             self.manual[i] = None
         elif k == "p":
             i = self.nearest(ev)
-            if i is None:
+            if i is None or self.locked(i):
                 return
             self.push()
             self.stops[i] = not self.stops[i]
@@ -400,6 +508,7 @@ class Editor:
             self.pts.reverse()
             self.manual.reverse()  # 手動の向きは絶対方位のまま (逆走でも同じ向きを向かせる)
             self.stops.reverse()
+            self.extras.reverse()
         elif k == "o":
             self.show_radius = not self.show_radius
         elif k == "h":
@@ -442,14 +551,14 @@ def main():
     gm = GridMap(args.map_yaml)
     ko_path = None if args.no_keepout else (args.keepout or find_keepout(args.map_yaml))
     ko = GridMap(ko_path) if ko_path else None
-    pts, manual, stops = (load_waypoints(args.out_yaml) if os.path.exists(args.out_yaml)
-                          else ([], [], []))
+    pts, manual, stops, extras = (load_waypoints(args.out_yaml) if os.path.exists(args.out_yaml)
+                                  else ([], [], [], []))
     print(f"地図: {args.map_yaml} ({gm.w}x{gm.h}, {gm.res} m/px)")
     print(f"keepout: {ko_path or 'なし'}")
     print(f"waypoint: {args.out_yaml} ({'既存 ' + str(len(pts)) + ' 点' if pts else '新規'})")
 
     if args.check:
-        sys.exit(1 if report(gm, ko, pts, manual, stops) else 0)
+        sys.exit(1 if report(gm, ko, pts, manual, stops, extras) else 0)
 
     import matplotlib
     if args.render:
@@ -457,7 +566,7 @@ def main():
     import matplotlib.pyplot as plt
 
     traj = load_traj(args.traj) if args.traj else None
-    ed = Editor(plt, gm, ko, traj, args.out_yaml, pts, manual, stops, args.radius)
+    ed = Editor(plt, gm, ko, traj, args.out_yaml, pts, manual, stops, args.radius, extras)
     if args.render:
         ed.fig.savefig(args.render, dpi=150, bbox_inches="tight")
         print(f"描画: {args.render}")

@@ -64,12 +64,19 @@ def generate_launch_description():
 
     # 名前は旧 nav2.launch.py と同じ lifecycle_manager_localization のまま —
     # RViz の Navigation 2 パネルがこの名前で localization の状態を問い合わせるため。
+    # claude: 2026-10-11 bond_timeout 既定 4 s → 60 s。AMCL は最初のスキャンで尤度場を作る間 mutex を握る
+    #   (GLIM traj 地図 7616×4288 @0.05 m で約 13 s、dump 版 @0.1 m で約 3.6 s — セル数に比例)。
+    #   その間に /initialpose が届くと main スレッド (bond の心拍を含む) がそこで止まり、manager が
+    #   「amcl IS DOWN」と判定して deactivate→cleanup→再起動していた。再起動で直前の /initialpose が
+    #   消え、既定姿勢 (0,0,0) から始まる (bag 再生評価 bags/exp/2026-10-11_loc_eval の replay.log で確認)。
+    #   実機でも「最初のスキャン後 ≈13 s 以内に RViz で 2D Pose Estimate を送る」と同じことが起きる。
     lifecycle_manager_localization = Node(
         package="nav2_lifecycle_manager",
         executable="lifecycle_manager",
         name="lifecycle_manager_localization",
         output="screen",
-        parameters=[{"use_sim_time": use_sim_time, "autostart": True, "node_names": ["amcl"]}],
+        parameters=[{"use_sim_time": use_sim_time, "autostart": True, "node_names": ["amcl"],
+                     "bond_timeout": 60.0}],
     )
 
     return LaunchDescription(args + [

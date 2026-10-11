@@ -1,0 +1,29 @@
+# claude: 2026-10-11 評価用変種 — rerobot_bringup/config/localization/lidar_localization.yaml をもとに処理速度を上げる設定。
+#   疎通試験 (1643 bag 先頭 120 s) で 1 スキャン 0.6〜0.8 s + 約 10 s の停止が出て、姿勢の鮮度 p95 が 8.5 s だった。
+#   上流プリセット nav2_ndt_urban.yaml は enable_scan_voxel_filter: false (毎スキャン 3 万点をそのまま NDT へ)、
+#   local_map_radius 150 m (この地図ではほぼ全体 640 万点) を 10 m ごとに再構築 — この 2 点を変える。
+#   loc_lidar3d.launch.py params_file:=<このファイル> で使う (ours の代わりに層になるので ours の項目も全部持つ)。
+lidar_localization:
+  ros__parameters:
+    global_frame_id: map_3d
+    odom_frame_id: odom
+    base_frame_id: base_link
+    enable_map_odom_tf: true
+    level_map_to_odom: true
+    use_pcd_map: true
+    ndt_resolution: 2.0
+    scan_period: 0.1
+    scan_min_range: 1.0
+    point_timestamp_unit: seconds
+    use_odom_tf_prediction: true
+    use_odom: false
+    use_twist_prediction: false
+    use_imu_preintegration: false
+    imu_preintegration_use_base_frame_transform: true
+    # ---- 速度 (10-11 疎通試験で切り分け) ----
+    #   scan voxel filter 0.3 m: 1 スキャン 0.7 s → 0.2 s、精度不変 (0.5 m だと全棄却)。
+    #   局所地図の縮小 (radius 60 / update 20) は照合を壊した (86/113 棄却) ので使わない。
+    #   10 m ごとの局所地図再構築 (約 10 s 停止) は切り出し自体を止めて全地図を 1 回だけ構築する。
+    enable_scan_voxel_filter: true   # プリセットは false
+    voxel_leaf_size: 0.3
+    enable_local_map_crop: false     # プリセット true (radius 150 m = この地図ではほぼ全体、10 m ごと再構築)

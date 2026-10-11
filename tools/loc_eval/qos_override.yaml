@@ -1,0 +1,13 @@
+# claude: 2026-10-11 — bag 再生時の QoS 上書き (replay_one.sh が --qos-profile-overrides-path で渡す)。
+#   bag の /rfans/scan は best_effort で記録されているが、emcl2 は reliable で購読する → 「incompatible QoS」で
+#   1 本も届かず est が空になった (10-11 疎通試験)。reliable で再生すれば best_effort 購読 (AMCL) にも届く。
+/rfans/scan:
+  reliability: reliable
+  durability: volatile
+  history: keep_last
+  depth: 10
+/urg_front/scan:
+  reliability: reliable
+  durability: volatile
+  history: keep_last
+  depth: 10

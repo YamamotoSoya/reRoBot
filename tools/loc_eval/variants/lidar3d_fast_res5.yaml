@@ -1,0 +1,25 @@
+# claude: 2026-10-11 評価用変種 — lidar3d_fast_res2.yaml と同じ速度設定で ndt_resolution だけ 5.0 (つくば 2456 Abudori の値)。
+lidar_localization:
+  ros__parameters:
+    global_frame_id: map_3d
+    odom_frame_id: odom
+    base_frame_id: base_link
+    enable_map_odom_tf: true
+    level_map_to_odom: true
+    use_pcd_map: true
+    ndt_resolution: 5.0
+    scan_period: 0.1
+    scan_min_range: 1.0
+    point_timestamp_unit: seconds
+    use_odom_tf_prediction: true
+    use_odom: false
+    use_twist_prediction: false
+    use_imu_preintegration: false
+    imu_preintegration_use_base_frame_transform: true
+    # ---- 速度 (10-11 疎通試験で切り分け) ----
+    #   scan voxel filter 0.3 m: 1 スキャン 0.7 s → 0.2 s、精度不変 (0.5 m だと全棄却)。
+    #   局所地図の縮小 (radius 60 / update 20) は照合を壊した (86/113 棄却) ので使わない。
+    #   10 m ごとの局所地図再構築 (約 10 s 停止) は切り出し自体を止めて全地図を 1 回だけ構築する。
+    enable_scan_voxel_filter: true   # プリセットは false
+    voxel_leaf_size: 0.3
+    enable_local_map_crop: false     # プリセット true (radius 150 m = この地図ではほぼ全体、10 m ごと再構築)
