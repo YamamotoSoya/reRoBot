@@ -17,6 +17,7 @@ install(DIRECTORY
 # claude: 3D 自己位置推定の z 打ち消し + /initialpose 中継 (loc_lidar3d が起動, 2026-10-10)
 install(PROGRAMS
   scripts/bringup_check.py
+  scripts/initialpose.py
   scripts/waypoint_runner.py
   scripts/teach_marker.py
   scripts/map_level_bridge.py

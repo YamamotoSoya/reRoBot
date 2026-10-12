@@ -14,6 +14,7 @@ import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, GroupAction, IncludeLaunchDescription
+from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 
@@ -33,6 +34,9 @@ def generate_launch_description():
 
     args = [
         DeclareLaunchArgument("use_sim_time", default_value="false"),
+        # claude: 2026-10-12 既定 false。機上の RViz (+Xorg) は約 1.4 コア食い、planner と合わせて TF 失効の原因になった。
+        #   初期位置は `ros2 run rerobot_bringup initialpose.py x y yaw`、ゴールは waypoint_runner.py で与える (manual 第10章)。
+        DeclareLaunchArgument("use_rviz", default_value="false", description="機上で RViz を起動するか"),
         DeclareLaunchArgument("map_name", default_value="",
                               description="地図名 (2D と 3D で共通のディレクトリ名。同じ GLIM dump 由来であること)"),
         DeclareLaunchArgument("map_dir", default_value=PathJoinSubstitution(["/workspace/maps/2d/glim", map_name]),
@@ -51,22 +55,27 @@ def generate_launch_description():
                               description="map.pcd と同じ GLIM dump の traj_lidar.txt (初期位置の z を引く)"),
         DeclareLaunchArgument("initial_z", default_value="0.0",
                               description="traj が無いときのスタート地点の base_link の z [m] (map_3d 座標)"),
+        # claude: 2026-10-11 追加。評価用の変種 (tools/loc_eval/variants/*.yaml) を実機でも差し替えられるように
+        DeclareLaunchArgument("lidar3d_params",
+                              default_value=os.path.join(pkg_share, "config", "localization", "lidar_localization.yaml"),
+                              description="lidar_localization のパラメータ yaml (上流プリセットの上に重ねる)"),
     ]
 
     # claude: include は GroupAction(scoped=True) で包む — 子 launch に渡した引数 (params_file 等) が
     #   親の launch configuration を上書きして後続 include に漏れるのを防ぐ (2026-10-08 実際に
     #   nav2.launch.py で loc_amcl の params_file が navigation 側に漏れ controller_server が落ちた)。
-    def include(rel, launch_arguments):
+    def include(rel, launch_arguments, condition=None):
         return GroupAction([IncludeLaunchDescription(
             PythonLaunchDescriptionSource(os.path.join(parts, rel)),
             launch_arguments=launch_arguments.items(),
-        )], scoped=True)
+        )], scoped=True, condition=condition)
 
     return LaunchDescription(args + [
         # 先頭で include — 3D 地図が無ければ他の部品が上がる前に Shutdown する
         include("localization/loc_lidar3d.launch.py", {
             "use_sim_time": use_sim_time, "map_path": map_path,
             "initial_z": LaunchConfiguration("initial_z"), "traj_path": LaunchConfiguration("traj_path"),
+            "params_file": LaunchConfiguration("lidar3d_params"),
         }),
         include("map_keepout.launch.py", {
             "use_sim_time": use_sim_time, "params_file": nav2_params,
@@ -75,5 +84,5 @@ def generate_launch_description():
         include("navigation.launch.py", {"use_sim_time": use_sim_time, "params_file": nav2_params}),
         include("rviz_nav.launch.py", {
             "use_sim_time": use_sim_time, "rviz_config": os.path.join(pkg_share, "rviz", "nav2.rviz"),
-        }),
+        }, condition=IfCondition(LaunchConfiguration("use_rviz"))),
     ])

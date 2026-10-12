@@ -12,6 +12,7 @@ import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, GroupAction, IncludeLaunchDescription
+from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 
@@ -30,6 +31,9 @@ def generate_launch_description():
 
     args = [
         DeclareLaunchArgument("use_sim_time", default_value="false"),
+        # claude: 2026-10-12 既定 false。機上の RViz (+Xorg) は約 1.4 コア食い、planner と合わせて TF 失効の原因になった。
+        #   初期位置は `ros2 run rerobot_bringup initialpose.py x y yaw`、ゴールは waypoint_runner.py で与える (manual 第10章)。
+        DeclareLaunchArgument("use_rviz", default_value="false", description="機上で RViz を起動するか"),
         DeclareLaunchArgument("map_dir", default_value="/workspace/maps/2d/slam_toolbox/2026_6_9__22:00",
                               description="地図一式 (nav2/, keep_out/) を含む親ディレクトリ"),
         DeclareLaunchArgument("map_yaml", default_value=PathJoinSubstitution([map_dir, "nav2", "map.yaml"]),
@@ -46,11 +50,11 @@ def generate_launch_description():
     # claude: include は GroupAction(scoped=True) で包む — 子 launch に渡した引数 (params_file 等) が
     #   親の launch configuration を上書きして後続 include に漏れるのを防ぐ (2026-10-08 実際に
     #   nav2.launch.py で loc_amcl の params_file が navigation 側に漏れ controller_server が落ちた)。
-    def include(rel, launch_arguments):
+    def include(rel, launch_arguments, condition=None):
         return GroupAction([IncludeLaunchDescription(
             PythonLaunchDescriptionSource(os.path.join(parts, rel)),
             launch_arguments=launch_arguments.items(),
-        )], scoped=True)
+        )], scoped=True, condition=condition)
 
     return LaunchDescription(args + [
         include("map_keepout.launch.py", {
@@ -67,5 +71,5 @@ def generate_launch_description():
         include("navigation.launch.py", {"use_sim_time": use_sim_time, "params_file": nav2_params}),
         include("rviz_nav.launch.py", {
             "use_sim_time": use_sim_time, "rviz_config": os.path.join(pkg_share, "rviz", "nav2.rviz"),
-        }),
+        }, condition=IfCondition(LaunchConfiguration("use_rviz"))),
     ])

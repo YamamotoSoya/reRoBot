@@ -10,7 +10,7 @@
 # ⚠️ 整合条件: min/max_height は 3D 地図→2D 変換 (pointcloud_to_2dmap) の高さクリップ帯
 #   「床 +0.3〜1.5 m」と同じにすること。帯がずれると AMCL が「地図に無い壁」を観測して
 #   自己位置が暴れる (docs/features/2026-08-17_glim_map_to_nav2.md 参照)。
-# ⚠️ range_max=30.0 は nav2_params.yaml の amcl laser_max_range=30.0 に合わせた値。
+# ⚠️ range_max は bringup から 150.0 (全点保持) で渡される。距離の上限は照合側 (config/localization/{amcl,emcl2}.yaml の laser_max_range=100.0) と地図 (glim_traj_to_2dmap --range_max) で揃える (claude 2026-10-12)。
 #   変えるなら両方セットで。
 # claude: 2026-10-08 出力名を /rfans/scan・/rfans/scan_all・/rfans/scan_far に変更 (旧 /scan・/scan_all・/scan_far)。
 #   urg は /urg_front/scan。裸の /scan は誰も出さない規約にしたので、urg と同時起動してよい。

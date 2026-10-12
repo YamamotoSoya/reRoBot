@@ -170,7 +170,10 @@ global_costmap:
       global_frame: map         # 地図フレーム
       robot_base_frame: base_link  # ロボット基準フレーム
       robot_radius: 0.35        # ロボット外接半径 [m]
-      resolution: 0.05          # 解像度 [m/cell]
+      # claude: 2026-10-12 0.05 → 0.1 (元地図 nav2/map.yaml と同じ)。0.05 だと 7552×4352 = 33M セルを 1 Hz で全層更新 + NavFn 探索し
+      #   planner_server が 1 コア常時占有 → /rfans/scan の変換が 1〜1.5 s 抜け → AMCL の map→odom TF が失効 → FollowPath 失敗
+      #   (10-11 走行 bag、bags/exp/2026-10-11_amcl_load/README.md)。近距離の精度は local_costmap (0.05) が担う。
+      resolution: 0.1           # 解像度 [m/cell]
       track_unknown_space: true # 未知領域を未知として扱う
       plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
       filters: ["keepout_filter"]  # 進入禁止帯フィルタ (plugins とは別系統)
@@ -187,7 +190,9 @@ global_costmap:
         # claude: 2026-10-08 入力をセンサ別に並べる (裸の /scan は廃止)。urg を増やすときは
         #   observation_sources に urg_left / urg_right を足して同じ形のブロックを追加する (合成ノード不要)。
         #   片方のセンサを外しても expected_update_rate 既定 0 (鮮度チェックなし) なので costmap は止まらない。
-        observation_sources: urg_front rfans
+        # claude: 2026-10-12 global は rfans のみ (urg_front は 40 Hz × 1080 本の変換負荷が大きく、0〜5 m の障害物は local が urg 込みで見る)。
+        #   戻すときは `urg_front rfans` に (下の urg_front ブロックは残してある)。
+        observation_sources: rfans
         # claude: 2026-10-04 obstacle_max_range 25.0 → 5.0。12〜25 m の /scan (R-Fans 由来) 終点の約 6 割が
         #   地面ゴースト (坂・−1° リング) で、global は累積するので見えない壁が溜まる。遠方の静的構造は
         #   static_layer (/map) が持つので、動的障害物は近距離だけ書けば足りる。
@@ -204,7 +209,7 @@ global_costmap:
           clearing: true             # レイトレースで空き領域を消去
           marking: true              # 障害物として書き込み
           data_type: "LaserScan"
-          raytrace_max_range: 30.0   # 空き判定の最大レイトレース距離 [m]
+          raytrace_max_range: 10.0   # 空き判定の最大レイトレース距離 [m] (claude: 2026-10-12 30→10。marking は 5 m までなので 10 m 超の消去線は無駄)
           obstacle_max_range: 5.0
         rfans:
           topic: /rfans/scan
@@ -213,7 +218,7 @@ global_costmap:
           clearing: true             # レイトレースで空き領域を消去
           marking: true              # 障害物として書き込み
           data_type: "LaserScan"
-          raytrace_max_range: 30.0   # 空き判定の最大レイトレース距離 [m]
+          raytrace_max_range: 10.0   # 空き判定の最大レイトレース距離 [m] (claude: 2026-10-12 30→10。marking は 5 m までなので 10 m 超の消去線は無駄)
           obstacle_max_range: 5.0
       inflation_layer:
         plugin: nav2_costmap_2d::InflationLayer
@@ -226,12 +231,12 @@ global_costmap:
 # ============================================================================
 planner_server:
   ros__parameters:
-    expected_planner_frequency: 20.0  # 計画要求の想定周波数 [Hz]
+    expected_planner_frequency: 1.0   # 計画要求の想定周波数 [Hz] (claude: 2026-10-12 20→1。警告の閾値のみ。実際の要求は BT の RateController 0.333 Hz)
     planner_plugins: ["GridBased"]
     GridBased:
       plugin: nav2_navfn_planner::NavfnPlanner
       tolerance: 0.5      # 目標に到達できない時の許容半径 [m]
-      use_astar: false    # false=ダイクストラ, true=A*
+      use_astar: true     # false=ダイクストラ, true=A* (claude: 2026-10-12 true。探索セル数を減らす。経路が壁寄りになるなら false に戻す)
       allow_unknown: true # 未知領域の通過を許可
 
 # ============================================================================

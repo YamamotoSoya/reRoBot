@@ -38,3 +38,11 @@ lidar_localization:
     use_imu_preintegration: false
     # ON にするとき必須: BNO086 は上下逆 + yaw −93° 取付。false (既定) だと IMU 値をセンサ座標のまま使ってしまう
     imu_preintegration_use_base_frame_transform: true
+
+    # ---- 処理速度 ---- (claude: 2026-10-11 bag 再生評価 bags/exp/2026-10-11_loc_eval で決めた。経緯は tools/loc_eval/README.md)
+    #   上流プリセットのままだと 1 スキャン 0.6〜0.8 s + 局所地図の再構築 (10 m ごと、約 10 s 停止) で姿勢の鮮度 p95 8.5 s。
+    #   scan voxel 0.3 m で 1 スキャン 0.2 s・精度不変 (0.5 m は全棄却)。局所地図の縮小 (radius 60) は照合を壊す (86/113 棄却)
+    #   ので切り出し自体を止め、全地図 (1643 5号館 map.pcd = 全高さ 639 万点) を起動時に 1 回だけ NDT 目標にする → 鮮度 p95 0.5 s。
+    enable_scan_voxel_filter: true   # プリセット false
+    voxel_leaf_size: 0.3
+    enable_local_map_crop: false     # プリセット true (radius 150 m = この地図ではほぼ全体、10 m ごと再構築)

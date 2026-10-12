@@ -15,6 +15,7 @@ from launch.actions import DeclareLaunchArgument, GroupAction, IncludeLaunchDesc
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 
 
 def generate_launch_description():
@@ -35,6 +36,11 @@ def generate_launch_description():
         DeclareLaunchArgument(
             "loc_map_yaml", default_value="",
             description="emcl2 専用地図 yaml (/map_loc)。空なら /map を読む"),
+        # claude: 2026-10-11 追加。emcl2 はビームを scan_increment 本おきに読み、inf の席は飛ばす (Scan::valid) ので
+        #   全点 /rfans/scan_all (39,270 席) もそのまま受けられる。ただし 1 のままだと粒子 500 × 3 万本の照合で重い。
+        #   AMCL の max_beams 2000 に合わせるなら 19 (39,270 / 19 ≈ 2,067 本、リング数 16 と互いに素 — loc_amcl と同じ理由)。
+        DeclareLaunchArgument("scan_increment", default_value="1",
+                              description="ビームの間引き (何本おきに使うか)。/rfans/scan_all のときは 19"),
     ]
 
     emcl2 = Node(
@@ -42,7 +48,8 @@ def generate_launch_description():
         executable="emcl2_node",
         name="emcl2",
         output="screen",
-        parameters=[params_file, {"use_sim_time": use_sim_time}],
+        parameters=[params_file, {"use_sim_time": use_sim_time,
+                                  "scan_increment": ParameterValue(LaunchConfiguration("scan_increment"), value_type=int)}],
         remappings=[("scan", scan_topic), ("map", map_topic), ("initialpose", "/initialpose")],
     )
 

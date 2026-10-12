@@ -16,7 +16,7 @@ emcl2:
 
     # ---- スキャン ----
     laser_min_range: 0.0
-    laser_max_range: 30.0          # amcl の laser_max_range と同値 (上流既定は事実上無制限)
+    laser_max_range: 100.0         # amcl の laser_max_range と同値 (上流既定は事実上無制限。claude 2026-10-12: 30→100)
     scan_increment: 1              # 何本おきにビームを使うか
 
     # ---- 初期姿勢 (起動直後はここ。以後は RViz の 2D Pose Estimate = /initialpose) ----

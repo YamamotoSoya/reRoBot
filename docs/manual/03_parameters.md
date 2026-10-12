@@ -86,4 +86,31 @@ Xbox パッドで動かすときの割り当てと速度。**速度感を変え�
 
 ---
 
+
+## 3.4 Nav2 の負荷に効くパラメータ — `nav2_params.yaml` / `amcl.yaml`
+
+<!-- claude: 2026-10-12 追加。10-11 の実機走行で planner_server (global costmap + NavFn) が 1 コアを占有し、
+     /rfans/scan の変換が 1〜1.5 s 抜け → AMCL の map→odom TF が失効 → FollowPath 失敗、を 5 秒おきに繰り返した対策
+     (経緯: bags/exp/2026-10-11_amcl_load/README.md)。costmap は global と local の 2 枚が独立で、解像度・センサ・周期を別々に持てる。 -->
+
+考え方: **遠く (global) は粗く、近く (local) は細かく**。global は planner が「大まかに通れる道」を引くためのもので地図全体 (377 m × 218 m) を覆う。local はロボット中心 4 m 四方で controller が衝突判定に使う。処理量はどちらもセル数に比例するので、重さはほぼ global で決まる。
+
+| パラメータ | どこ | 現在値 | 旧値 | 意味 / 変えるとどうなるか |
+|---|---|---|---|---|
+| `resolution` | global_costmap | **0.1 m** | 0.05 | 格子 1 マスの一辺。元地図 (nav2/map.yaml) が 0.1 m なので 0.05 にしても情報は増えず、セル数 33M → 8.2M で全層の更新と NavFn が約 4 倍軽くなる。副作用は膨張の輪郭が 0.1 m 刻みになることだけ (robot_radius 0.35 に対して十分) |
+| `resolution` | local_costmap | 0.05 m | — | 据え置き。4 m 四方 = 6400 セルで軽いので、段差や柵の支柱を拾いたければ 0.025 にしても安い (ただし urg の点間隔を超えて細かくしても情報は増えない) |
+| `observation_sources` | global_costmap | **rfans** | urg_front rfans | obstacle_layer が購読するスキャン。購読したスキャンは受信ごと (urg は 40 Hz × 1080 本) に座標変換されるので、global から urg を外して変換を半減。0〜5 m の障害物は local が urg 込みで見るので安全性は変わらない。urg_front のブロックは残してあるので戻すときは一覧に足すだけ |
+| `raytrace_max_range` | global_costmap (各 source) | **10 m** | 30 | 「空き消去 (clearing)」の線を引く最長距離。線上のセルを 1 つずつ辿るので距離 × 本数で効く。`obstacle_max_range` 5 m までしか障害物を書かないのに 30 m 消去していたのは無駄 |
+| `obstacle_max_range` | global / local | 5 m | — | 「障害物として書く (marking)」最長距離。終点 1 セルだけなので軽い。遠方の静的構造は static_layer (地図) が持つ (10-04 に 25→5) |
+| `update_frequency` | global / local | 1.0 / 5.0 Hz | — | 全層を作り直す周期。global を上げるとセル数ぶん重くなる |
+| `inflation_radius` / `cost_scaling_factor` | global / local | 0.55 m / 3.0 | — | 障害物の周りのコストの坂。半径を広げるほど膨張の処理も、通れない通路も増える |
+| `GridBased.use_astar` | planner_server | **true** | false | false = ダイクストラ (ゴールから地図全体を埋め切る)、true = A* (スタートに届いたら打ち切り)。屋外の広い地図では探索セルが大きく減る。NavFn の A* は厳密最適ではなく経路が壁寄りになることがあるので、狭い所で膨張域をかすめるなら false に戻す |
+| `expected_planner_frequency` | planner_server | **1.0 Hz** | 20 | 警告の閾値のみ (CPU には無関係)。実測がこれを下回ると `Planner loop missed its desired rate` が出る。計画の実際の頻度は BT が決める |
+| `RateController hz` | BT XML (Nav2 既定) | 0.333 (through_poses) / 1.0 (to_pose) | — | 再計画の周期。3 s ごとに ComputePathThroughPoses を呼ぶ。1 回の計画がこれを超えると次の要求が詰まり planner が連続稼働になる (10-11 の状態) |
+| `transform_tolerance` | amcl.yaml | 1.0 s | — | AMCL が出す map→odom TF の未来側の有効期限。AMCL はスキャンが来た時だけ TF を出し直すので、スキャンの穴が「1.0 − スキャン遅延 0.17 = 0.83 s」を超えると TF が切れて controller が止まる。大きくすると穴に強くなるが、動いている間は古い自己位置を使う時間が延びる (0.5 m/s × 1.5 s = 0.75 m)。まず穴を縮める (上の 4 項)、足りなければ 1.5 に |
+| `use_rviz` | nav_*.launch.py 引数 | **false** | (常時起動) | 機上の RViz + Xorg は約 1.4 コア。既定 false。RViz なしの運用は第10章 |
+| `rfans_scan_all` | rerobot_bringup.launch.py 引数 | false | — | true だと 146k 点 × 10 Hz の変換ノードがもう 1 本回る (約 0.4 コア)。`nav_amcl_scanall` 以外では付けない |
+
+変更前後で見る値 (同じ物差しで比べる): rosout の planner loop rate (旧 0.7〜2 Hz = 1 回 0.5〜1.3 s)、`/rfans/scan` の最大の穴 (旧 1.0〜1.5 s)、top での planner_server の瞬時 CPU (旧 ≈1.1 コア)、`/behavior_tree_log` の FollowPath FAILURE 回数 (旧 10 回 / 70 s)。
+
 ← [第2章 初回セットアップ](02_setup.md) | → [第4章 起動と手動操作](04_startup_teleop.md)
