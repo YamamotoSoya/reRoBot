@@ -1,0 +1,129 @@
+#!/usr/bin/env python3
+# claude: 2026-10-15 新設 — 自律走行の起動を 1 本にまとめる (bringup → nav → RViz → bag record)。
+#   10-14 の走行で「当日の起動引数が分からない」「bag record の開始が遅れる」「帯の引数を間違える」が
+#   起きたので、人が打つのは map_dir だけにする。waypoint_runner はキー入力が要るので別端末で手動。
+#
+#   使い方 (rerobot_env 内):
+#     ros2 launch rerobot_bringup auto_run.launch.py map_dir:=/workspace/maps/2d/glim/2026-10-09_1643_5goukan_chal \
+#       2>&1 | tee /workspace/log/auto_$(TZ=Asia/Tokyo date +%F_%H%M).log
+#     → RViz で初期位置を置いて閉じる (または initial_pose:="x,y,yaw_deg" を渡せば 60 s 後に自動送信)
+#     → 別端末 (-it) で、起動ログ末尾に出る waypoint_runner のコマンドを打つ
+#     Ctrl-C 1 回で全部止まる (bag record も SIGINT で正常終了し mcap が閉じる)。
+#
+#   時間割 (bringup の EPOS enable 5 s・bringup_check 15 s の後に nav。nav + RViz 同時起動は CPU 負荷で
+#   CAN 途絶の実績があるので RViz は 15 s ずらす。AMCL は最初のスキャン後 ≈13 s 尤度場を作るので initialpose は 60 s):
+#     0 s  rerobot_bringup.launch.py rfans_scan_all:=true   (帯は launch 既定: /rfans/scan 0.3〜2.0, /rfans/scan_all 0.3〜100)
+#    20 s  nav_amcl_scanall.launch.py map_dir loc_map_yaml=<map_dir>/raw_traj/<loc_band>/map.yaml
+#    35 s  RViz (nav2.rviz)   rviz:=false で省略
+#    40 s  ros2 bag record -s mcap -o <bag_dir>/<JST 日時>_<tag>   record:=false で省略
+#    60 s  initialpose.py x y yaw   initial_pose:="" (既定) なら送らない
+#
+#   ⚠ 新規ファイルなので初回は rerobot_bringup の再ビルド (scripts/build.sh main) が要る
+#     (install(DIRECTORY launch) はファイル単位の symlink で、後から増えたファイルは拾わない)。
+import datetime
+import os
+import re
+import zoneinfo
+
+from ament_index_python.packages import get_package_share_directory
+from launch import LaunchDescription
+from launch.actions import (DeclareLaunchArgument, ExecuteProcess, GroupAction, IncludeLaunchDescription,
+                            LogInfo, OpaqueFunction, TimerAction)
+from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch.substitutions import LaunchConfiguration
+
+# 記録トピック (1 か所で管理)。packets は回転ディップ解析と点群の作り直し用。
+RECORD_TOPICS = [
+    "/rfans_driver/rfans_packets", "/rfans_driver/rfans_points", "/urg_front/scan", "/rfans/scan", "/rfans/scan_all",
+    "/imu/data", "/odom", "/odometry/filtered", "/joint_states", "/tf", "/tf_static", "/diagnostics", "/robot_speed_cmd",
+    "/behavior_tree_log", "/rosout", "/plan", "/local_plan", "/lookahead_point", "/amcl_pose", "/particle_cloud",
+    "/initialpose", "/goal_pose", "/map", "/map_loc", "/keepout_filter_mask",
+    "/global_costmap/costmap", "/global_costmap/costmap_updates",
+    "/local_costmap/costmap", "/local_costmap/costmap_updates", "/local_costmap/published_footprint", "/teach_marker",
+]
+T_NAV, T_RVIZ, T_RECORD, T_INITPOSE = 20.0, 35.0, 40.0, 60.0
+
+
+def setup(context):
+    pkg_share = get_package_share_directory("rerobot_bringup")
+    launch_dir = os.path.join(pkg_share, "launch")
+    cfg = lambda name: LaunchConfiguration(name).perform(context)  # noqa: E731
+    flag = lambda name: cfg(name).strip().lower() in ("true", "1", "yes")  # noqa: E731
+
+    map_dir = cfg("map_dir").rstrip("/")
+    if not map_dir:
+        raise RuntimeError("map_dir:=<地図ディレクトリ> は必須 (例 /workspace/maps/2d/glim/2026-10-09_1643_5goukan_chal)")
+    loc_map_yaml = os.path.join(map_dir, "raw_traj", cfg("loc_band"), "map.yaml")
+    nav_map_yaml = os.path.join(map_dir, "nav2", "map.yaml")
+    course_yaml = os.path.join(map_dir, "waypoints", "course.yaml")
+    missing = [p for p in (nav_map_yaml, loc_map_yaml) if not os.path.isfile(p)]
+    if missing:
+        raise RuntimeError("見つからない: " + ", ".join(missing))
+
+    # bag 名: <JST 日時>_<tag>。tag 既定は map_dir 末尾から先頭の日時を外したもの + _auto (例 5goukan_chal_auto)
+    tag = cfg("tag") or re.sub(r"^\d{4}-\d{2}-\d{2}_\d{4}_", "", os.path.basename(map_dir)) + "_auto"
+    stamp = datetime.datetime.now(zoneinfo.ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d_%H%M")
+    bag_path = os.path.join(cfg("bag_dir"), f"{stamp}_{tag}")
+
+    def include(rel, launch_arguments):
+        # scoped=True: 子に渡した引数が後続 include に漏れないように (nav_*.launch.py と同じ約束)
+        return GroupAction([IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(os.path.join(launch_dir, rel)),
+            launch_arguments=launch_arguments.items(),
+        )], scoped=True)
+
+    actions = [
+        LogInfo(msg=(
+            "\n===== auto_run =====\n"
+            f"  map_dir      : {map_dir}\n"
+            f"  nav map      : {nav_map_yaml}\n"
+            f"  loc map      : {loc_map_yaml}\n"
+            f"  bag          : {bag_path if flag('record') else '(record:=false)'}\n"
+            f"  rviz         : {'on' if flag('rviz') else 'off'}  initial_pose: {cfg('initial_pose') or '(RViz で手動)'}\n"
+            f"  時間割       : nav {T_NAV:.0f} s / rviz {T_RVIZ:.0f} s / record {T_RECORD:.0f} s / initialpose {T_INITPOSE:.0f} s\n"
+            "  走行開始は別端末 (-it) で:\n"
+            f"    ros2 run rerobot_bringup waypoint_runner.py {course_yaml}\n"
+            "====================\n")),
+        include("rerobot_bringup.launch.py", {"rfans_scan_all": "true"}),
+        TimerAction(period=T_NAV, actions=[include(os.path.join("nav", "nav_amcl_scanall.launch.py"), {
+            "map_dir": map_dir, "loc_map_yaml": loc_map_yaml, "use_rviz": "false",
+        })]),
+    ]
+    if flag("rviz"):
+        actions.append(TimerAction(period=T_RVIZ, actions=[include(os.path.join("parts", "rviz_nav.launch.py"), {
+            "rviz_config": os.path.join(pkg_share, "rviz", "nav2.rviz"),
+        })]))
+    if flag("record"):
+        actions.append(TimerAction(period=T_RECORD, actions=[ExecuteProcess(
+            cmd=["ros2", "bag", "record", "-s", "mcap", "-o", bag_path] + RECORD_TOPICS,
+            name="bag_record", output="screen",
+        )]))
+    if cfg("initial_pose").strip():
+        try:
+            x, y, yaw = (s.strip() for s in cfg("initial_pose").split(","))
+            float(x), float(y), float(yaw)
+        except ValueError:
+            raise RuntimeError('initial_pose は "x,y,yaw_deg" (例 "3.60,-0.07,-8")')
+        actions.append(TimerAction(period=T_INITPOSE, actions=[ExecuteProcess(
+            cmd=["ros2", "run", "rerobot_bringup", "initialpose.py", x, y, yaw], name="initialpose", output="screen",
+        )]))
+    if not os.path.isfile(course_yaml):
+        actions.append(LogInfo(msg=f"⚠ waypoint ファイルが無い: {course_yaml} (走行は waypoint_runner に別パスを渡す)"))
+    return actions
+
+
+def generate_launch_description():
+    return LaunchDescription([
+        DeclareLaunchArgument("map_dir", default_value="",
+                              description="地図一式の親ディレクトリ (nav2/, keep_out/, raw_traj/<loc_band>/, waypoints/)。必須"),
+        DeclareLaunchArgument("loc_band", default_value="0.3-100.0_r100",
+                              description="AMCL 用地図 raw_traj/<loc_band>/map.yaml。bringup の scan_all 帯 (既定 0.3〜100) と揃える"),
+        DeclareLaunchArgument("record", default_value="true", description="bag を記録するか"),
+        DeclareLaunchArgument("bag_dir", default_value="/workspace/bags/raw", description="bag の保存先"),
+        DeclareLaunchArgument("tag", default_value="",
+                              description="bag 名の後半。空なら map_dir 名から日時を外して _auto を付ける"),
+        DeclareLaunchArgument("rviz", default_value="true", description="RViz (nav2.rviz) を 35 s 後に起動するか"),
+        DeclareLaunchArgument("initial_pose", default_value="",
+                              description='起動 60 s 後に送る初期姿勢 "x,y,yaw_deg" (map 座標)。空なら RViz で手動'),
+        OpaqueFunction(function=setup),
+    ])

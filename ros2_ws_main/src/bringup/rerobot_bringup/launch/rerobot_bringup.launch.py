@@ -74,19 +74,23 @@ def generate_launch_description():
     rfans_scan_all_arg = DeclareLaunchArgument(
         "rfans_scan_all", default_value="false",
         description="/rfans/scan_all (全点 3.9 万本, AMCL 全点版 nav_amcl_scanall 用) も出す。重いので既定 off")
-    # ⚠ 整合条件: scan_min/max_height = 経路計画用 /map の帯、scan_all_min/max_height = 自己位置推定用地図 (loc_map_yaml) の帯。
+    # ⚠ 整合条件: scan_min/max_height = costmap が障害物にする高さ (ロボットがぶつかる帯)、
+    #   scan_all_min/max_height = 自己位置推定用地図 (loc_map_yaml) を作った帯。
+    # claude: 2026-10-15 2 本の帯を分離。従来は scan_all_* が scan_* を引き継いでいたため、scan_max_height:=100 だけ
+    #   渡すと costmap 用 /rfans/scan まで 0.3〜100 になっていた (10-14 走行)。既定を costmap 0.3〜2.0 /
+    #   AMCL 0.3〜100.0 (= maps/.../0.3-100.0_r100 の帯) に固定し、引き継ぎはやめる。
     scan_min_height_arg = DeclareLaunchArgument(
         "scan_min_height", default_value="0.3",
-        description="/rfans/scan の高さ帯の下限 [m] (base_link 基準)")
+        description="/rfans/scan (costmap 用) の高さ帯の下限 [m] (base_link 基準)")
     scan_max_height_arg = DeclareLaunchArgument(
-        "scan_max_height", default_value="6.0",
-        description="/rfans/scan の高さ帯の上限 [m]")
+        "scan_max_height", default_value="2.0",
+        description="/rfans/scan (costmap 用) の高さ帯の上限 [m]。ロボットがぶつかる高さまで (屋根・庇は入れない)")
     scan_all_min_height_arg = DeclareLaunchArgument(
-        "scan_all_min_height", default_value=LaunchConfiguration("scan_min_height"),
-        description="/rfans/scan_all の高さ帯の下限 [m] (既定 = scan_min_height)")
+        "scan_all_min_height", default_value="0.3",
+        description="/rfans/scan_all (AMCL 用) の高さ帯の下限 [m]。loc_map_yaml の地図の帯と揃える")
     scan_all_max_height_arg = DeclareLaunchArgument(
-        "scan_all_max_height", default_value=LaunchConfiguration("scan_max_height"),
-        description="/rfans/scan_all の高さ帯の上限 [m] (既定 = scan_max_height)")
+        "scan_all_max_height", default_value="100.0",
+        description="/rfans/scan_all (AMCL 用) の高さ帯の上限 [m]。loc_map_yaml の地図の帯と揃える (0.3-100.0_r100 なら 100.0)")
 
     # claude: HOKUYO シリアルポート。udev rule (/etc/udev/rules.d/99-hokuyo-devices.rules,
     # Hokuyo VID 15d1 → /dev/ttyUSB-utm-30lx) が整備済みなので、USB を挿せば自動で
@@ -198,8 +202,12 @@ def generate_launch_description():
             "calibrate_time": False,
             "publish_intensity": False,
             "publish_multiecho": False,
-            "angle_min": -1.5708,
-            "angle_max": 1.5708,
+            # claude: 2026-10-15 視野を ±90° → ±70° に。10-14 bag の collision ahead 50 件中 37 件は UTM が
+            #   自車の右前 (base 系 −67°, 0.33〜0.39 m = laser から 75〜81°) に見る配線らしき点が footprint の縁
+            #   (0.36 m) に乗ったもの。±70° で車輪前縁 (77°) ごと視野から外す。真横の壁は R-Fans (0.5 m 以上,
+            #   z≥0.3) と、前方で見たときの costmap のマークが担う。
+            "angle_min": -1.2217,
+            "angle_max": 1.2217,
         }],
         remappings=[("scan", "/urg_front/scan")],  # claude: 2026-10-08 裸の /scan を出さない規約
         output="screen",

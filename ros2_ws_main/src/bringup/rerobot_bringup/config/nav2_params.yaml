@@ -75,13 +75,18 @@ controller_server:
     min_y_velocity_threshold: 0.5    # y 速度しきい値 [m/s] (差動二輪は y=0)
     min_theta_velocity_threshold: 0.001  # 角速度しきい値 [rad/s]
     enable_stamped_cmd_vel: false    # 出力を素の Twist にする (epos4_controller 用)
+    # claude: 2026-10-15 障害物で止まったら区間失敗にせず、その場で待って自動再開する。
+    #   RPP の "collision ahead" 例外が続く間、controller_server が速度 0 を出し続け FollowPath を失敗させない
+    #   (既定 0.0 は即失敗 → BT の RecoveryNode 6 回 → Goal failed。10-14 bag の区間失敗 3 回の経路)。
+    #   -1.0 = 無期限。自力脱出 (Spin/BackUp) は起きなくなるので、塞がれたままなら人が対応する前提。
+    failure_tolerance: -1.0
 
     # 進捗チェッカ: 一定時間内に最小距離だけ進めなければ失敗扱いにする
     progress_checker_plugin: progress_checker
     progress_checker:
       plugin: nav2_controller::SimpleProgressChecker
       required_movement_radius: 0.5  # この距離 [m] 進めば前進中とみなす
-      movement_time_allowance: 10.0  # 進まないまま許容する時間 [s]
+      movement_time_allowance: 3600.0  # 進まないまま許容する時間 [s] (claude: 2026-10-15 10 → 3600。failure_tolerance -1 で静止待ちする間に "Failed to make progress" で落ちないように)
 
     # 到達判定チェッカ: 目標近傍と判定する許容誤差
     goal_checker_plugins: ["goal_checker"]
@@ -123,7 +128,12 @@ local_costmap:
       width: 4                  # マップ幅 [m]
       height: 4                 # マップ高さ [m]
       resolution: 0.05          # 解像度 [m/cell]
-      robot_radius: 0.35        # ロボット外接半径 [m] (本体 0.50x0.35 を内包)
+      # claude: 2026-10-15 円 (robot_radius 0.35) → 実寸の四角 (base_link = 車軸中心)。実測: 幅 0.65 (車輪外面間)、車軸から前 0.14 / 後 0.51。
+      #   前端は 0.14 でなく 0.325 (= 半幅) にしてある: NavFn は原点から最も近い辺までの距離 (内接半径) を障害物との
+      #   最小間隔に使うので、前端 0.14 だと内接半径 0.14 < 半幅 0.325 となり planner が RPP の通れない経路を引く。
+      #   効果: 内接半径 0.35 → 0.325、外接半径 0.35 → 0.60。1 m 通路の通行帯 0.30 → 0.35 m、RPP の衝突検査幅 0.72 → 0.67 m。
+      #   円 0.35 は後端 0.51 を覆っていなかった (後方 0.16 m が footprint 外 = 後ろの障害物を検査していなかった)。
+      footprint: "[[0.325, 0.325], [0.325, -0.325], [-0.51, -0.325], [-0.51, 0.325]]"
       plugins: ["obstacle_layer", "inflation_layer"]
       filters: ["keepout_filter"]  # 進入禁止帯フィルタ (plugins とは別系統)
       keepout_filter:           # keepout マスクを購読しコストに反映
@@ -137,12 +147,19 @@ local_costmap:
         #   observation_sources に urg_left / urg_right を足して同じ形のブロックを追加する (合成ノード不要)。
         #   片方のセンサを外しても expected_update_rate 既定 0 (鮮度チェックなし) なので costmap は止まらない。
         observation_sources: urg_front rfans
+        # claude: 2026-10-15 inf_is_valid: true。既定 false だと +inf (無反射) の方向はレイトレースされず、そこに
+        #   残った古いマーク (通り過ぎた人の尾など) が消えない。true にすると inf を range_max−ε の終点として
+        #   raytrace_max_range まで消去線を引く。マークはされない (range_max 60/150 > obstacle_max_range 25 のため。
+        #   obstacle_max_range を range_max 以上にすると inf 方向に偽の壁が立つので注意)。
+        #   ⚠ UTM の無反射は +inf でなく 0.001〜0.004 (range_min 未満) で届く (10-14 bag、ビームの 15%) ので、
+        #   urg_front 側は現状この設定が効かない。inf に変換するフィルタを挟んだときに効く。
         urg_front:
           topic: /urg_front/scan
           max_obstacle_height: 2.0   # 採用する最大高さ [m]
           clearing: true             # レイトレースで空き領域を消去
           marking: true              # 障害物として書き込み
           data_type: "LaserScan"
+          inf_is_valid: true         # +inf を「そこまで空き」として消去に使う
           raytrace_max_range: 30.0   # 空き判定の最大レイトレース距離 [m]
           obstacle_max_range: 25.0   # 障害物書き込みの最大距離 [m]
         rfans:
@@ -151,6 +168,7 @@ local_costmap:
           clearing: true             # レイトレースで空き領域を消去
           marking: true              # 障害物として書き込み
           data_type: "LaserScan"
+          inf_is_valid: true         # +inf (空ビン) を「そこまで空き」として消去に使う
           raytrace_max_range: 30.0   # 空き判定の最大レイトレース距離 [m]
           obstacle_max_range: 25.0
       inflation_layer:          # 障害物周囲を膨張させ安全マージンを作るレイヤ
@@ -169,7 +187,12 @@ global_costmap:
       publish_frequency: 1.0    # 可視化 publish 周波数 [Hz]
       global_frame: map         # 地図フレーム
       robot_base_frame: base_link  # ロボット基準フレーム
-      robot_radius: 0.35        # ロボット外接半径 [m]
+      # claude: 2026-10-15 円 (robot_radius 0.35) → 実寸の四角 (base_link = 車軸中心)。実測: 幅 0.65 (車輪外面間)、車軸から前 0.14 / 後 0.51。
+      #   前端は 0.14 でなく 0.325 (= 半幅) にしてある: NavFn は原点から最も近い辺までの距離 (内接半径) を障害物との
+      #   最小間隔に使うので、前端 0.14 だと内接半径 0.14 < 半幅 0.325 となり planner が RPP の通れない経路を引く。
+      #   効果: 内接半径 0.35 → 0.325、外接半径 0.35 → 0.60。1 m 通路の通行帯 0.30 → 0.35 m、RPP の衝突検査幅 0.72 → 0.67 m。
+      #   円 0.35 は後端 0.51 を覆っていなかった (後方 0.16 m が footprint 外 = 後ろの障害物を検査していなかった)。
+      footprint: "[[0.325, 0.325], [0.325, -0.325], [-0.51, -0.325], [-0.51, 0.325]]"
       # claude: 2026-10-12 0.05 → 0.1 (元地図 nav2/map.yaml と同じ)。0.05 だと 7552×4352 = 33M セルを 1 Hz で全層更新 + NavFn 探索し
       #   planner_server が 1 コア常時占有 → /rfans/scan の変換が 1〜1.5 s 抜け → AMCL の map→odom TF が失効 → FollowPath 失敗
       #   (10-11 走行 bag、bags/exp/2026-10-11_amcl_load/README.md)。近距離の精度は local_costmap (0.05) が担う。

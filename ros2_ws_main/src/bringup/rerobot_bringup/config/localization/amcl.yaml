@@ -20,7 +20,14 @@ amcl:
     update_min_d: 0.25           # この距離 [m] 動いたら更新
     update_min_a: 0.2            # この角度 [rad] 回ったら更新
     resample_interval: 1         # 何回更新ごとにリサンプリングするか
-    transform_tolerance: 1.0     # publish する TF の未来側有効時間 [s]
+    # claude: 2026-10-15 1.0 → 8.0。R-Fans 回転ディップ (10-14 bag 757〜768 s: scan_all が 6.7 s 途絶) の間
+    #   map→odom が失効して controller が "Unable to transform robot pose" → 即 Goal failed になった。
+    #   8 s 先まで最後の map→odom を有効にしておけば、その間は odom (EKF) の積み上げだけで走り続け、
+    #   スキャン復帰後に AMCL が修正する。副作用: AMCL が本当に止まっても 8 s は気付かず odom 流しになる。
+    #   ⚠ 上限あり: Nav2 側の TF バッファ保持は 10 s 固定で「最新スタンプ − 10 s」より古い TF を捨てる。
+    #     10.0 にすると「今」より古い map→odom が全部消え、0.1〜0.4 s 前の時刻を引く RPP / global costmap が
+    #     "extrapolation into the past" で失敗 → 走り出して数秒で Goal failed (10-15 実走で再現)。8.0 = 余裕 2 s。
+    transform_tolerance: 8.0     # publish する TF の未来側有効時間 [s] (≤ 8.0 を守る)
 
     # ---- レーザ尤度モデル (likelihood_field) ----
     laser_model_type: likelihood_field  # 尤度場モデル

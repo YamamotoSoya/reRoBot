@@ -85,10 +85,13 @@
     </visual>
   </link>
 
+  <!-- claude: 2026-10-15 yaw −5° (−0.08727 rad)。RViz (base_link) で /urg_front/scan の壁が /rfans/scan の壁に対して
+       反時計回りに約 5° ずれていた (R-Fans を基準に urg を合わせる)。符号: rpy の yaw は roll π でも base の z 軸まわり
+       反時計回りが正なので、点を時計回りに戻す = 負。再調整は廊下の角 (2 面) で両スキャンを重ねて行う。 -->
   <joint name="laser_joint" type="fixed">
     <parent link="base_link"/>
     <child  link="laser"/>
-    <origin xyz="0.067 0 0.09406" rpy="3.141592653589793 0 0"/>
+    <origin xyz="0.067 0 0.09406" rpy="3.141592653589793 0 -0.08727"/>
   </joint>
 
   <!-- claude: 3D LiDAR (R-Fans-16, 簡易ジオメトリ)。link 名 rfans は
