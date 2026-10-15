@@ -1,7 +1,8 @@
 <!-- claude: 2026-10-15 作成 (同日の自律走行 bag 6 本の解析。critic 査読 1 回) -->
 # 10-15 自律走行: keepout で狭めた通路で停止 / AMCL 廊下跳び / IMU yaw 跳び / R-Fans ディップ
 
-**ステータス: 原因特定 (1, 2, 3) + 対策未実施**。狭窄通路の停止は「keepout が膨張されず経路が縁を這う」が本命 (critic 維持、交絡 = AMCL の横分散)。
+**ステータス: 原因特定 (1, 2, 3) + 対策実施済み (10-16、実走未検証)**。狭窄通路の停止は「keepout が膨張されず経路が縁を這う」が本命 (critic 維持、交絡 = AMCL の横分散)。
+10-16 に §1.4-1 (keepout StaticLayer 化) / §2 (transform_tolerance 2.0 + map→odom 見張り番) / §6.5 (info server 撤去) / waypoint_runner 自動再送を実施 (§8)。
 1802 の区間失敗は AMCL の廊下方向跳び (確定) で、`transform_tolerance: 8.0` が補正を 8 s 遅らせる副作用も判明。
 IMU yaw 跳びは BNO086 内部融合の再収束 (本命、磁気起因かは未確認)。R-Fans の走行中ディップは 0 回。
 
@@ -49,20 +50,27 @@ global costmap の横断プロファイル (経路に直交、cost_along_plan.py
 ### 1.3 交絡 (棄却できず)
 - AMCL の横分散: 停止直前 T=326.6 の syy=0.313 (σ_y≈0.56 m)。keepout は観測されない仮想壁なので、自己位置の y 誤差がそのまま keepout との距離誤差になる。膨張しても σ_y が 0.3 m を超える区間では間欠停止が残りうる。検証: 1752 を AMCL 再生 5 run で T=320〜327 の y 分散。
 
-### 1.4 対策案 (未実施)
+### 1.4 対策 (1 は 10-16 実施、§8)
 1. **keepout を StaticLayer として積む** (両 costmap)。膨張されるので経路が中央に寄り、RPP の footprint も当たらない。
    ```yaml
-   plugins: ["keepout_static", "static_layer", "obstacle_layer", "inflation_layer"]   # global
+   plugins: ["static_layer", "keepout_static", "obstacle_layer", "inflation_layer"]   # global
    plugins: ["keepout_static", "obstacle_layer", "inflation_layer"]                   # local
+   use_maximum: true              # ⚠ costmap 直下 (下記)
    # filters: ["keepout_filter"] は外す (残すと非膨張 lethal を再度上書きして同じ現象)
    keepout_static:
      plugin: nav2_costmap_2d::StaticLayer
      map_topic: /keepout_filter_mask
      map_subscribe_transient_local: true
-     use_maximum: true            # mask の 0 で本地図の lethal を消さない
      subscribe_to_updates: false
    ```
-   パラメータ名は 1.3.13 の liblayers.so で確認済み (map_topic / use_maximum / map_subscribe_transient_local)。
+   ⚠ **`use_maximum` は StaticLayer がレイヤ名接頭辞なしで読む** (1.3.13 static_layer.cpp `node->get_parameter("use_maximum", …)`)。
+   keepout_static 配下に書くと無視されて既定の「上書き」になり、後の StaticLayer が前の値を消す (10-16 隔離ドメイン試験:
+   keepout 先 → lethal = 地図占有数 310761 (keepout 消失)、地図先 → lethal = mask 黒 7794756 (地図消失))。costmap 直下に置くと
+   両 StaticLayer が max 合成になり lethal = 和集合 7886774、x=66.2 の横断が `100 ×4 99 … 77 59 46 | 0 ×6 | 53 69 90 99 99 99 100 …`
+   (keepout 側にも 253 帯 3 セル + 勾配 3 セル) になった。master は毎周期 既定値に戻ってから各層が書くので順序は結果に影響しない。
+   mask 点検 (scratchpad `ana/mask_passable.py`、lethal からの距離 r で連結判定): 全 12 区間が r=0.45 (幅 0.9 m) まで連結、
+   wp7→wp8 (狭窄) は r 0.45 で通り 0.50 で切れる = 幅 0.9〜1.0 m。ベンチ区間 wp3→wp4 は r 0.325 で直行 48 m、0.45 で迂回 308 m
+   (= 膨張後も直行路は残るが余裕 ≤0.1 m、obstacle layer が 1 セル足すと迂回に倒れる)。
    注意: 1 m 通路なら inscribed (0.325) 帯を両側引いて 0.35 m の通行帯が残る。0.6 m 通路は物理的に通れない。
 2. 代替: mask 画像に 0.55 m 幅の勾配 (99→1) を描く (KeepoutFilter は 1..99 を比例コストにする)。Nav2 無変更だが 253 リングの意味は持たない。
 3. mask の描き方: costmap 上 1.3 m と目視 1.5〜2 m の差があるなら keepout 帯が物理境界より内側に 0.2〜0.7 m 描かれている (mask 側で広げられる)。
@@ -74,7 +82,9 @@ global costmap の横断プロファイル (経路に直交、cost_along_plan.py
 - その後 2 周期 (421.6, 424.6) の plan start は跳ぶ前の軌道の延長 (15.3→14.2→13.1)。abort 426.76 = 跳び + 7.8 s。
 - 機構: `amcl.yaml transform_tolerance: 8.0` は map→odom を 8 s 未来日付で出す。Nav2 は Time(0) で map→base_link を引くので chain の latest common time (= odom→base_link の今) で map→odom を補間 → **8 s 前の AMCL 補正**が使われる (tfmap.txt: stamp − 受信 = 7.78 s)。跳びが 8 s 遅れて Nav2 に届いた瞬間、RPP `transformGlobalPlan` で最寄り経路点が local costmap 半幅 2 m を超え "Resulting plan has 0 poses in it" → InvalidPath → 即 abort (failure_tolerance では吸収されない)。
 - 遅延ゼロでも跳び 3 m なら同じ abort は起きる。遅延の害は別: 補正が常に 8 s 古い (旋回直後の yaw 補正が遅れる)、global_costmap の "earlier than all the data in the transform cache" (1643 で 3 s ごと)。
-- 対策案: `transform_tolerance` を 2.0〜3.0 に下げる (scan_all の穴は最大 0.53 s なので足りる。R-Fans ディップ 6.7 s は守れないが 8.0 でも守れない)。廊下退化は `docs/issue/2026-10-01_amcl_hedge_corridor_scan_reduction.md` の続き (alpha 0.02 は適用済みか要確認)。
+- 対策 (10-16 実施): `transform_tolerance` 8.0 → 2.0 (scan_all の穴は最大 0.53 s なので足りる)。R-Fans ディップ (5〜7 s) は tolerance ではなく
+  **map→odom 見張り番 `scripts/map_odom_holder.py`** (AMCL が 0.5 s 黙ったら最後の map→odom を now+0.5 s で 20 Hz 配信、復帰で即停止、
+  `loc_amcl.launch.py` が起動) で持つ。隔離ドメイン試験: 無音 0.5 s 後に 20 Hz 保持、復帰後の余分な配信 1 発のみ。廊下退化は `docs/issue/2026-10-01_amcl_hedge_corridor_scan_reduction.md` の続き (alpha 0.02 は適用済みか要確認)。
 - 補助: waypoint_runner 側で「Goal failed 直後に同じ区間を自動再送 (1 回)」があれば 1802 のような単発は人手なしで復帰する。
 
 ## 3. ベンチ通路 (1709 T=650〜829)
@@ -114,10 +124,41 @@ global costmap の横断プロファイル (経路に直交、cost_along_plan.py
 - **車輪 odom yaw が +2.5〜3.4%** (ジャイロ積分比、3 bag)。実効トレッド > 0.529 (タイヤ幅 12 cm で接地中心 0.8 cm 外寄り) が本命、スリップ/ジャイロスケールと未分離 (+110° 窓 +2%、−110° 窓 −4% の非対称)。EKF yaw は BNO 支配なので現状の影響は小。検証: 床マークでその場 5 回転 × 2 速度。
 - **collision ahead の中身 (1709)**: 停止 9 時刻で footprint 内 lethal 0、前方 0.46〜0.60 m に lethal (urg が直接見る、az +14〜+31°) が 5、横 0.5 m が 3。182〜230 s の 48 s 連続停止は正面左 0.46 m に何かが居続けた (人?)。failure_tolerance −1 なので前に人が立ち続けると永久停止 — 本番は随伴者の立ち位置ルールで回避。
 
+## 6.5 1728: keepout が丸ごと無効だった (lifecycle_manager_keepout の起動失敗、10-16 追記)
+
+ユーザ観察「waypoint4 から再開したら keepout ゾーンを通って経路を引いた → 緊急停止」を bag と nav ログで裏付けた。
+
+- nav_2026-10-15_1725.log: `lifecycle_manager_keepout` が filter_mask_server を Activating した 2.0 s 後に
+  `Failed to change state for node: filter_mask_server. Exception: filter_mask_server/get_state service client: async_send_request failed.` → `Failed to bring up all requested nodes. Aborting bringup.`
+  costmap_filter_info_server は Configure 済み・**Activate されず** → `/costmap_filter_info` が出ない → 両 costmap の KeepoutFilter は mask を購読しない。
+- bag 1728 /rosout: `KeepoutFilter: Filter mask was not received` が 0.7 s〜53.5 s (bag 全体) に 56 回 (他 5 本は 0 回)。
+  bag に `/keepout_filter_mask` 自体は入っている (filter_mask_server は Activate 済みで transient_local 配信) — 「mask はあるが info が無い」状態。
+- /plan T=26.94 (最初の経路) を keepout 画像と照合: idx 73..156 の 84 点 (144.7,−58.8)→(140.9,−60.4) が keepout セル上 (clearance 0.00 m)。T=45.5 でも同じ。= keepout を無視した経路。
+- 機構: lifecycle_manager の get_state は 2 s 固定タイムアウト (`bond_timeout` とは別)。filter_mask_server は Activate 時に 2176×3776 の mask を transient_local で publish するので、起動直後の負荷でサービス応答が 2 s を超えると manager 側が諦める。1706 / 1732 では 0.1 s で通っている → 再現性の低いレース。
+- 影響: この run は人手の緊急停止で済んだが、本番で起きると**経路が keepout を無視する** (= 道路へ出る)。
+
+対策候補 (未実施):
+1. `lifecycle_manager_keepout` に `attempt_respawn_reconnection: true` + `bond_respawn_max_duration` を付けても **get_state 失敗には効かない** (bond 切断時の再接続機構)。確実なのは waypoint_runner / bringup_check 側で `ros2 topic echo --once /costmap_filter_info` または両 costmap のログ `Received filter info` を確認してから走行開始にすること。
+2. map_keepout.launch.py で filter_mask_server → costmap_filter_info_server の順を逆にする (info が先に出れば costmap は info を受け、mask は後から transient_local で届く)。ただし manager の Abort 自体は残る。
+3. §1.4 の StaticLayer 化をすると costmap_filter_info_server と KeepoutFilter が不要になり、このレースの対象が `/keepout_filter_mask` (map_server と同じ経路) だけになる → 一石二鳥。
+
 ## 7. 次の作業 (優先順)
 
-1. keepout を StaticLayer 化 (§1.4-1) + `transform_tolerance` 8.0 → 2.0 (§2) → 1752 の区間だけ再走、停止の有無と AMCL syy を見る。失敗なら σ_y が主犯 → mask を後退。
+1. **実走検証**: 1752 の区間 (wp7→wp8) を再走、停止の有無と AMCL syy を見る。失敗なら σ_y が主犯 → mask を後退。RViz で global costmap の keepout 縁に勾配が付いているか目視。
 2. bno086 `use_game_rotation_vector: true` で 1 走行、/imu/mag も記録 (§4)。
-3. ベンチ通路の意図をユーザが決める (§3)。
+3. ベンチ通路の意図をユーザが決める (§3)。膨張後は直行路の余裕 ≤0.1 m なので、通すなら mask の描き直しが必須。
 4. `bags/` の既存データで決着できる検証: ベンチ絞り部の 254 セル数 vs plan 長 (トグル機構)、journalctl の Clock change (§6)。
-5. waypoint_runner: Goal failed の自動再送 1 回、plan 長 3 倍保険。
+5. waypoint_runner: plan 長が直線の 3 倍超なら進まない保険 (自動再送は実施済み)。
+6. docs/manual/10_nav2.md の KeepoutFilter / costmap_filter_info_server の記述を StaticLayer 構成に合わせる (ユーザ執筆の章、依頼待ち)。
+
+## 8. 10-16 に実施した変更 (未コミット、実走未検証)
+
+| # | ファイル | 変更 |
+|---|---|---|
+| 1 | `config/nav2_params.yaml` | 両 costmap: `filters`/`keepout_filter` 撤去 → `keepout_static` (StaticLayer) + costmap 直下 `use_maximum: true`。`costmap_filter_info_server` 節削除 |
+| 2 | `config/localization/amcl.yaml` | `transform_tolerance` 8.0 → 2.0 |
+| 3 | `launch/parts/map_keepout.launch.py` | `costmap_filter_info_server` 撤去、manager は filter_mask_server のみ |
+| A | `scripts/map_odom_holder.py` (新規) + `CMakeLists.txt` + `launch/parts/localization/loc_amcl.launch.py` | map→odom 見張り番 (AMCL 無音時の TF 保持) |
+| C | `scripts/waypoint_runner.py` | 区間失敗時 `--retry-wait` (5 s) 後に `--auto-retry` (1) 回自動再送、paused は数えない |
+
+検証: rerobot_env の隔離ドメイン (ROS_DOMAIN_ID 198/199) で map_keepout + planner/controller_server を立て costmap を照合 (§1.4)、holder は偽 AMCL で 3 s 配信→4 s 無音→2 s 配信 (§2)。`colcon build --packages-select rerobot_bringup` 済み (symlink install)。

@@ -3,11 +3,17 @@
 #
 #   map_server                 : /map (global costmap の static_layer・RViz・AMCL/emcl2 の既定入力)
 #   filter_mask_server         : /keepout_filter_mask   (use_keepout:=true のときだけ)
-#   costmap_filter_info_server : /costmap_filter_info   (同上)
 #
 # lifecycle_manager は「地図」と「keepout」で分ける。旧 nav2.launch.py は 1 つの manager に
 # amcl・keepout まで束ねていたため、keepout あり/なしで同名 manager を 2 定義していた。
 # 分けたことで条件付き起動が manager 単位で済む。
+#
+# claude: 2026-10-16 costmap_filter_info_server を撤去。両 costmap が keepout を KeepoutFilter ではなく
+#   StaticLayer (keepout_static、nav2_params.yaml) で読むようになり、CostmapFilterInfo が不要になった。
+#   旧構成では 10-15 nav 1725 で lifecycle_manager_keepout が filter_mask_server の get_state 2 s タイムアウトで
+#   Abort → info server が Activate されず、costmap が mask を受け取れないまま keepout を無視した経路を引いた
+#   (bag 1728、docs/issue/2026-10-15_keepout_corridor_stall_imu_yaw_jump.md §6.5)。StaticLayer は mask を
+#   transient_local で直接購読するので、manager が Abort しても mask さえ出ていれば効く。
 import os
 
 from ament_index_python.packages import get_package_share_directory
@@ -31,7 +37,7 @@ def generate_launch_description():
         DeclareLaunchArgument("use_sim_time", default_value="false"),
         DeclareLaunchArgument(
             "params_file", default_value=os.path.join(pkg_share, "config", "nav2_params.yaml"),
-            description="map_server / filter_mask_server / costmap_filter_info_server の節を持つ yaml"),
+            description="map_server / filter_mask_server の節を持つ yaml"),
         DeclareLaunchArgument("map_yaml", description="本体地図 yaml へのフルパス (/map)"),
         DeclareLaunchArgument("keepout_yaml", default_value="",
                               description="keepout マスク yaml へのフルパス。use_keepout:=false なら未使用"),
@@ -64,15 +70,6 @@ def generate_launch_description():
         parameters=[params_file, {"use_sim_time": use_sim_time, "yaml_filename": keepout_yaml}],
         condition=IfCondition(use_keepout),
     )
-    # マスク値→コスト変換則の配信サーバ。
-    costmap_filter_info_server = Node(
-        package="nav2_map_server",
-        executable="costmap_filter_info_server",
-        name="costmap_filter_info_server",
-        output="screen",
-        parameters=[params_file, {"use_sim_time": use_sim_time}],
-        condition=IfCondition(use_keepout),
-    )
     lifecycle_manager_keepout = Node(
         package="nav2_lifecycle_manager",
         executable="lifecycle_manager",
@@ -81,7 +78,7 @@ def generate_launch_description():
         parameters=[{
             "use_sim_time": use_sim_time,
             "autostart": True,
-            "node_names": ["filter_mask_server", "costmap_filter_info_server"],
+            "node_names": ["filter_mask_server"],
         }],
         condition=IfCondition(use_keepout),
     )
@@ -90,6 +87,5 @@ def generate_launch_description():
         map_server,
         lifecycle_manager_map,
         filter_mask_server,
-        costmap_filter_info_server,
         lifecycle_manager_keepout,
     ])

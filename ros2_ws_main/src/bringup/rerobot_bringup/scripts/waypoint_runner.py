@@ -14,11 +14,17 @@
 #     待機中 : 再開キー (既定 g) = 次の区間へ / q = 終了
 #     走行中 : p = 一時停止 (ゴールをキャンセルしてその場で待機、再開キーで残りの点から続ける)
 #     Ctrl-C : 走行中ならゴールをキャンセルして終了
-#   区間が失敗 (ABORTED) したときも待機に入る。再開キーで残りの点から再送する。
+#   区間が失敗 (ABORTED) したときは、まず --retry-wait 秒待って残りの点を自動再送する (--auto-retry 回まで、
+#   既定 1 回)。それでも失敗したら待機に入り、再開キーで残りの点から再送する。
+#   claude: 2026-10-16 自動再送を追加。本番は人が g を押せないので、一時的な失敗 (TF 失効 102・AMCL 跳びで
+#     経路が空 103・planner の一瞬の失敗) は自分で続きを始める。1 回だけなのは、本当に通れない場所で
+#     送り直し続けても意味がないから (10-15 bag 1802 T=426 の 103 は数十秒後の再送で到達した)。
 #
 #   使い方 (rerobot_env 内、nav2.launch.py 起動 + AMCL 初期位置合わせ済みで。キー入力に -it 必須):
-#     ros2 run rerobot_bringup waypoint_runner.py <course.yaml> [--resume-key g] [--start N]
+#     ros2 run rerobot_bringup waypoint_runner.py <course.yaml> [--resume-key g] [--start N] [--auto-retry 1] [--retry-wait 5]
 #     --start N : waypointN から始める (途中で止めて再起動したとき用)
+#     --auto-retry N : 区間失敗の自動再送回数 (0 で無効 = 旧挙動)
+#     --retry-wait S : 再送までの待ち秒数 (R-Fans ディップは 5〜7 s なので既定 5)
 import argparse
 import math
 import select
@@ -78,9 +84,10 @@ class Keyboard:
 
 
 class WaypointRunner(Node):
-    def __init__(self, wps, resume_key):
+    def __init__(self, wps, resume_key, auto_retry=1, retry_wait=5.0):
         super().__init__("waypoint_runner")
         self.wps, self.resume_key = wps, resume_key
+        self.auto_retry, self.retry_wait = auto_retry, retry_wait  # claude: 区間失敗の自動再送 (2026-10-16)
         self.client = ActionClient(self, NavigateThroughPoses, "navigate_through_poses")
         self.remaining = 0  # 走行中区間の未到達点数 (feedback の number_of_poses_remaining)
         self.goal_handle = None  # 走行中ゴールのハンドル (Ctrl-C 時のキャンセル用)
@@ -122,6 +129,16 @@ class WaypointRunner(Node):
             if k == "q":
                 return False
         return False
+
+    def wait_seconds(self, kb, sec, prompt):
+        """sec 秒 spin しながら待つ。q が押されたら False (中断)。"""
+        self.log(f"{YELLOW}… {prompt} ({sec:.0f} s 待って自動再送)  [q] 終了{RESET}")
+        end = self.get_clock().now().nanoseconds + int(sec * 1e9)
+        while rclpy.ok() and self.get_clock().now().nanoseconds < end:
+            rclpy.spin_once(self, timeout_sec=0.05)
+            if kb.get() == "q":
+                return False
+        return rclpy.ok()
 
     def run_segment(self, idx, kb):
         """idx の点列を 1 本の NavigateThroughPoses で走る。
@@ -178,13 +195,20 @@ class WaypointRunner(Node):
             if not self.wait_key(kb, f"区間 {s + 1}/{len(segs)}: {self.wps[i0][0]} → {name} "
                                      f"({len(idx)} 点) を開始する?"):
                 return
+            retries = 0  # claude: この区間で使った自動再送回数 (2026-10-16)
             while idx:
                 self.log(f"{GREEN}▶ 走行中 {self.wps[idx[0]][0]} → {name}{RESET}  [p] 一時停止")
                 st, idx = self.run_segment(idx, kb)
                 if st == "ok":
                     break
                 head = self.wps[idx[0]][0]
-                msg = "一時停止中" if st == "paused" else "失敗"
+                if st == "failed" and retries < self.auto_retry:
+                    retries += 1
+                    if not self.wait_seconds(kb, self.retry_wait,
+                                             f"区間失敗 → 自動再送 {retries}/{self.auto_retry}: {head} から"):
+                        return
+                    continue
+                msg = "一時停止中" if st == "paused" else "失敗 (自動再送も失敗)" if retries else "失敗"
                 if not self.wait_key(kb, f"{msg} — 再開すると {head} から続ける"):
                     return
             if not rclpy.ok():
@@ -198,6 +222,8 @@ def main():
     ap.add_argument("course", help="waypoint YAML (waypoint_editor / Nav2 パネル形式)")
     ap.add_argument("--resume-key", default="g", help="再開キー (1 文字、既定 g)")
     ap.add_argument("--start", type=int, default=0, help="waypointN から始める (index、既定 0)")
+    ap.add_argument("--auto-retry", type=int, default=1, help="区間失敗時の自動再送回数 (既定 1、0 で無効)")
+    ap.add_argument("--retry-wait", type=float, default=5.0, help="自動再送までの待ち秒数 (既定 5)")
     args, ros_args = ap.parse_known_args()
     if len(args.resume_key) != 1 or args.resume_key in "qp":
         sys.exit("--resume-key は q / p 以外の 1 文字")
@@ -215,7 +241,7 @@ def main():
     # claude: 既定の SIGINT ハンドラは context を即 shutdown してキャンセルを送れなくなるので外し、
     #   KeyboardInterrupt として受けてから走行中ゴールをキャンセルする (走りっぱなし防止)
     rclpy.init(args=ros_args, signal_handler_options=SignalHandlerOptions.NO)
-    node = WaypointRunner(wps, args.resume_key)
+    node = WaypointRunner(wps, args.resume_key, max(0, args.auto_retry), max(0.0, args.retry_wait))
     try:
         with Keyboard() as kb:
             node.run(segs, kb)

@@ -23,6 +23,8 @@ map_server:
 # filter_mask_server : keepout (進入禁止帯) のマスク画像を OccupancyGrid として
 #   配信する map_server インスタンス。本体地図とは別の .pgm/.yaml を読む。
 #   (nav2.launch.py の keepout_mask 引数で yaml_filename を上書き)
+#   claude: 2026-10-16 読み手は両 costmap の keepout_static (StaticLayer)。旧 KeepoutFilter +
+#   costmap_filter_info_server は廃止 (理由は local_costmap の keepout_static の注記)。
 # ============================================================================
 filter_mask_server:
   ros__parameters:
@@ -30,18 +32,6 @@ filter_mask_server:
     yaml_filename: "/workspace/maps/2d/slam_toolbox/2026_6_9__22:00/keep_out/keep_out.yaml"
     topic_name: "/keepout_filter_mask"  # 本体地図(/map)と分離した配信トピック
     frame_id: "map"                     # マスクを表現するフレーム
-
-# ============================================================================
-# costmap_filter_info_server : マスク値 → コスト値への変換則 (CostmapFilterInfo) を
-#   配信するサーバ。costmap 側の KeepoutFilter はこの情報を購読して動く。
-# ============================================================================
-costmap_filter_info_server:
-  ros__parameters:
-    type: 0                                  # 0=keepout/優先レーン フィルタ
-    filter_info_topic: "/costmap_filter_info"  # 変換則の配信トピック
-    mask_topic: "/keepout_filter_mask"         # filter_mask_server の出力に一致させる
-    base: 0.0        # マスク値 0 のときのコスト基準 (keepout は 0.0)
-    multiplier: 1.0  # マスク値→コストの傾き (keepout は 1.0)
 
 # ============================================================================
 # bt_navigator : Behavior Tree で「目標への航行」全体を統括する司令塔ノード。
@@ -134,12 +124,22 @@ local_costmap:
       #   効果: 内接半径 0.35 → 0.325、外接半径 0.35 → 0.60。1 m 通路の通行帯 0.30 → 0.35 m、RPP の衝突検査幅 0.72 → 0.67 m。
       #   円 0.35 は後端 0.51 を覆っていなかった (後方 0.16 m が footprint 外 = 後ろの障害物を検査していなかった)。
       footprint: "[[0.325, 0.325], [0.325, -0.325], [-0.51, -0.325], [-0.51, 0.325]]"
-      plugins: ["obstacle_layer", "inflation_layer"]
-      filters: ["keepout_filter"]  # 進入禁止帯フィルタ (plugins とは別系統)
-      keepout_filter:           # keepout マスクを購読しコストに反映
-        plugin: "nav2_costmap_2d::KeepoutFilter"
-        enabled: true
-        filter_info_topic: "/costmap_filter_info"  # costmap_filter_info_server に一致
+      # claude: 2026-10-16 keepout を filter (KeepoutFilter) から plugin (StaticLayer) へ。
+      #   filter は plugins (inflation 含む) が終わった後に master へ lethal を直書きするので膨張されず、
+      #   NavFn が keepout の縁から 3〜4 セルを通す経路を引き、幅 0.65 の footprint が縁に乗って RPP が
+      #   collision ahead で永久停止した (10-15 bag 1752 T=327、docs/issue/2026-10-15_keepout_corridor_stall_imu_yaw_jump.md §1)。
+      #   StaticLayer として inflation の前段に積めば壁と同じく 253 帯 + 勾配が付き、経路が通路中央へ寄る。
+      #   副次効果: costmap_filter_info_server が不要になり、その起動失敗 (同 §6.5、bag 1728) も消える。
+      plugins: ["keepout_static", "obstacle_layer", "inflation_layer"]
+      # ⚠ use_maximum は StaticLayer がレイヤ名の接頭辞なし (costmap 直下) で読む Nav2 1.3.13 の仕様
+      #   (static_layer.cpp: node->get_parameter("use_maximum", ...))。keepout_static の下に書いても無視され、
+      #   既定 false = master を「上書き」する → 他層の値を消す。costmap 直下に置くと全 StaticLayer に効く。
+      use_maximum: true                      # StaticLayer は master と max 合成 (マスクの白で他層を消さない)
+      keepout_static:           # keepout マスクを静的レイヤとして取り込む (壁と同じ扱い → 膨張される)
+        plugin: nav2_costmap_2d::StaticLayer
+        map_topic: /keepout_filter_mask      # filter_mask_server の出力
+        map_subscribe_transient_local: true  # latched なマスクを購読
+        subscribe_to_updates: false
       obstacle_layer:           # LaserScan から障害物を書き込むレイヤ
         plugin: nav2_costmap_2d::ObstacleLayer
         enabled: true
@@ -198,12 +198,18 @@ global_costmap:
       #   (10-11 走行 bag、bags/exp/2026-10-11_amcl_load/README.md)。近距離の精度は local_costmap (0.05) が担う。
       resolution: 0.1           # 解像度 [m/cell]
       track_unknown_space: true # 未知領域を未知として扱う
-      plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
-      filters: ["keepout_filter"]  # 進入禁止帯フィルタ (plugins とは別系統)
-      keepout_filter:           # keepout マスクを購読しコストに反映
-        plugin: "nav2_costmap_2d::KeepoutFilter"
-        enabled: true
-        filter_info_topic: "/costmap_filter_info"  # costmap_filter_info_server に一致
+      # claude: 2026-10-16 keepout を StaticLayer 化 (理由は local_costmap の keepout_static の注記)。
+      #   マスクと地図は同じ 3776×2176 / 0.1 m / origin なので StaticLayer 2 枚でサイズ衝突は起きない。
+      #   ⚠ use_maximum は costmap 直下に置く (local_costmap の注記参照)。レイヤ配下だと無視されて既定の「上書き」になり、
+      #     後の StaticLayer が前の StaticLayer の値を消す (10-16 隔離ドメインの試験で lethal 数が片方の占有数と一致して発覚)。
+      #     master は毎周期 既定値 (unknown) に戻ってから各層が書くので、max 合成なら順序によらず地図 ∪ keepout になる。
+      plugins: ["static_layer", "keepout_static", "obstacle_layer", "inflation_layer"]
+      use_maximum: true         # StaticLayer (static_layer / keepout_static の両方) を master と max 合成にする
+      keepout_static:           # keepout マスクを静的レイヤとして取り込む (壁と同じ扱い → 膨張される)
+        plugin: nav2_costmap_2d::StaticLayer
+        map_topic: /keepout_filter_mask      # filter_mask_server の出力
+        map_subscribe_transient_local: true  # latched なマスクを購読
+        subscribe_to_updates: false
       static_layer:             # map_server の /map を静的レイヤとして取り込む
         plugin: nav2_costmap_2d::StaticLayer
         map_subscribe_transient_local: true  # latched な /map を購読

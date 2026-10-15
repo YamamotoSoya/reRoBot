@@ -54,6 +54,19 @@ def generate_launch_description():
         }],
     )
 
+    # claude: 2026-10-16 map→odom の見張り番。AMCL は scan が来たときだけ TF を出すので、R-Fans ディップで
+    #   scan が止まると transform_tolerance 秒後に TF が失効し controller が区間失敗 (102) する。
+    #   silence_sec 以上 AMCL が黙ったら最後の map→odom を今の日付で出し続け、復帰で止まる (scripts/map_odom_holder.py)。
+    #   これで amcl.yaml の transform_tolerance を 2.0 (短い = 補正の遅れが小さい) に戻せた。
+    map_odom_holder = Node(
+        package="rerobot_bringup",
+        executable="map_odom_holder.py",
+        name="map_odom_holder",
+        output="screen",
+        parameters=[{"use_sim_time": use_sim_time, "parent_frame": "map", "child_frame": "odom",
+                     "silence_sec": 0.5, "stamp_ahead": 0.5, "rate_hz": 20.0}],
+    )
+
     # claude: include は GroupAction(scoped=True) で包む — 子 launch に渡した引数 (params_file 等) が
     #   親の launch configuration を上書きして後続 include に漏れるのを防ぐ (2026-10-08 実際に
     #   nav2.launch.py で loc_amcl の params_file が navigation 側に漏れ controller_server が落ちた)。
@@ -81,6 +94,7 @@ def generate_launch_description():
 
     return LaunchDescription(args + [
         amcl,
+        map_odom_holder,
         loc_map,
         lifecycle_manager_localization,
     ])
