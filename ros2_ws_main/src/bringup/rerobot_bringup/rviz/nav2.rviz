@@ -441,6 +441,19 @@ Visualization Manager:
         Reliability Policy: Reliable
         Value: /waypoints
       Value: true
+    # claude: 2026-10-16 waypoint_runner の現在状態 (待機 / 走行中 / 到着) を車体の上 1.6 m にテキスト表示。
+    #   端末ログは他ノードの出力に流されるので、RViz を見ていれば状態が分かるようにする (transient_local = 後から開いても最新が出る)
+    - Class: rviz_default_plugins/Marker
+      Enabled: true
+      Name: RunnerStatus
+      Namespaces: {}
+      Topic:
+        Depth: 1
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /waypoint_runner/marker
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48

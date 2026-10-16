@@ -5,7 +5,8 @@
 # 本機固有の前提:
 #   - URDF に base_footprint は無く base_link のみ → 全 robot_base_frame を base_link に統一。
 #   - 速度司令は epos4_controller が /robot_speed_cmd (素の geometry_msgs/Twist) で待ち受ける。
-#     → nav2.launch.py 側で cmd_vel->robot_speed_cmd へリマップし、stamped を無効化する。
+#     → Nav2 は既定の /cmd_vel に出し、bringup 常駐の twist_mux が joy (/joy_vel 優先) と調停して
+#       /robot_speed_cmd へ流す (2026-10-16。以前は launch で直接リマップ)。stamped はここで無効化する。
 #   - LaserScan は /urg_front/scan (HOKUYO UTM-30LX, frame_id=laser, FOV ±90deg) と
 #     /rfans/scan (R-Fans 3D→2D, 360deg)。裸の /scan は使わない (2026-10-08)。
 #   - 地図は maps/2d/<src>/<name>/nav2/map.{yaml,pgm} (コンテナ内 /workspace/maps/2d/...)。

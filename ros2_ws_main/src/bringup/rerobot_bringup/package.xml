@@ -56,6 +56,12 @@
   <exec_depend>joy</exec_depend>
   <exec_depend>teleop_twist_joy</exec_depend>
   <exec_depend>visualization_msgs</exec_depend>  <!-- claude: teach_marker.py (2026-10-09) -->
+  <!-- claude: 2026-10-16 速度指令の調停 (rerobot_bringup.launch.py に常駐)。joy (/joy_vel) > Nav2 (/cmd_vel) → /robot_speed_cmd -->
+  <exec_depend>twist_mux</exec_depend>
+  <!-- claude: 2026-10-16 waypoint_runner の状態発行 (std_msgs/String) / auto_run_check.py (lifecycle get_state, /tf 監視) -->
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>lifecycle_msgs</exec_depend>
+  <exec_depend>tf2_msgs</exec_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

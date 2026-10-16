@@ -1,0 +1,29 @@
+# claude: 2026-10-16 速度指令の調停器 twist_mux の設定 (rerobot_bringup.launch.py が常駐起動)。
+#   複数の速度指令を「timeout 内に受信した入力のうち優先度が最も高い 1 本」だけ出力 (cmd_vel_out →
+#   launch で /robot_speed_cmd に remap) へ素通しする。足し算・平均はしない。
+#
+#   なぜ要るか: joy_teleop と Nav2 が同じ /robot_speed_cmd に直接書くと、両方が出ている間は
+#   epos4_controller に 2 系統が交互に届く (どちらが勝つかはタイミング次第)。mux を挟むと
+#   /robot_speed_cmd の publisher は常に 1 つになり、「どちらを採るか」が優先度で決まる。
+#
+#   運用上の意味 (docs/features/2026-10-16_auto_run_joy_mux.md):
+#     - LB を握っている間は joy が勝つ → 自律走行中でも LB だけ握れば止められる (Nav2 のゴールは生きたまま)
+#     - LB を離すと teleop_twist_joy は 0 を 1 発出して無音 → timeout 0.5 s 後に Nav2 側へ自動で切り替わる
+#       = 「joy を切る」操作は不要
+#     - 両方無音なら何も出さない → epos4_controller の cmd_timeout_s (0.5 s) が目標を 0 へランプ (既存の保護)
+#
+#   ⚠ use_stamped は twist_mux の版で既定が違う (rolling は true = TwistStamped)。epos4_controller は
+#     素の Twist を購読するので false を必ず明示する。
+twist_mux:
+  ros__parameters:
+    use_stamped: false
+    topics:
+      joystick:
+        topic: /joy_vel          # teleop_twist_joy (joy_teleop.launch.py で /cmd_vel → /joy_vel に remap)
+        timeout: 0.5             # [s] この時間受信が無ければ「死んだ」扱いで下位へ落ちる
+        priority: 100            # 0〜255、大きいほど優先
+      navigation:
+        topic: /cmd_vel          # Nav2 controller_server / behavior_server (remap なしの既定名)
+        timeout: 0.5
+        priority: 10
+    # locks: 使わない (将来「非常停止で全部遮断」を足すなら std_msgs/Bool の lock を priority 255 で 1 本足す)

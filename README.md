@@ -112,13 +112,13 @@ $ ip link show can0
 
 * **3D LiDAR (R-Fans-16, Ethernet) — 挿すだけで自動接続**
 
-セットアップ済みのマシンでは、LiDAR 用 USB-Ethernet アダプタ (`enxcce1d5021885`) を挿すと
+セットアップ済みのマシンでは、LiDAR 用 USB-Ethernet アダプタ (`enx6c1ff7be7a78`) を挿すと
 NetworkManager プロファイル `rfans` が自動適用され、ホストに静的 IP `192.168.0.100/24` が付く。
 LiDAR 実機は `192.168.0.3` で、データは UDP 2014 へブロードキャストされる (ホスト側 IP を LiDAR に教える必要はない)。
 コンテナは `network_mode: host` なので、ホストに IP が付けば追加設定なしで届く。
 
 ```bash
-$ ip -br addr show enxcce1d5021885   # 192.168.0.100/24 が付いていれば OK
+$ ip -br addr show enx6c1ff7be7a78   # 192.168.0.100/24 が付いていれば OK
 $ ping -c 3 192.168.0.3              # LiDAR 疎通確認
 ```
 

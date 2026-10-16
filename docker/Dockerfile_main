@@ -38,6 +38,8 @@ RUN apt-get update && apt-get install -y \
     # --- Xbox / joystick teleop --- # claude
     ros-jazzy-joy \
     ros-jazzy-teleop-twist-joy \
+    # --- 速度指令の調停 (joy > Nav2 を優先度で選ぶ。rerobot_bringup.launch.py に常駐, 2026-10-16) --- # claude
+    ros-jazzy-twist-mux \
     # --- navigation2 (main に統合 — apt 同士で依存衝突が無いため分離しない) --- # claude
     ros-jazzy-navigation2 \
     ros-jazzy-nav2-bringup \

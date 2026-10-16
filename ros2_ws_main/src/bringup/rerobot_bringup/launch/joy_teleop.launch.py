@@ -1,8 +1,11 @@
 # ============================================================
 #  joy_teleop.launch.py                                 # claude
 #  Xbox コントローラ teleop: joy_node + teleop_twist_joy_node を起動し、
-#  teleop_twist_joy の既定出力 /cmd_vel を、本ロボットが購読する
-#  /robot_speed_cmd にリマップして epos4_controller へ直結する。
+#  teleop_twist_joy の既定出力 /cmd_vel を /joy_vel にリマップする。
+#  /joy_vel は rerobot_bringup.launch.py が常駐させる twist_mux が最優先入力として受け、
+#  /robot_speed_cmd (epos4_controller) へ流す (2026-10-16。それ以前は /robot_speed_cmd 直結)。
+#  → LB を握っている間は Nav2 の指令より joy が勝ち、離せば 0.5 s で Nav2 に戻る。
+#  ⚠ bringup (twist_mux) 無しでこの launch だけ上げてもロボットは動かない (/joy_vel を誰も受けない)。
 #
 #  使い方:
 #     ros2 launch rerobot_bringup joy_teleop.launch.py
@@ -34,13 +37,13 @@ def generate_launch_description():
         output='screen',
     )
 
-    # Joy → geometry_msgs/Twist 変換。出力 /cmd_vel を /robot_speed_cmd へ
+    # Joy → geometry_msgs/Twist 変換。出力 /cmd_vel を /joy_vel へ (twist_mux の最優先入力)
     teleop_node = Node(
         package='teleop_twist_joy',
         executable='teleop_node',
         name='teleop_twist_joy_node',
         parameters=[params_file],
-        remappings=[('/cmd_vel', '/robot_speed_cmd')],
+        remappings=[('/cmd_vel', '/joy_vel')],  # claude: 2026-10-16 /robot_speed_cmd 直結 → twist_mux 経由
         output='screen',
     )
 

@@ -3,8 +3,10 @@
 #
 # 前提 (自己位置推定の方式に依らない約束): TF map->odom が誰か 1 つから出ていること、/map が出ていること。
 #
-# 速度司令の配線: Nav2 既定の /cmd_vel を本機の /robot_speed_cmd (素の Twist) へリマップする。
-# Twist 化は params 側の enable_stamped_cmd_vel: false で行う。
+# 速度司令の配線 (2026-10-16 変更): Nav2 は既定の /cmd_vel にそのまま出す。rerobot_bringup.launch.py が
+# 常駐させる twist_mux が /cmd_vel (優先 10) と joy の /joy_vel (優先 100) を調停して /robot_speed_cmd へ流す。
+# それ以前はここで /cmd_vel → /robot_speed_cmd に remap していた (joy と publisher を取り合っていた)。
+# Twist 化は params 側の enable_stamped_cmd_vel: false で行う (twist_mux も use_stamped: false)。
 import os
 
 from ament_index_python.packages import get_package_share_directory
@@ -27,15 +29,13 @@ def generate_launch_description():
             description="Nav2 パラメータファイルへのパス"),
     ]
 
-    cmd_vel_remap = ("/cmd_vel", "/robot_speed_cmd")
-
     controller_server = Node(
         package="nav2_controller",
         executable="controller_server",
         name="controller_server",
         output="screen",
         parameters=[params_file, {"use_sim_time": use_sim_time}],
-        remappings=[cmd_vel_remap],  # /cmd_vel -> /robot_speed_cmd
+        # claude: 2026-10-16 /cmd_vel のまま (twist_mux が /robot_speed_cmd へ中継)
     )
     planner_server = Node(
         package="nav2_planner",
@@ -50,7 +50,7 @@ def generate_launch_description():
         name="behavior_server",
         output="screen",
         parameters=[params_file, {"use_sim_time": use_sim_time}],
-        remappings=[cmd_vel_remap],  # 復帰行動の速度司令も /robot_speed_cmd へ
+        # claude: 2026-10-16 復帰行動の速度司令も /cmd_vel のまま (twist_mux 経由)
     )
     bt_navigator = Node(
         package="nav2_bt_navigator",

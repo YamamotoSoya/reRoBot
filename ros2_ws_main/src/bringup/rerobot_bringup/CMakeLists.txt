@@ -18,6 +18,7 @@ install(DIRECTORY
 # claude: map→odom 見張り番 — AMCL 無音時に最後の TF を出し続ける (loc_amcl が起動, 2026-10-16)
 install(PROGRAMS
   scripts/bringup_check.py
+  scripts/auto_run_check.py
   scripts/initialpose.py
   scripts/waypoint_runner.py
   scripts/teach_marker.py

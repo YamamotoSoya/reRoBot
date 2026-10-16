@@ -50,3 +50,14 @@ teach_marker:
     button_name: "2-Y"     # ログ表示用 (パッドの印字)。button を変えたら合わせる
     label_prefix: teach    # ラベル = teach_00, teach_01, ... (起動ごとに 00 から)
     still_time: 1.0        # [s] 押す前にこの時間静止していなければ WARN + "(moving)"
+
+# claude: 2026-10-16 waypoint 走行の開始・再開・一時停止をパッドで (scripts/waypoint_runner.py class Input)。
+#   auto_run.launch.py がこのファイルを waypoint_runner に渡す。ボタン番号は Linux の Xbox 配置:
+#     0 A / 1 B / 2 X / 3 Y(2-Y) / 4 LB / 5 RB / 6 Back / 7 Start   (3 は teach_marker が使用中)
+waypoint_runner:
+  ros__parameters:
+    start_button: 7              # Start: 区間の開始 / 停止点・一時停止からの再開 (= キーの g)
+    pause_button: 6              # Back : 走行中のゴールをキャンセルして待機 (= キーの p)
+    start_requires_enable: false # true にすると LB (enable_button) を握りながら Start でないと開始しない (10-16 ユーザ指示で Start 単独に)
+    enable_button: 4             # teleop_twist_joy_node の enable_button と同じ値にすること
+    button_debounce: 1.0         # [s] この間隔未満の連続ボタンは 1 回扱い (2 度押し対策)

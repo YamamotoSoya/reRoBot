@@ -40,8 +40,9 @@ def _pad(text, width):
 
 
 class BringupCheck(Node):
-    def __init__(self):
-        super().__init__("bringup_check")
+    # claude: 2026-10-16 node_name / kwargs は auto_run_check.py が別名 + parameter_overrides で再利用するため
+    def __init__(self, node_name="bringup_check", **kwargs):
+        super().__init__(node_name, **kwargs)
         self.declare_parameter("lidar_2d", True)
         self.declare_parameter("lidar_3d", True)
         self.declare_parameter("rfans_scan", True)       # claude: 2026-10-08
@@ -122,6 +123,10 @@ class BringupCheck(Node):
         return fut.result().data, None
 
     def run(self):
+        self._print(self.collect_rows())
+
+    def collect_rows(self):
+        """判定して rows [(判定, 名前, 詳細, ヒント)] を返す (表示しない)。auto_run_check.py からも呼ぶ。"""  # claude: 2026-10-16
         measure = float(self.get_parameter("measure_sec").value)
         self.get_logger().info(f"起動チェック中... ({measure:.0f} 秒間トピックを計測)")
         # claude: 先に購読を張ってから計測窓を開ける (discovery 待ちで頭の受信を落とさない)
@@ -147,8 +152,7 @@ class BringupCheck(Node):
             verdict = "OK" if hz >= 0.5 * expect else ("LOW" if hz > 0 else "NG")
             rows.append((verdict, name, f"{hz:6.1f} Hz (期待 {expect:.0f})",
                          "" if verdict == "OK" else hint))
-
-        self._print(rows)
+        return rows
 
     def _print(self, rows):
         mark = {"OK": f"{GREEN}✔ OK {RESET}", "LOW": f"{YELLOW}▲ LOW{RESET}",

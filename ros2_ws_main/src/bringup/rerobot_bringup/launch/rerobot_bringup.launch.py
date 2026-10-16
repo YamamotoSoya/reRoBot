@@ -21,6 +21,11 @@
 #     R-Fans 3D→2D 最近点 → /rfans/scan       (costmap 用。rfans_scan:=true 既定)
 #     R-Fans 3D→2D 全点   → /rfans/scan_all   (AMCL 全点版。rfans_scan_all:=true のときだけ — 重いので既定 off)
 #   使う側 (costmap / AMCL / slam_toolbox) がどれを読むかを明示する。旧ラッパ rerobot_bringup_*.launch.py は削除候補。
+# claude: 2026-10-16 速度指令の調停器 twist_mux を常駐させた (config/twist_mux.yaml)。
+#   joy_teleop (/joy_vel, 優先 100) と Nav2 (/cmd_vel, 優先 10) は自分のトピックに出すだけで、
+#   /robot_speed_cmd の publisher は twist_mux の 1 つだけになる。LB を離せば 0.5 s で Nav2 側に落ちる。
+#   boolean で外せるようにしていないのは、外すと joy の出力先 /joy_vel を誰も受けなくなるため。
+#   epos4_teleop (キーボード) は台上デバッグ専用なので従来どおり /robot_speed_cmd に直接出す。
 import os
 
 from ament_index_python.packages import get_package_share_directory
@@ -186,6 +191,17 @@ def generate_launch_description():
         output="screen",
     )
 
+    # claude: 2026-10-16 速度指令の調停器。joy (/joy_vel) > Nav2 (/cmd_vel) を優先度で選び /robot_speed_cmd へ素通し。
+    #   出力トピック名は twist_mux 固定の cmd_vel_out なので remap で本機の名前にする。設定は config/twist_mux.yaml。
+    twist_mux_node = Node(
+        package="twist_mux",
+        executable="twist_mux",
+        name="twist_mux",
+        parameters=[os.path.join(pkg_share, "config", "twist_mux.yaml")],
+        remappings=[("/cmd_vel_out", "/robot_speed_cmd")],
+        output="screen",
+    )
+
     # claude: RViz の起動はここでは行わない (nav2.launch.py / slam.launch.py に委譲)。
 
     # claude: HOKUYO 2D LiDAR driver。frame_id は rerobot.urdf の laser link 名と一致。
@@ -325,6 +341,7 @@ def generate_launch_description():
             " reRoBot bringup — 起動構成",
             "=" * 64,
             f"  [{mark(True)}] EPOS4 x2 (CANopen can0) + controller / odometry",
+            f"  [{mark(True)}] twist_mux  /joy_vel (優先) + /cmd_vel (Nav2) → /robot_speed_cmd",
             f"  [{mark(on('lidar_2d'))}] 2D LiDAR UTM-30LX      port={cfg('serial_port')}  → /urg_front/scan",
             f"  [{mark(on('lidar_3d'))}] 3D LiDAR R-Fans-16     ip={cfg('device_ip')} rps={cfg('rps')}",
             f"  [{mark(on('lidar_3d') and on('rfans_scan'))}]   └ 3D→2D /rfans/scan    帯 {cfg('scan_min_height')}〜{cfg('scan_max_height')} m",
@@ -340,34 +357,41 @@ def generate_launch_description():
         ]
         return [LogInfo(msg="\n".join(lines))]
 
-    def _bool_param(name):
-        return ParameterValue(
-            PythonExpression(["'", LaunchConfiguration(name), "'.lower() == 'true'"]),
-            value_type=bool)
-
     # claude_check: 起動結果サマリ。1 回判定して表を出したら終了する (launch は止まらない)。
-    bringup_check_node = Node(
-        package="rerobot_bringup",
-        executable="bringup_check.py",
-        name="bringup_check",
-        parameters=[{
-            "lidar_2d": _bool_param("lidar_2d"),
-            "lidar_3d": _bool_param("lidar_3d"),
-            "rfans_scan": _bool_param("rfans_scan"),
-            "rfans_scan_all": _bool_param("rfans_scan_all"),
-            "imu": _bool_param("imu"),
-            "imu_wit": _bool_param("imu_wit"),
-            "ekf": _bool_param("ekf"),
-            "imu_rate": ParameterValue(LaunchConfiguration("imu_rate"), value_type=float),
-            "rps": ParameterValue(LaunchConfiguration("rps"), value_type=int),
-        }],
-        output="screen",
-        emulate_tty=True,  # claude: 色付き表示のため
-    )
-    delayed_check = TimerAction(
-        period=LaunchConfiguration("check_delay"),
-        actions=[LogInfo(msg="[3/3] 起動チェックを開始します"), bringup_check_node],
-    )
+    # claude: 2026-10-16 OpaqueFunction で引数を「今」解決してから TimerAction を作る。
+    #   以前は TimerAction(period=LaunchConfiguration("check_delay")) + ParameterValue(LaunchConfiguration(...)) で、
+    #   タイマーの coroutine が走る時点で引数を引いていた。auto_run.launch.py のように GroupAction(scoped=True) で
+    #   include されると、include 直後にスコープが閉じて launch configuration が消えるため
+    #   "launch configuration 'check_delay' does not exist" で bringup_check が一度も起動せず、未回収の
+    #   Task 例外が launch に残って Ctrl-C でも launch が終了しなくなっていた (10-16 実測)。
+    #   → 値をすべて Python の素の型にしてから渡す (タイマー発火時に context を参照しない)。
+    def _delayed_check(context):
+        cfg = lambda name: LaunchConfiguration(name).perform(context)  # noqa: E731
+        on = lambda name: cfg(name).strip().lower() == "true"  # noqa: E731
+        bringup_check_node = Node(
+            package="rerobot_bringup",
+            executable="bringup_check.py",
+            name="bringup_check",
+            parameters=[{
+                "lidar_2d": on("lidar_2d"),
+                "lidar_3d": on("lidar_3d"),
+                "rfans_scan": on("rfans_scan"),
+                "rfans_scan_all": on("rfans_scan_all"),
+                "imu": on("imu"),
+                "imu_wit": on("imu_wit"),
+                "ekf": on("ekf"),
+                "imu_rate": float(cfg("imu_rate")),
+                "rps": int(cfg("rps")),
+            }],
+            output="screen",
+            emulate_tty=True,  # claude: 色付き表示のため
+        )
+        return [TimerAction(
+            period=float(cfg("check_delay")),
+            actions=[LogInfo(msg="[3/3] 起動チェックを開始します"), bringup_check_node],
+        )]
+
+    delayed_check = OpaqueFunction(function=_delayed_check)
 
     # Delay controller/odometry so the ros2_canopen device_manager has time to
     # advertise /motor*/cia402_device_*/{init,enable,cyclic_velocity_mode}.
@@ -402,6 +426,7 @@ def generate_launch_description():
         OpaqueFunction(function=_banner),
         bus_config,
         delayed_nodes,
+        twist_mux_node,  # claude: 2026-10-16
         ekf_node,
         robot_state_publisher_node,
         urg_node_node,
