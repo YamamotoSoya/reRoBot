@@ -57,7 +57,14 @@ def generate_launch_description():
         executable="bt_navigator",
         name="bt_navigator",
         output="screen",
-        parameters=[params_file, {"use_sim_time": use_sim_time}],
+        parameters=[params_file, {
+            "use_sim_time": use_sim_time,
+            # claude: 2026-10-16 NavigateThroughPoses (waypoint_runner) は自作の追従型 BT を使う。
+            #   計画失敗時に旧経路を保持し、前方の遅いロボットに stop-and-go で追従する。Spin/BackUp なし。
+            #   設計は XML 冒頭コメント。NavigateToPose (RViz の単発ゴール) は Nav2 既定 BT のまま。
+            "default_nav_through_poses_bt_xml": os.path.join(
+                pkg_share, "behavior_trees", "navigate_through_poses_follow.xml"),
+        }],
     )
     lifecycle_manager_navigation = Node(
         package="nav2_lifecycle_manager",

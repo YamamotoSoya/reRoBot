@@ -100,6 +100,15 @@ controller_server:
       use_regulated_linear_velocity_scaling: true  # 曲率に応じ減速
       regulated_linear_scaling_min_radius: 0.9     # この曲率半径 [m] 未満で減速
       max_angular_accel: 3.2          # 最大角加速度 [rad/s^2]
+      # claude: 2026-10-16 衝突先読み時間 (既定 1.0)。今の指令速度で何秒先までの footprint 掃引に致死コストが
+      #   無いかを調べ、あれば "collision ahead" で速度 0 にする。追従型 BT (behavior_trees/) では旧経路が
+      #   前方ロボットを貫通したまま走るので、この掃引が実質の車間。⚠️ 掃引は先読み点 (carrot) で打ち切られる
+      #   (collision_checker.cpp: hypot > carrot_dist で break) ので距離 = min(2.0 s × 指令速度, 先読み距離)。
+      #   先読み距離 = 実測速度 × lookahead_time 1.5 s を [0.3, 0.9] にクランプ → 走行中 0.4 m/s で 0.6 m
+      #   (1.0 s では 0.4 m)、停止中は 0.3 m。前方停止物には 0.3 m まで段階的に寄る (critic 10-16 で訂正。
+      #   車間を伸ばすなら min_lookahead_dist を上げる — 経路の内回りと引き換え)。
+      use_collision_detection: true
+      max_allowed_time_to_collision_up_to_carrot: 2.0
       max_robot_pose_search_dist: 10.0  # 経路上の自己位置探索範囲 [m]
       use_rotate_to_heading: true     # 経路始端で方位合わせの旋回を許可
       rotate_to_heading_min_angle: 0.785  # この方位誤差 [rad] 以上でまず旋回

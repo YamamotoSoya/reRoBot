@@ -3,11 +3,13 @@ project(rerobot_bringup)
 
 find_package(ament_cmake REQUIRED)
 
+# claude: behavior_trees = 自作 Nav2 BT (追従型 NavigateThroughPoses, 2026-10-16)
 install(DIRECTORY
   launch
   config
   urdf
   rviz
+  behavior_trees
   DESTINATION share/${PROJECT_NAME}
 )
 

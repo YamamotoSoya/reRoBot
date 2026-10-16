@@ -1,0 +1,81 @@
+<!--
+  claude: 2026-10-16 追従型 NavigateThroughPoses BT (waypoint_runner が使う)。
+  Nav2 既定 navigate_through_poses_w_replanning_and_recovery.xml からの変更点:
+
+  1. 計画 (ComputePathThroughPoses) が失敗しても、以前成功した経路 {path} を捨てずに FollowPath を続ける。
+     既定 BT は失敗時に path を空にし PipelineSequence ごと止めるので、前方の遅いロボットが通路を塞ぐと
+     「区間の通路が全部空くまで完全停止」になる。本 BT では旧経路 (前方ロボットを貫通) を RPP がなぞり、
+     RPP の衝突先読み (max_allowed_time_to_collision_up_to_carrot) が手前で速度 0 にする → 前が進めば進む、
+     の stop-and-go 追従になる。controller_server の failure_tolerance: -1 (collision ahead でも FollowPath を
+     失敗にしない) が前提。通れる幅が生まれれば次の再計画 (3 s 周期) で新経路に差し替わり、そちらを通る。
+     仕組み: 計画結果は {new_path} で受け、成功時だけ SetBlackboard で {path} へ写す (失敗時 {new_path} は
+     空になるが {path} は無傷)。一度も成功していない (have_path=false) なら失敗を上に返す (既定と同じ)。
+     ⚠️ 効くのは「計画が失敗する場面」(costmap 上の隙間が車体幅 0.65 未満 かつ地図に迂回路なし) だけ。隙間が
+     あれば NavFn は成功しその経路 (追い越し・迂回) を即採用する — 迂回防止は keepout の閂の担当 (critic 10-16)。
+     ⚠️ 車間は RPP の掃引 = min(2.0 s × 指令速度, 先読み距離 (実測速度 × 1.5 s を 0.3〜0.9 にクランプ)) なので
+     走行中 0.4 m/s で約 0.6 m、停止すると 0.3 m まで縮む → 前方停止物には 0.3 m まで段階的に寄る。
+     旧経路の保持は連続失敗 20 回 (RateController 3 s × 20 ≈ 60 s) で諦め、既定と同じ失敗経路 (リカバリ →
+     ABORT → waypoint_runner の自動再送で現在位置から引き直し) に落とす。AMCL 跳び等で旧経路が壁を貫いた
+     まま永久停止するのを防ぐため (critic H4)。前が 60 s 以上止まっていれば再送でも同じ結論になるので、
+     waypoint_runner 側の auto-retry 回数を増やして「待ち続ける」を実現する (既定 10 回、2026-10-16)。
+
+  2. リカバリ行動から Spin / BackUp を外し、costmap クリア + Wait だけにする。狭い通路で隣にロボットが
+     いる状態の 90° 旋回・後退は接触リスクそのもの。塞がれていれば待つ (人が対応する前提、CLAUDE.md の
+     failure_tolerance の注記と同じ方針)。
+
+  計画失敗時に global costmap を消して即再試行する既定の内側 RecoveryNode も外した (消すと前方ロボットも
+  消え、貫通経路が「成功」として返るだけで追従と同じ結果になる。消さずに旧経路を使う方が素直)。
+  ゴースト障害物で global 計画が通らなくなっても、旧経路が良ければそのまま走り切る (RPP は local costmap で判定)。
+-->
+<root BTCPP_format="4" main_tree_to_execute="MainTree">
+  <BehaviorTree ID="MainTree">
+    <Sequence name="Root">
+      <!-- 航行ごとに「成功した経路を持っているか」を初期化 (前回航行の {path} を誤って使わないため) -->
+      <Script code="have_path := false; plan_fail := 0"/>
+      <RecoveryNode number_of_retries="6" name="NavigateRecovery">
+        <PipelineSequence name="NavigateWithReplanning">
+          <ControllerSelector selected_controller="{selected_controller}" default_controller="FollowPath" topic_name="controller_selector"/>
+          <PlannerSelector selected_planner="{selected_planner}" default_planner="GridBased" topic_name="planner_selector"/>
+          <RateController hz="0.333">
+            <Fallback name="PlanOrKeepOldPath">
+              <Sequence name="PlanAndAdopt">
+                <RemovePassedGoals input_goals="{goals}" output_goals="{goals}" radius="0.7"/>
+                <ComputePathThroughPoses goals="{goals}" path="{new_path}" planner_id="{selected_planner}" error_code_id="{compute_path_error_code}"/>
+                <SetBlackboard output_key="path" value="{new_path}"/>
+                <Script code="have_path := true; plan_fail := 0"/>
+              </Sequence>
+              <!-- 計画失敗: 以前の経路があり、連続失敗が 20 回未満ならそれを維持して成功扱い (FollowPath を止めない) -->
+              <Sequence name="KeepOldPath">
+                <Script code="plan_fail := plan_fail + 1"/>
+                <ScriptCondition name="HaveOldPath" code="have_path == true &amp;&amp; plan_fail &lt; 20"/>
+              </Sequence>
+            </Fallback>
+          </RateController>
+          <RecoveryNode number_of_retries="1" name="FollowPath">
+            <FollowPath path="{path}" controller_id="{selected_controller}" error_code_id="{follow_path_error_code}"/>
+            <Sequence>
+              <WouldAControllerRecoveryHelp error_code="{follow_path_error_code}"/>
+              <ClearEntireCostmap name="ClearLocalCostmap-Context" service_name="local_costmap/clear_entirely_local_costmap"/>
+            </Sequence>
+          </RecoveryNode>
+        </PipelineSequence>
+        <Sequence>
+          <Fallback>
+            <WouldAControllerRecoveryHelp error_code="{follow_path_error_code}"/>
+            <WouldAPlannerRecoveryHelp error_code="{compute_path_error_code}"/>
+          </Fallback>
+          <ReactiveFallback name="RecoveryFallback">
+            <GoalUpdated/>
+            <RoundRobin name="RecoveryActions">
+              <Sequence name="ClearingActions">
+                <ClearEntireCostmap name="ClearLocalCostmap-Subtree" service_name="local_costmap/clear_entirely_local_costmap"/>
+                <ClearEntireCostmap name="ClearGlobalCostmap-Subtree" service_name="global_costmap/clear_entirely_global_costmap"/>
+              </Sequence>
+              <Wait wait_duration="5.0"/>
+            </RoundRobin>
+          </ReactiveFallback>
+        </Sequence>
+      </RecoveryNode>
+    </Sequence>
+  </BehaviorTree>
+</root>

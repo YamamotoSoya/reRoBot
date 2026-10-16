@@ -219,7 +219,7 @@ def run_keepout(dest_dir, map_dir, traj_path, args):
 
 def main():
     ap = argparse.ArgumentParser(description="bag raw scans x GLIM optimized trajectory -> Nav2 2D occupancy grid")
-    ap.add_argument("bag_dir")
+    ap.add_argument("bag_dir", help="bag ディレクトリ。カンマ区切りで複数可 (分割 bag を同じ traj で投影、2026-10-17)")
     ap.add_argument("traj", help="GLIM dump の traj_lidar.txt (TUM)。dump ディレクトリを渡すと中の traj_lidar.txt を使う")
     ap.add_argument("dest_dir")
     ap.add_argument("--topic", default="/rfans_driver/rfans_points")
@@ -308,7 +308,12 @@ def main():
     ground_hist = np.zeros_like(floor_hist)
     ground_tilt = []  # (a, b) per scan in ground mode
     t0 = time.time()
-    for msg in open_bag(args.bag_dir, args.topic):
+    def msgs():  # claude: 2026-10-17 bag_dir はカンマ区切りで複数可 (分割 bag seg1〜4 を 1 本の composite traj で投影するため)
+        for bag in args.bag_dir.split(","):
+            print(f"bag: {bag}")
+            yield from open_bag(bag, args.topic)
+
+    for msg in msgs():
         n_msg += 1
         if (n_msg - 1) % args.skip:
             continue

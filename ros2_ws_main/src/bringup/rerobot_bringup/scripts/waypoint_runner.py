@@ -22,13 +22,15 @@
 #     本番の運用フロー (待機エリアで起動 → joy → RViz で initialpose → スタート列 → Start) は
 #     docs/features/2026-10-16_auto_run_joy_mux.md
 #   区間が失敗 (ABORTED) したときは、まず --retry-wait 秒待って残りの点を自動再送する (--auto-retry 回まで、
-#   既定 1 回)。それでも失敗したら待機に入り、再開キーで残りの点から再送する。
+#   既定 10 回)。それでも失敗したら待機に入り、再開キーで残りの点から再送する。
 #   claude: 2026-10-16 自動再送を追加。本番は人が g を押せないので、一時的な失敗 (TF 失効 102・AMCL 跳びで
-#     経路が空 103・planner の一瞬の失敗) は自分で続きを始める。1 回だけなのは、本当に通れない場所で
-#     送り直し続けても意味がないから (10-15 bag 1802 T=426 の 103 は数十秒後の再送で到達した)。
+#     経路が空 103・planner の一瞬の失敗) は自分で続きを始める。当初 1 回だったが同日 10 回に増やした:
+#     追従型 BT (behavior_trees/navigate_through_poses_follow.xml) では「区間開始時に前方ロボットで塞がれて
+#     いる」と計画が一度も成功せず約 15 s で区間失敗になる (critic H3)。前が抜けるまで待つには再送を続ける
+#     しかない。10 回 × (15 s + retry-wait 5 s) ≈ 3〜4 分。本当に通れない場所なら随伴者が Back で止める。
 #
 #   使い方 (rerobot_env 内、nav2.launch.py 起動 + AMCL 初期位置合わせ済みで。キー入力を使うなら -it):
-#     ros2 run rerobot_bringup waypoint_runner.py <course.yaml> [--resume-key g] [--start N] [--auto-retry 1] [--retry-wait 5] \
+#     ros2 run rerobot_bringup waypoint_runner.py <course.yaml> [--resume-key g] [--start N] [--auto-retry 10] [--retry-wait 5] \
 #       [--ros-args --params-file <share>/config/joy_teleop.yaml]   # joy ボタンの割り当てを読む (省略時は既定値)
 #     --start N : waypointN から始める (途中で止めて再起動したとき用)
 #     --auto-retry N : 区間失敗の自動再送回数 (0 で無効 = 旧挙動)
@@ -166,7 +168,7 @@ class Input:
 
 
 class WaypointRunner(Node):
-    def __init__(self, wps, resume_key, auto_retry=1, retry_wait=5.0):
+    def __init__(self, wps, resume_key, auto_retry=10, retry_wait=5.0):
         super().__init__("waypoint_runner")
         self.wps, self.resume_key = wps, resume_key
         self.auto_retry, self.retry_wait = auto_retry, retry_wait  # claude: 区間失敗の自動再送 (2026-10-16)
@@ -343,7 +345,7 @@ def main():
     ap.add_argument("course", help="waypoint YAML (waypoint_editor / Nav2 パネル形式)")
     ap.add_argument("--resume-key", default="g", help="再開キー (1 文字、既定 g)")
     ap.add_argument("--start", type=int, default=0, help="waypointN から始める (index、既定 0)")
-    ap.add_argument("--auto-retry", type=int, default=1, help="区間失敗時の自動再送回数 (既定 1、0 で無効)")
+    ap.add_argument("--auto-retry", type=int, default=10, help="区間失敗時の自動再送回数 (既定 10、0 で無効)")
     ap.add_argument("--retry-wait", type=float, default=5.0, help="自動再送までの待ち秒数 (既定 5)")
     args, ros_args = ap.parse_known_args()
     if len(args.resume_key) != 1 or args.resume_key in "qp":
