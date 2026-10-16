@@ -87,11 +87,14 @@
 
   <!-- claude: 2026-10-15 yaw −5° (−0.08727 rad)。RViz (base_link) で /urg_front/scan の壁が /rfans/scan の壁に対して
        反時計回りに約 5° ずれていた (R-Fans を基準に urg を合わせる)。符号: rpy の yaw は roll π でも base の z 軸まわり
-       反時計回りが正なので、点を時計回りに戻す = 負。再調整は廊下の角 (2 面) で両スキャンを重ねて行う。 -->
+       反時計回りが正なので、点を時計回りに戻す = 負。
+       claude: 2026-10-16 yaw +0.0100 rad (+0.6°)。回っていたのは R-Fans の方 (rfans_joint に +0.098 を入れた) なので、
+       urg の R-Fans 相対角 −5.0° (tools/rfans_yaw_calib で 1643/1752 bag から −4.97/−5.10°) に +5.6° を上乗せ = 車体に対してほぼ 0。
+       再計測は tools/rfans_yaw_calib/rfans_yaw_calib.py (直進 bag から rfans / laser の yaw を同時に出す)。 -->
   <joint name="laser_joint" type="fixed">
     <parent link="base_link"/>
     <child  link="laser"/>
-    <origin xyz="0.067 0 0.09406" rpy="3.141592653589793 0 -0.08727"/>
+    <origin xyz="0.067 0 0.09406" rpy="3.141592653589793 0 0.0100"/>
   </joint>
 
   <!-- claude: 3D LiDAR (R-Fans-16, 簡易ジオメトリ)。link 名 rfans は
@@ -113,10 +116,15 @@
     </visual>
   </link>
 
+  <!-- claude: 2026-10-16 rfans の yaw に +0.098 rad (+5.6°) を合成 (センサ自身の z まわり。tilted プリセットは等価 rpy に換算)。
+       根拠: 直進中の移動方向が R-Fans 点群座標で −5.6° (1643 GLIM 軌跡 −5.63°±0.34、tools/rfans_yaw_calib の ICP −5.90°)、
+       この分 AMCL が左 0.3〜0.4 m + yaw 時計回りに外れていた (docs/issue/2026-10-16_amcl_lateral_bias_rfans_yaw_offset.md)。
+       ε がセンサ固有か取付かは未識別 — 組み立て直したら tools/rfans_yaw_calib で再計測し、ここと GLIM の T_lidar_imu
+       (tools/rfans_yaw_calib/glim_t_lidar_imu.py) を更新する。実機確認 (廊下の角 2 面で urg と重ねる) は未。 -->
   <joint name="rfans_joint" type="fixed">
     <parent link="base_link"/>
     <child  link="rfans"/>
-    <origin xyz="0.055 0 0.81896" rpy="0 -0.7853981634 3.1415926536"/>
+    <origin xyz="0.055 0 0.81896" rpy="-0.09753276397 -0.7806114434 -3.003440027"/>
   </joint>
 
   <!-- claude: BNO086 IMU (bno086_imu_driver の frame_id 既定 imu_link と一致させる)。

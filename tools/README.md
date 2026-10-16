@@ -263,3 +263,25 @@ python3 /workspace/tools/teach_from_traj/teach_from_traj.py \
 中央値・p95・見失い回数・自己申告の当たり率を表にし、誤差の時系列・CDF・地図上の色分け軌跡を図にする。
 別 bag で評価するときは 2D 地図同士の ICP (`register_maps2d.py`) で座標を合わせてから。
 詳細と手順は `tools/loc_eval/README.md`。
+
+<!-- claude: 2026-10-16 追加 -->
+## rfans_yaw_calib — R-Fans / urg の yaw 較正 (直進 bag から)
+
+R-Fans の方位ゼロが車体進行方向から ≈5.6° 回っていた (AMCL の左 0.3〜0.4 m バイアスの原因、
+`docs/issue/2026-10-16_amcl_lateral_bias_rfans_yaw_offset.md`)。組み立て直すたびに測り直すためのツール。
+原理: 差動二輪は横滑りしないので、直進中の連続スキャンを 2D ICP で合わせた移動ベクトルの向きが車体 x。
+同時に urg を R-Fans に ICP で合わせて相対角も出す (R-Fans を回すなら urg も同じ分回す)。
+
+```bash
+# 1. 直進 10〜20 m (建物・壁が見える所) を teleop で走らせ 30 s 録る (main コンテナ内、ws を source して)
+ros2 bag record -o bags/raw/$(TZ=Asia/Tokyo date +%Y-%m-%d_%H%M)_yawcalib /tf /tf_static /rfans/scan_all /urg_front/scan
+# 2. ε と δ を出す (main コンテナ内)
+python3 tools/rfans_yaw_calib/rfans_yaw_calib.py bags/raw/<bag> --out bags/exp/<bag>_calib.json
+#    → 「rfans_joint: yaw = …」「laser_joint: yaw = …」が出るので URDF 4 本 (rerobot.urdf + 3 プリセット) に書く
+#      (tilted プリセットは R_old·Rz(ε) の等価 rpy に換算: scipy Rotation.from_euler('xyz', old) * from_euler('z', ε))
+# 3. GLIM の T_lidar_imu を再計算して ros2_ws_glim/config/config_sensors.*.json に書く
+python3 tools/rfans_yaw_calib/glim_t_lidar_imu.py --urdf src/bringup/rerobot_bringup/urdf/rerobot.flat.urdf
+```
+
+精度の目安: 直進対 ≥50 本で sem 0.15° (1643 bag: ICP −5.90°±0.15、GLIM 軌跡の弦 −5.63°±0.04)。
+直進対が取れない (旋回ばかり / 芝生だけ) bag では止まる。詳細 `docs/features/2026-10-16_rfans_yaw_calib.md`。
