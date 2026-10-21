@@ -327,17 +327,24 @@ Visualization Manager:
       Use rainbow: true
       Value: true
     # amcl パーティクル群 (自己位置推定の収束を目視確認)。
-    - Class: rviz_default_plugins/PoseArray
-      Arrow Length: 0.1
+    # claude: 2026-10-21 PoseArray → nav2_rviz_plugins/ParticleCloud。Jazzy の amcl は nav2_msgs/ParticleCloud を出すので
+    #   PoseArray 表示では型不一致で何も届かなかった (10-17 bag の /particle_cloud も PoseArray 型で 0 件)。
+    #   矢印は重みで Min〜Max の長さに伸縮。0.1 m だと収束時に車体モデルに隠れるので Max 0.3 m。
+    - Alpha: 1
+      Arrow Length: 0.3
       Axes Length: 0.3
       Axes Radius: 0.01
+      Class: nav2_rviz_plugins/ParticleCloud
       Color: 0; 192; 255
       Enabled: true
+      Max Arrow Length: 0.3
+      Min Arrow Length: 0.05
       Name: Amcl Particles
       Shape: Arrow (Flat)
       Topic:
         Depth: 5
         Durability Policy: Volatile
+        Filter size: 10
         History Policy: Keep Last
         Reliability Policy: Best Effort
         Value: /particle_cloud
@@ -505,7 +512,8 @@ Visualization Manager:
       Name: Current View
       Near Clip Distance: 0.01
       Pitch: 0.785
-      Target Frame: <Fixed Frame>
+      # claude: 2026-10-21 視点の中心を base_link に追従 (Fixed Frame は map のまま)。Orbit は位置だけ追い、向きは追わない
+      Target Frame: base_link
       Value: Orbit (rviz_default_plugins)
       Yaw: 0.785
     Saved: ~
