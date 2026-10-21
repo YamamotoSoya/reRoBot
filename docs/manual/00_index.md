@@ -23,7 +23,8 @@ reRoBot 運用手引き
 ├── <a href="12_challenge_day.md">第12章 つくチャレ当日の実行手順</a> ... 12_challenge_day.md
 ├── <a href="13_troubleshooting.md">第13章 トラブルシューティング</a> ..... 13_troubleshooting.md
 ├── <a href="14_pointcloud_to_laserscan.md">第14章 pointcloud_to_laserscan</a> ... 14_pointcloud_to_laserscan.md
-└── <a href="15_launch_guide.md">第15章 launch の使い分け</a> .......... 15_launch_guide.md
+├── <a href="15_launch_guide.md">第15章 launch の使い分け</a> .......... 15_launch_guide.md
+└── <a href="memo_2026_10_17.md">メモ 2026-10-17 waypoint_editor</a> ..... memo_2026_10_17.md
 </pre>
 
 ## 読み方

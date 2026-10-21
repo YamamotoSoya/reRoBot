@@ -23,6 +23,15 @@
      いる状態の 90° 旋回・後退は接触リスクそのもの。塞がれていれば待つ (人が対応する前提、CLAUDE.md の
      failure_tolerance の注記と同じ方針)。
 
+  3. (2026-10-17) RemovePassedGoals と ComputePathThroughPoses は既定どおり ReactiveSequence で包む。
+     10-16 版は普通の Sequence にしていたため、計画 (ComputePath) が RUNNING の間は通過判定が走らず、
+     判定周期 = 計画時間 + RateController 3 s になっていた。つくば地図 (計画 6〜9 s) では約 11.4 s 周期になり、
+     waypoint0 の 0.7 m 円内にいた 3.7 s / 5.5 s を 2 回とも取りこぼして wp0 へ戻る往復を起こした
+     (bag 2026-10-17_1144_tsukuba_chal_auto、解析 bags/exp/2026-10-17_tsukuba_wander/)。
+     ReactiveSequence は毎 tick 先頭から評価し直すので判定は BT 周期 (約 10 ms) で回る。計画中の要求は
+     そのまま完了し (Jazzy の ComputePathThroughPoses は実行中の goals 変化で出し直さない)、消えた wp は
+     次の計画要求から外れる (既定 BT と同じ挙動)。
+
   計画失敗時に global costmap を消して即再試行する既定の内側 RecoveryNode も外した (消すと前方ロボットも
   消え、貫通経路が「成功」として返るだけで追従と同じ結果になる。消さずに旧経路を使う方が素直)。
   ゴースト障害物で global 計画が通らなくなっても、旧経路が良ければそのまま走り切る (RPP は local costmap で判定)。
@@ -39,8 +48,11 @@
           <RateController hz="0.333">
             <Fallback name="PlanOrKeepOldPath">
               <Sequence name="PlanAndAdopt">
-                <RemovePassedGoals input_goals="{goals}" output_goals="{goals}" radius="0.7"/>
-                <ComputePathThroughPoses goals="{goals}" path="{new_path}" planner_id="{selected_planner}" error_code_id="{compute_path_error_code}"/>
+                <!-- claude: 2026-10-17 ReactiveSequence 必須 (変更点 3)。計画中も通過判定を毎 tick 回す -->
+                <ReactiveSequence name="RemovePassedAndPlan">
+                  <RemovePassedGoals input_goals="{goals}" output_goals="{goals}" radius="0.7"/>
+                  <ComputePathThroughPoses goals="{goals}" path="{new_path}" planner_id="{selected_planner}" error_code_id="{compute_path_error_code}"/>
+                </ReactiveSequence>
                 <SetBlackboard output_key="path" value="{new_path}"/>
                 <Script code="have_path := true; plan_fail := 0"/>
               </Sequence>

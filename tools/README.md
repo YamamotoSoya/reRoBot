@@ -285,3 +285,18 @@ python3 tools/rfans_yaw_calib/glim_t_lidar_imu.py --urdf src/bringup/rerobot_bri
 
 精度の目安: 直進対 ≥50 本で sem 0.15° (1643 bag: ICP −5.90°±0.15、GLIM 軌跡の弦 −5.63°±0.04)。
 直進対が取れない (旋回ばかり / 芝生だけ) bag では止まる。詳細 `docs/features/2026-10-16_rfans_yaw_calib.md`。
+
+## map_crop — 地図ディレクトリ一式の切り抜き (自作, 2026-10-17) <!-- claude -->
+
+`tools/map_crop/crop_map_dir.py`。map_dir 一式 (`nav2/` `keep_out/` `raw_traj/*/` `raw_dump/*/` と `waypoints/course.yaml`) を
+同じ世界座標の矩形で切り抜いて別ディレクトリに書き出す。大きい地図だと NavFn が区間ごとに地図全体を処理して計画が遅くなる
+(つくば composite 47 M セルで 1 区間 0.55〜0.8 s、`bags/exp/2026-10-17_tsukuba_wander/`) ので、走る範囲だけに落とす。
+nav2 と keep_out は同じ画素で切るのでサイズが一致したまま (global costmap の StaticLayer 2 枚の前提)。main コンテナで実行:
+
+```bash
+python3 tools/map_crop/crop_map_dir.py maps/2d/glim/2026-10-03_1126_tsukuba_composite \
+    maps/2d/glim/2026-10-03_1126_tsukuba_composite_crop --until waypoint11 --extra=-21.6,-5.5 --extra=6.0,1.2 --margin 30
+```
+
+範囲 = course.yaml の点 (`--until` まで) + `--extra` 点 (スタート位置など。負の値があるので `=` 必須) の外接矩形 + `--margin` [m]。
+`--bbox=xmin,xmax,ymin,ymax` で直接指定も可。出力先が既にあれば止まる。検査は `waypoint_editor.py <dst>/nav2/map.yaml <dst>/waypoints/course.yaml --check`。

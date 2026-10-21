@@ -156,6 +156,9 @@ local_costmap:
         # claude: 2026-10-08 入力をセンサ別に並べる (裸の /scan は廃止)。urg を増やすときは
         #   observation_sources に urg_left / urg_right を足して同じ形のブロックを追加する (合成ノード不要)。
         #   片方のセンサを外しても expected_update_rate 既定 0 (鮮度チェックなし) なので costmap は止まらない。
+        # claude: 2026-10-17 試験的に urg を外す (戻すときは `urg_front rfans`)。つくば小道で urg だけに映る
+        #   低い物体 (草が本命、高さ 10〜15 cm) に RPP が止められた (bag 2026-10-17_1303_tsukuba_chal_auto)。
+        #   ⚠ R-Fans は車体 1 m 以内だと 0.5〜0.6 m より低い物を見られない → 近距離の低い障害物 (縁石・箱) は検出されない。
         observation_sources: urg_front rfans
         # claude: 2026-10-15 inf_is_valid: true。既定 false だと +inf (無反射) の方向はレイトレースされず、そこに
         #   残った古いマーク (通り過ぎた人の尾など) が消えない。true にすると inf を range_max−ε の終点として
