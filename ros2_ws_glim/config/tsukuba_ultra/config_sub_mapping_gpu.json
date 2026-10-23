@@ -1,0 +1,30 @@
+{
+  "sub_mapping": {
+    "between_registration_type": "GICP",
+    "create_between_factors": true,
+    "enable_imu": true,
+    "enable_optimization": true,
+    "keyframe_randomsampling_rate": 1.0,
+    "keyframe_update_interval_rot": 0.12,
+    // claude: 2026-10-23 tsukuba_ultra — 0.25 -> 0.10。キーフレームを 1 m あたり 4 枚 -> 10 枚に。
+    //   1 submap に入る生スキャンが 2.5 倍になり、地図の「m あたり点数」の上限そのものが上がる。
+    "keyframe_update_interval_trans": 0.10,
+    "keyframe_update_min_points": 500,
+    "keyframe_update_strategy": "DISPLACEMENT",
+    "keyframe_voxel_resolution": 0.2,
+    "keyframe_voxelmap_levels": 3,
+    "keyframe_voxelmap_scaling_factor": 2.0,
+    "max_keyframe_overlap": 0.6,
+    // claude: 2026-10-23 tsukuba_ultra — 15 -> 40。間隔を 0.10 m にしたので、
+    //   submap の張る長さを従来と同じ約 4 m (40 x 0.10) に保つための枚数。
+    "max_num_keyframes": 40,
+    "registration_error_factor_type": "VGICP_GPU",
+    "so_name": "libsub_mapping.so",
+    "submap_downsample_resolution": 0.02,
+    // claude: 2026-10-23 tsukuba_ultra — 30 万 -> 80 万。上のキーフレーム増でデータ上限が
+    //   45 万 -> 約 120 万点 (40 枚 x 生点 3 万) に上がるため、cap を引き上げる。
+    //   VRAM 的には 1 run 合計 8000 万点が上限なので、seg 長 400 m 級とセットで使うこと。
+    "submap_target_num_points": 800000,
+    "submap_voxel_resolution": 0.5
+  }
+}
