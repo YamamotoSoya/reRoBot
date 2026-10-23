@@ -76,7 +76,7 @@ Xbox パッドで動かすときの割り当てと速度。**速度感を変え�
 | [nav2_params.yaml](../../ros2_ws_main/src/bringup/rerobot_bringup/config/nav2_params.yaml) | Nav2 の速度上限・コストマップ・controller / planner・amcl | [第10章](10_nav2.md) / [第11章](11_amcl.md) |
 | [rerobot.urdf](../../ros2_ws_main/src/bringup/rerobot_bringup/urdf/rerobot.urdf) | センサ取付位置 (laser / rfans / imu_link)。rfans は `rerobot.{flat,tilted15,tilted45}.urdf` のプリセットからコピー | [第1章](01_overview.md) |
 | [slam_toolbox.yaml](../../ros2_ws_slamtoolbox/src/rerobot_slamtoolbox/config/slam_toolbox.yaml) | 2D SLAM の解像度・スキャンマッチ設定 | [第6章](06_slam_toolbox.md) |
-| [ros2_ws_glim/config/](../../ros2_ws_glim/config/) | GLIM の JSON 一式。`config_sensors.json` は URDF のプリセットと**セットで切替** | [第7章](07_glim.md) |
+| [ros2_ws_glim/config/](../../ros2_ws_glim/config) | GLIM の JSON 一式。`config_sensors.json` は URDF のプリセットと**セットで切替** | [第7章](07_glim.md) |
 
 ## 3.5 変更の反映
 

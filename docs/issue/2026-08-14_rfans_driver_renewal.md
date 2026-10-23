@@ -179,7 +179,7 @@ occ30cm (xy 1 m 格子ごとに床を推定してスライス)** を補助指標
 | N0 (新 bag × 現行 config) | 4,230 | 5,406 | 6.90 | 51.56 | **+0.8 m (浮く)** |
 | N11 (新 bag × E11 config) | 3,195 | 4,666 | 5.99 | 51.19 | +1.1 m (浮く) |
 
-![N0 vs N11](img/2026-08-14_rfans_glim_eval/N_compare.png)
+![N0 vs N11](img/2026-08-14_rfans_driver_renewal/N_compare.png)
 
 ```
 読み取れること
@@ -199,11 +199,11 @@ occ30cm (xy 1 m 格子ごとに床を推定してスライス)** を補助指標
 推定設定は N11 のまま `submap_downsample_resolution` だけ緩和した地図製品版。
 path 51.26 m = N11 (51.19 m) と一致し**推定は不変**、点数 50k → **178k (約 3.6 倍)**。
 
-![N12 密地図 上方ビュー](img/2026-08-14_rfans_glim_eval/N12_dense_top.png)
+![N12 密地図 上方ビュー](img/2026-08-14_rfans_driver_renewal/N12_dense_top.png)
 *上方ビュー (高さ色付け・赤線 = 軌跡)。y=0 の廊下を軸に両側の部屋群・突き当り
 (x≈26 以降) まで、部屋の外周壁・什器の輪郭が判別できる。*
 
-![N12 密地図 3D 俯瞰](img/2026-08-14_rfans_glim_eval/N12_dense_3d.png)
+![N12 密地図 3D 俯瞰](img/2026-08-14_rfans_driver_renewal/N12_dense_3d.png)
 *3D 俯瞰。天井 (緑〜黄) と床 (紫) の 2 層の間に壁・柱が立つ。奥 (x 大) ほど
 全体が持ち上がる z 浮き (§8-2) もこの図で読める。*
 

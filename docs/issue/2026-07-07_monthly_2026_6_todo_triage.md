@@ -1,13 +1,13 @@
 <!-- claude: docs/issue — 未解決問題の調査記録。解決したらステータスを更新すること。-->
 # docs/monthly/2026_6 の TODO・問題のトリアージ (原因分析と対処法)
 
-- **ステータス: 未解決** (項目ごとの状態は下表。本ファイルは分析、実作業の指示は同名の [.prompt.md](2026-07-07_monthly_2026_6_todo_triage.prompt.md) を参照)
+- **ステータス: 未解決** (項目ごとの状態は下表。本ファイルは分析、実作業の指示は同名の [.prompt.md](../claude/handoff/2026-07-07_monthly_2026_6_todo_triage.prompt.md) を参照)
 - 日付: 2026-07-07
 - 入力: `docs/monthly/2026_6` に記載された TODO / 抱えている問題
 - 分析環境: **Windows チェックアウト上での静的解析のみ**。実機・Docker・ROS 2 が使えないため、
   動作検証が必要な項目は「デバッグ手順(実機/Ubuntu)」と「予想される原因」を記載する。
 - 関連: [2026-07-07_repository_audit.md](2026-07-07_repository_audit.md) (リポジトリ全体監査、以下「監査 Issue N」と参照)、
-  [2026-07-07_wheel_odometry_encoder_scaling_4x.md](2026-07-07_wheel_odometry_encoder_scaling_4x.md)
+  [2026-07-07_wheel_odometry_encoder_scaling_4x.md](closed/2026-07-07_wheel_odometry_encoder_scaling_4x.md)
 
 ## サマリ
 
@@ -134,7 +134,7 @@
 
 **状態: 解決済み (2026-07-29 根本修正適用・浮かせ検証 OK。残: 接地での最終確認)** — EPOS 側は正しく (0x3010:01=256 実測)、bus.yml `2π/1024` + `gear_ratio: 5.0` の 2 点同時修正で解決。副次発見: 修正前は**実車が指令速度の 1/4 で走っていた** (T10 ハンチング・「Nav2 が遅い」の再評価材料)。詳細は下記 issue の「実測記録 2026-07-29」。
 
-- 詳細分析は既存 issue に完結している → [2026-07-07_wheel_odometry_encoder_scaling_4x.md](2026-07-07_wheel_odometry_encoder_scaling_4x.md)
+- 詳細分析は既存 issue に完結している → [2026-07-07_wheel_odometry_encoder_scaling_4x.md](closed/2026-07-07_wheel_odometry_encoder_scaling_4x.md)
 - 要点: monthly の推測「EPOS Studio でギヤ比 4:1 に誤設定」は**否定** (ズレ係数が 4 ちょうどで 5/4=1.25 と合わない)。
   真因は `bus.yml` の `scale_pos_from_dev = 2π/4096` が実機エンコーダ (1024 inc/rev = 256 パルス × 4 逓倍) と 4 倍食い違っていること。
 - monthly の TODO「epos studio の設定を見る」はそのまま有効: **0x3010:01 (エンコーダパルス数) の実値確認**が根本修正の第一歩 (同 issue の「未検証事項」参照)。

@@ -5,9 +5,9 @@
 
 ## 前提・制約 (必読)
 
-- **先に読む**: [2026-07-07_monthly_2026_6_todo_triage.md](2026-07-07_monthly_2026_6_todo_triage.md) (各タスクの原因分析)、
-  [2026-07-07_repository_audit.md](2026-07-07_repository_audit.md)、
-  [2026-07-07_wheel_odometry_encoder_scaling_4x.md](2026-07-07_wheel_odometry_encoder_scaling_4x.md)、CLAUDE.md。
+- **先に読む**: [2026-07-07_monthly_2026_6_todo_triage.md](../../issue/2026-07-07_monthly_2026_6_todo_triage.md) (各タスクの原因分析)、
+  [2026-07-07_repository_audit.md](../../issue/2026-07-07_repository_audit.md)、
+  [2026-07-07_wheel_odometry_encoder_scaling_4x.md](../../issue/closed/2026-07-07_wheel_odometry_encoder_scaling_4x.md)、CLAUDE.md。
 - 環境: Ubuntu ホスト + Docker コンテナ `rerobot_env` (ROS 2 Jazzy)。ビルドは必ず
   `colcon build --symlink-install --executor sequential` (並列ビルド禁止 — canopen スタックの既知問題)。
 - **タスクごとにブランチを切る** (例: `fix/lidar-fov`)。main へ直接コミットしない。
@@ -39,7 +39,7 @@
    ```
    autostart パラメータが実装済みか、GitHub の slam_toolbox (jazzy ブランチ、該当バージョンのタグ) も確認。
 2. 結果に応じて `slam.launch.py` を修正 (lifecycleEvent チェーンの仕組みと置き換え方針は triage の
-   [C2](2026-07-07_monthly_2026_6_todo_triage.md#c2) 参照):
+   [C2](../../issue/2026-07-07_monthly_2026_6_todo_triage.md#c2) 参照):
    - autostart が機能する → EmitEvent/OnStateTransition チェーンを削除し `autostart: true` に一本化。
    - 機能しない → `nav2_lifecycle_manager` 方式に置き換え:
      `node_names: ["slam_toolbox"]`, `autostart: true`, **`bond_timeout: 0.0` を必ず設定** (slam_toolbox は bond 非対応。忘れると activate 後に kill される)。
@@ -54,7 +54,7 @@
 
 ### A4. 脱力モードのコードレビュー反映 (T2 / 監査 Issue 6, 24)
 
-**着手前に triage の [C1](2026-07-07_monthly_2026_6_todo_triage.md#c1) を読むこと** (このコードが複雑な経緯と、
+**着手前に triage の [C1](../../issue/2026-07-07_monthly_2026_6_todo_triage.md#c1) を読むこと** (このコードが複雑な経緯と、
 実機で踏んだ罠 3 つ: 並行発行 NG / 復帰時 init NG / 戻り値は偽陰性あり。修正時にこれらを再導入しないこと)。
 
 実装は 2 案からユーザに確認して選ぶ:
@@ -124,7 +124,7 @@
 ## 参考: 「複雑で理解できない」箇所について
 
 - nav2.launch.py / nav2_params.yaml は **作業不要** — 複雑さは Nav2 自体の構成要素の多さ由来で、
-  ノード役割表と読み順を triage の [C3](2026-07-07_monthly_2026_6_todo_triage.md#c3) にまとめた。
+  ノード役割表と読み順を triage の [C3](../../issue/2026-07-07_monthly_2026_6_todo_triage.md#c3) にまとめた。
   簡素化 (nav2_bringup include) は透明性が下がるため推奨しない。
 - epos4_controller の抜本簡素化 (ros2_control + diff_drive_controller 移行、C1 案 3) は
   監査 Issue 1 のウォッチドッグまで標準装備になる本命だが大改修。**ユーザの合意なしに着手しないこと。**
@@ -132,4 +132,4 @@
 ## このリストに含めていないが本番前に必須のもの
 
 監査 Issue 1〜3 (速度指令ウォッチドッグ / 停止保証 / 速度平滑化) は monthly の TODO には無いが、
-つくばチャレンジ本番前に必ず対応すること。詳細は [2026-07-07_repository_audit.md](2026-07-07_repository_audit.md)。
+つくばチャレンジ本番前に必ず対応すること。詳細は [2026-07-07_repository_audit.md](../../issue/2026-07-07_repository_audit.md)。

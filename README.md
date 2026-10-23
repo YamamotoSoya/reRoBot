@@ -2,9 +2,12 @@
 Autonomous navigation robot for the Tsukuba Challenge
 
 ## Documentation
-- **[運用手引き (詳細版 README)](docs/manual/00_index.md)** — 全体像・セットアップ・基本パラメータ・起動と手動操作・bag 記録・SLAM (slam_toolbox / GLIM / LIO-SAM)・2D 地図変換・Nav2 / amcl・つくチャレ当日手順・トラブルシューティング
+- **[docs/TODO.md](docs/TODO.md)** — 今取り組むこと (ジャンル別)
+- **[docs/README.md](docs/README.md)** — docs/ 全体の地図 (調査記録・設計文書・解説書・月別変更履歴の索引)
+- **[運用手引き (詳細版 README)](docs/manual/00_index.md)** — 全体像・セットアップ・基本パラメータ・起動と手動操作・bag 記録・SLAM (slam_toolbox / GLIM / LIO-SAM)・2D 地図変換・Nav2 / amcl・つくチャレ当日手順・トラブルシューティング・[ソフトウェア構成図](docs/manual/16_software_architecture.md)
 - [CLAUDE.md](CLAUDE.md) — 開発規約・ビルド規則・アーキテクチャ要約
-- [docs/text/](docs/text/) — テーマ別解説書
+- [docs/text/](docs/text/README.md) — テーマ別解説書
+- [docs/monthly/](docs/monthly/00_index.md) — 月別の変更履歴 (何を・なぜ変えたか、2026-03〜)
 
 ## Setup
 ### clone
@@ -13,17 +16,17 @@ Please add '--recursive' option when you clone this repository
 $ git clone --recursive https://github.com/YamamotoSoya/reRoBot.git
 ```
 
-If the symbolic link is broken, please recreate it manually
+If submodules are missing (cloned without `--recursive`):
 ```bash
-$ cd ~/reRoBot/src
-$ ln -s external/maxon_epos4_ros2_repo/maxon_epos4_ros2 .
+$ git submodule update --init --recursive
 ```
 ### docker
 ```bash
-$ xhost +local:docker # set host before activate docker
-$ docker compose up --build # activate
+$ xhost +local:docker          # set host before activate docker
+$ ./scripts/build.sh images    # build images one by one (never `docker compose build` with no args)
+$ docker compose up -d main    # activate (main only; other profiles when needed)
 $ docker exec -it rerobot_env bash # enter
-$ docker copose down # deactivate
+$ docker compose down          # deactivate
 ```
 ### colcon build
 ```bash

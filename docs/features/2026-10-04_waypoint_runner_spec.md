@@ -26,7 +26,7 @@ waypoint 走行 仕様書
 └── 9. コード位置と一次資料
 ```
 
-急ぐなら: 当日の手順は [第12章 §7.1](../../manual/12_challenge_day.md)、トラブル時は本書 §8 から。
+急ぐなら: 当日の手順は [第12章 §7.1](../manual/12_challenge_day.md)、トラブル時は本書 §8 から。
 
 凡例: `path/to/file.py:123` は行番号 2026-10-04 時点。
 
@@ -100,7 +100,7 @@ waypoints:
 
 ## 3. waypoint_editor
 
-詳細な使い方は [第10章](../../manual/10_nav2.md) と `tools/README.md`。ここでは停止点まわりの仕様だけ書く。
+詳細な使い方は [第10章](../manual/10_nav2.md) と `tools/README.md`。ここでは停止点まわりの仕様だけ書く。
 
 | 操作 | 動作 |
 |---|---|
@@ -339,8 +339,8 @@ rclpy の既定の SIGINT ハンドラは、Ctrl-C を受けると即座に cont
 | `ros2_ws_main/src/bringup/rerobot_bringup/config/nav2_params.yaml:129` | goal checker (0.25 m / 0.25 rad / stateful) |
 | `/opt/ros/jazzy/share/nav2_bt_navigator/behavior_trees/navigate_through_poses_w_replanning_and_recovery.xml` | 既定 BT (rerobot_env 内) |
 
-- 当日の手順: [第12章 つくチャレ当日 §7.1](../../manual/12_challenge_day.md)
-- waypoint の作り方・NavigateThroughPoses の注意 (2026-10-02): [第10章 Nav2](../../manual/10_nav2.md)
+- 当日の手順: [第12章 つくチャレ当日 §7.1](../manual/12_challenge_day.md)
+- waypoint の作り方・NavigateThroughPoses の注意 (2026-10-02): [第10章 Nav2](../manual/10_nav2.md)
 - `tools/README.md` の waypoint_editor 節
 - `docs/claude/PROJECT_STATE.md` タイムライン 10-04
 - ウォッチドッグ: `docs/features/2026-09-19_epos4_controller_watchdog_fault_monitor.md`

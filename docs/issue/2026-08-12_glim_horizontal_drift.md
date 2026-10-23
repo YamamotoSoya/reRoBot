@@ -15,7 +15,7 @@ GLIM を IMU あり LIO 構成 (`config_odometry_cpu` + `enable_imu:true`) で 9
 かけると、3D 地図が**水平方向に塗れる** — 壁が厚さ数 m の帯になり、廊下の内部が点で
 埋まる。垂直方向 (床) は平ら (傾き 0.1°) で健全。
 
-![GLIM 3D 地図の壁スライス — 水平に塗れている](img/2026-08-12_glim_drift/01_glim3d_wall_smear.png)
+![GLIM 3D 地図の壁スライス — 水平に塗れている](img/2026-08-12_glim_horizontal_drift/01_glim3d_wall_smear.png)
 
 ## 調査手法と結果
 
@@ -28,7 +28,7 @@ GLIM を IMU あり LIO 構成 (`config_odometry_cpu` + `enable_imu:true`) で 9
 slam_toolbox で 2D SLAM → **壁がシャープに閉じたきれいな地図**。占有 9,250 セル。
 ⇒ R-Fans の水平スキャン幾何・時刻整合は SLAM に足る品質。
 
-![R-Fans 0°層の 2D SLAM — きれい](img/2026-08-12_glim_drift/02_2d_slam_clean.png)
+![R-Fans 0°層の 2D SLAM — きれい](img/2026-08-12_glim_horizontal_drift/02_2d_slam_clean.png)
 
 odom prior を「車輪 yaw」から「IMU yaw」に替えても 2D 地図は同等 (占有 9,395)。
 slam_toolbox は prior 選択に頑健で、データ品質の結論は変わらない。
@@ -41,13 +41,13 @@ slam_toolbox は prior 選択に頑健で、データ品質の結論は変わら
 最悪化するのは、車輪オドメトリがその場回転でタイヤをスクラブして yaw が狂うため
 (GLIM は車輪 odom を使わないので GLIM とは別件)。
 
-![デッドレコニング積み上げ — 原理的に塗れる](img/2026-08-12_glim_drift/03_deadreckoning_smear.png)
+![デッドレコニング積み上げ — 原理的に塗れる](img/2026-08-12_glim_horizontal_drift/03_deadreckoning_smear.png)
 
 ### 3. IMU なし GLIM (CT-ICP) は LIO より悪化 → IMU 経路は無罪
 
 同じ bag を CT-ICP (`config_odometry_ct` + `enable_imu:false`) で実行して比較:
 
-![IMU-LIO vs CT-ICP](img/2026-08-12_glim_drift/04_lio_vs_cticp.png)
+![IMU-LIO vs CT-ICP](img/2026-08-12_glim_horizontal_drift/04_lio_vs_cticp.png)
 
 - **IMU-LIO (左)**: 床は平ら・矩形を保つ・水平は塗れる。
 - **CT-ICP (右)**: z が対角に大きく傾き (pitch ドリフト=重力基準喪失)、壁が対角に
@@ -61,7 +61,7 @@ IMU を外すと悪化する = IMU は重力・姿勢を有益に支えている
 
 車輪 odom / GLIM-LIO / GLIM-CT の軌跡を開始点=原点・初期進行方向=+x で揃えて重ねた:
 
-![軌跡の重ね比較](img/2026-08-12_glim_drift/05_traj_overlay.png)
+![軌跡の重ね比較](img/2026-08-12_glim_horizontal_drift/05_traj_overlay.png)
 
 - **車輪 odom**: path 48.5 m (滑らかだが向きはスクラブで曲がる疑い)。
 - **GLIM IMU-LIO**: path **49.1 m** — 車輪と 1% 差で**走行距離は正確**。滑らか。

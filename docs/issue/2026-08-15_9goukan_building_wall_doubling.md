@@ -50,27 +50,27 @@ downsample 1.0 / ivox 1.0 / randomsampling 0.2 等) で実行されている。
 
 ## 証拠画像
 
-![0919 全体トップビュー](img/2026-08-15_9goukan_double_walls/g0919_overview.png)
+![0919 全体トップビュー](img/2026-08-15_9goukan_building_wall_doubling/g0919_overview.png)
 *0919 全体トップビュー (点を観測時刻で色分け、黒線=軌跡)。左=高さ帯全点、右=壁点のみ。
 西側で前半 (青) と後半 (赤) の構造物がずれたまま共存している。*
 
-![0919 二重壁ペア分布](img/2026-08-15_9goukan_double_walls/g0919_tallwall.png)
+![0919 二重壁ペア分布](img/2026-08-15_9goukan_building_wall_doubling/g0919_tallwall.png)
 *0919 — 高さ≥4 m の壁同士の二重ペア分布 (2 枚のシートの観測時刻差 Δt で色分け、灰=全壁セル)。
 濃赤 (Δt>500 s) が始点/終点の重複領域 (西〜南西) にだけ集中 = 本症状そのものの地図。
 青 (Δt 小) は生垣・柵など実在の平行構造。*
 
-![0846 二重壁ペア分布](img/2026-08-15_9goukan_double_walls/g0846_tallwall.png)
+![0846 二重壁ペア分布](img/2026-08-15_9goukan_building_wall_doubling/g0846_tallwall.png)
 *0846 の同図。Δt>200 s のペアが 52% とさらに支配的 (撮影時間が長いぶんドリフトも大きい)。*
 
-![0919 ホットスポット拡大と断面](img/2026-08-15_9goukan_double_walls/g0919_zoom.png)
+![0919 ホットスポット拡大と断面](img/2026-08-15_9goukan_building_wall_doubling/g0919_zoom.png)
 *0919 — ホットスポット 4 領域の拡大 (上段=トップビュー、下段=壁法線方向の垂直断面、時刻色分け)。
 左端 A (始点/終点重複域) で青 (序盤) と赤 (終盤) の同一壁が水平 1〜2 m + 垂直 4 m ずれている。
 C (北) は単一時刻のみ = 二重化なし、の対照例。*
 
-![0919 z ドリフト](img/2026-08-15_9goukan_double_walls/g0919_zdrift.png)
+![0919 z ドリフト](img/2026-08-15_9goukan_building_wall_doubling/g0919_zdrift.png)
 *0919 — 軌跡 z の推移。ジャンプではなく滑らかな漂い (+2 m → −4.3 m) = 縮退やスリップでなく系統誤差の累積。*
 
-![0846 z ドリフト](img/2026-08-15_9goukan_double_walls/g0846_zdrift.png)
+![0846 z ドリフト](img/2026-08-15_9goukan_building_wall_doubling/g0846_zdrift.png)
 *0846 — 同図。1833 s かけて −6.3 m まで沈む。*
 
 ## 解析手法 (再現用)

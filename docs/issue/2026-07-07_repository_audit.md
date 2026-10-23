@@ -5,7 +5,7 @@
 解決したら状態を `解決済み (日付, コミット)` に書き換えること。
 
 深掘りが必要な問題は本ディレクトリの慣例どおり 1 issue = 1 ファイルで別途起票する。
-既存の個別 issue: [2026-07-07_wheel_odometry_encoder_scaling_4x.md](2026-07-07_wheel_odometry_encoder_scaling_4x.md)
+既存の個別 issue: [2026-07-07_wheel_odometry_encoder_scaling_4x.md](closed/2026-07-07_wheel_odometry_encoder_scaling_4x.md)
 (エンコーダ分解能の 4 倍ズレ — **2026-07-29 解決済み**: bus.yml 2π/1024 + gear_ratio 5.0 の 2 点同時修正を適用。以下の本文中の「gear_ratio 1.25」記述は監査時点 (2026-07-07) のスナップショット)。
 
 ## サマリ
@@ -94,7 +94,7 @@ RPP の `use_velocity_scaled_lookahead_dist: true` はこの twist を参照す�
 **対処案**: bus.yml の TPDO に 0x606C を追加する、または odometry 側で velocity が全 0 のときは Δposition/dt へフォールバックする。
 
 **関連**: 同じ bus.yml のスケーリング係数に別の根本問題あり →
-[2026-07-07_wheel_odometry_encoder_scaling_4x.md](2026-07-07_wheel_odometry_encoder_scaling_4x.md)。
+[2026-07-07_wheel_odometry_encoder_scaling_4x.md](closed/2026-07-07_wheel_odometry_encoder_scaling_4x.md)。
 bus.yml を修正するときは両方まとめて対応するのが効率的。
 
 <a id="issue-5"></a>
@@ -308,7 +308,7 @@ maintainer が `MAKA <support@maxongroup.com>` (maxon のサンプルコード�
 - bus.yml (vel 版) の RPDO は 0x60FF を正しくマッピング (pos 版との取り違えなし)。
 - スケール係数 (2π/4096, 2π/60 等) と controller / odometry / teleop の単位変換は**リポジトリ内では**相互に整合。
   ただし実機エンコーダとの物理整合は別問題で、`gear_ratio: 1.25` が 4 倍ズレの対症療法になっている
-  (→ [2026-07-07_wheel_odometry_encoder_scaling_4x.md](2026-07-07_wheel_odometry_encoder_scaling_4x.md))。
+  (→ [2026-07-07_wheel_odometry_encoder_scaling_4x.md](closed/2026-07-07_wheel_odometry_encoder_scaling_4x.md))。
 - IK (`v = x ∓ yaw·tread/2`) と odometry の積分 (mid-step heading)、claude_swap 後の左右整合は正しい。
 - `src/external/COLCON_IGNORE` により symlink 経由との二重ビルドは起きない。
 - maps/ は .gitignore 済みで巨大ファイルの混入なし。

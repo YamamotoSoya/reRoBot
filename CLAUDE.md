@@ -173,19 +173,21 @@ is involved (the old `/robot_encoder_states` fan-in design is gone).
 
 新しいセッションの読み順: **CLAUDE.md (規約・ビルド) → `docs/claude/PROJECT_STATE.md` (現在地・既知の問題・タイムライン) → `docs/claude/USER_LEVEL.md` (ユーザ知識レベル — 注釈・解説の較正) → `docs/issue/` (問題詳細)**。
 
+docs/ 全体の地図・各ディレクトリの役割・索引は **`docs/README.md`** が正 (2026-10-23)。ここには編集ルールだけ残す:
+
 | 場所 | 役割 | 編集ルール |
 |------|------|-----------|
-| `docs/claude/PROJECT_STATE.md` | Claude 用の状態メモ | 大きな状態変化 (機能追加・重要バグ解決・方針変更) があったら必ず更新 (`/project-state` skill) |
-| `docs/claude/USER_LEVEL.md` | ユーザ知識レベルプロファイル (annotate/knowledge-check の較正元) | ⚠️ **個人情報のため git 管理外 (.gitignore 済み)・コミット禁止**。更新は `/user-level` skill |
-| `docs/issue/` | 未解決問題の調査記録 | 1 issue = 1 ファイル、冒頭にステータス。解決したらステータスを更新 |
-| `docs/report/` | 解決済みバグの事後報告 | 大きなデバッグ完了時に `/debug-report` skill で追加 |
-| `docs/features/` | 追加機能の設計文書 | 機能追加時に `/feature-doc` skill で追加 |
-| `docs/monthly/` | ユーザの月次ゼミ報告 | **Claude は編集禁止** (読み取り専用の入力) |
-| `docs/text/` | テーマ別の体系的解説書 (書籍形式の教材) | 1 テーマ = 1 ディレクトリ。作成・更新は `/textbook` skill |
-| `docs/trial/improvements.md` | 実験走行で見つけた改善点 (走行ごとに追記) | **本文はユーザが書く** (2026-10-03 作成)。Claude は読み取り専用、依頼時のみ編集 |
-| `docs/manual/` | 運用手引き (README の詳細版。全体像〜トラブルシューティング、`docs/text/` と同じ章分割形式) | **本文はユーザが執筆** (2026-09-21 テンプレ作成)。Claude は依頼時のみ編集、勝手に埋めない |
+| `docs/TODO.md` | 今取り組むこと (ジャンル別、`docs/trial/improvements.md` から抽出) | **ユーザ更新**。Claude は依頼時のみ |
+| `docs/claude/PROJECT_STATE.md` | Claude 用の状態メモ (現在地・既知の問題・次の作業。タイムラインは monthly へ移管済み) | 大きな状態変化があったら更新 (`/project-state` skill)。Stop hook が催促する |
+| `docs/claude/USER_LEVEL.md` | ユーザ知識レベルプロファイル | ⚠️ **個人情報のため git 管理外・コミット禁止**。更新は `/user-level` skill |
+| `docs/issue/` (+ `closed/`, `INDEX.md`) | 調査記録。未解決は直下、解決・前提消失は `closed/` | 冒頭にステータス行。解決したら更新 → `closed/` へ `git mv` → `python3 docs/claude/gen_docs_index.py` |
+| `docs/report/` / `docs/features/` (+ `INDEX.md`) | 事後報告 / 設計文書 | `/debug-report` / `/feature-doc` skill で追加 → INDEX 再生成 |
+| `docs/monthly/` | 2 種類が同居: 拡張子なし (`2026_6`) = **ユーザの月次ゼミ報告 (Claude 編集禁止)** / `2026_MM.md` + `00_index.md` = Claude 作成の**月別変更履歴** (親子ツリー表、docs・ファイルへの索引) | 変更履歴は `/monthly-changelog` skill で追記。Stop hook が当月コミットの未反映 7 日超を催促 |
+| `docs/text/` (+ `README.md`) | テーマ別解説書 (書籍形式) | `/textbook` skill |
+| `docs/trial/improvements.md` | 実験走行の改善点 (ユーザ執筆)。Claude の分析は `trial/analysis/` | Claude は依頼時のみ編集 |
+| `docs/manual/` | 運用手引き (本文ユーザ執筆。第16章 ソフトウェア構成図は Claude 作成) | Claude は依頼時のみ編集、勝手に埋めない |
 
-Project skills (`.claude/skills/`): `verify` (コンテナ `rerobot_env` 内でビルド+起動検証; 実機 can0 が無ければ vcan0 + fake-slaves), `stack-health` (稼働スタックの読み取り専用診断), `params-sync` (車体パラメータ 3 ファイルの整合検査), `debug-report` / `feature-doc` / `project-state` (docs 更新), `knowledge-check` (実装の理解確認 → `docs/claude/knowledge/`), `annotate` (返信中の用語注釈の基準・書式), `explain-edits` (ファイル変更前の説明の基準・書式), `user-level` (知識レベルプロファイル `docs/claude/USER_LEVEL.md` の再推定), `textbook` (docs/text/ にテーマ別解説書を書籍形式で作成 — 章構成の型・樹形図優先・事例解剖の型を持つ), `critic` (反証専任 subagent を起こして結論を崩しにかかる — 原因断定の前にデフォルトで実行)。Subagent 定義は `.claude/agents/` (`critic`)。
+Project skills (`.claude/skills/`): `verify` (コンテナ `rerobot_env` 内でビルド+起動検証; 実機 can0 が無ければ vcan0 + fake-slaves), `stack-health` (稼働スタックの読み取り専用診断), `params-sync` (車体パラメータ 2 ファイルの整合検査), `debug-report` / `feature-doc` / `project-state` (docs 更新), `monthly-changelog` (`docs/monthly/2026_MM.md` に当月の変更をツリー表で追記 + INDEX 再生成、2026-10-23), `knowledge-check` (実装の理解確認 → `docs/claude/knowledge/`), `annotate` (返信中の用語注釈の基準・書式), `explain-edits` (ファイル変更前の説明の基準・書式), `user-level` (知識レベルプロファイル `docs/claude/USER_LEVEL.md` の再推定), `textbook` (docs/text/ にテーマ別解説書を書籍形式で作成 — 章構成の型・樹形図優先・事例解剖の型を持つ), `critic` (反証専任 subagent を起こして結論を崩しにかかる — 原因断定の前にデフォルトで実行)。Subagent 定義は `.claude/agents/` (`critic`)。
 
 MCP servers (`.mcp.json`): `context7` (ライブラリ最新ドキュメント), `playwright`, `memory` (`~/.claude/rerobot-mcp-memory.json`)。
 

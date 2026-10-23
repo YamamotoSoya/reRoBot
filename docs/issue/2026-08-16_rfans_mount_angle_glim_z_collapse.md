@@ -63,13 +63,13 @@ z ドリフトのまとめ (符号が取付ジオメトリで反転 = 誤差源�
 
 ## 証拠画像
 
-![軌跡比較](img/2026-08-16_mount_angle/mount_compare.png)
+![軌跡比較](img/2026-08-16_rfans_mount_angle_glim_z_collapse/mount_compare.png)
 *3 構成の GLIM 軌跡 vs 車輪 odom。左列 XY: 45° は 30 m 四方に潰れ、15° は建物一周を再現 (車輪 odom の方が yaw ドリフトで歪んでいる — flat 0919 の GLIM と 15° の GLIM は同じ 110×57 m 形状で相互に整合)。中列 z(t): 45° は −22 m へ沈み、15° は +22 m へ単調上昇 → 終盤 560 s で頭打ち。右列速度: 45° は GLIM 速度が 0 付近へ脱落を繰り返す = 照合滑り、15° は車輪と一致。*
 
-![地図ビュー](img/2026-08-16_mount_angle/mount_maps.png)
+![地図ビュー](img/2026-08-16_rfans_mount_angle_glim_z_collapse/mount_maps.png)
 *再構成地図 (時刻色分け)。45° (左) はトップビューで壁が全方位に散乱 = 完全崩壊。15° (右) はトップビューの構造は良いが、側面図で序盤 (青, z≈0) と終盤 (赤, z≈+20〜30 m) の同じ環境が 2 層に分離 = 「map が崩壊した」の実体。*
 
-![extrinsic 補正の因果実験](img/2026-08-16_mount_angle/m15_vs_m16_z.png)
+![extrinsic 補正の因果実験](img/2026-08-16_rfans_mount_angle_glim_z_collapse/m15_vs_m16_z.png)
 *同一 bag (1017) を設定ピッチ 15.0° (青) と実測 16.02°+roll 0.72° (橙) で実行した z(t)。
 両者はほぼ同一曲線で終点差 0.6 m — extrinsic の 1° 補正は累積 z ドリフトに効かない (仮説棄却の決定打)。*
 

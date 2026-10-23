@@ -8,8 +8,8 @@ GLIM で作った 3D 地図を、Nav2 (map_server / amcl) が読める **2D 占�
 
 | ツール (`tools/`) | 点の出どころ | 高さ帯の基準 | 必要なもの | 所要 | 向き |
 |---|---|---|---|---|---|
-| [glim_dump_to_2dmap](../../tools/glim_dump_to_2dmap/) | GLIM dump の submap 点群 (0.3 m 間引き済み) | **base_link (実機 /rfans/scan と同じ)**、または submap 原点 z からの相対 | dump のみ (numpy) | 数秒 | まず形を見る / bag が無い |
-| [glim_traj_to_2dmap](../../tools/glim_traj_to_2dmap/) | **bag の生点群** (間引き前) | **base_link (実機 /rfans/scan と同じ)**、地面平面からの高さ、センサ座標 z | dump の `traj_lidar.txt` + 元 bag (ROS 環境) | 25〜45 s | **Nav2 用の本番地図 (推奨)** |
+| [glim_dump_to_2dmap](../../tools/glim_dump_to_2dmap) | GLIM dump の submap 点群 (0.3 m 間引き済み) | **base_link (実機 /rfans/scan と同じ)**、または submap 原点 z からの相対 | dump のみ (numpy) | 数秒 | まず形を見る / bag が無い |
+| [glim_traj_to_2dmap](../../tools/glim_traj_to_2dmap) | **bag の生点群** (間引き前) | **base_link (実機 /rfans/scan と同じ)**、地面平面からの高さ、センサ座標 z | dump の `traj_lidar.txt` + 元 bag (ROS 環境) | 25〜45 s | **Nav2 用の本番地図 (推奨)** |
 
 ## 9.1 仕組み
 

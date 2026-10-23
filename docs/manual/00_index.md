@@ -24,7 +24,8 @@ reRoBot 運用手引き
 ├── <a href="13_troubleshooting.md">第13章 トラブルシューティング</a> ..... 13_troubleshooting.md
 ├── <a href="14_pointcloud_to_laserscan.md">第14章 pointcloud_to_laserscan</a> ... 14_pointcloud_to_laserscan.md
 ├── <a href="15_launch_guide.md">第15章 launch の使い分け</a> .......... 15_launch_guide.md
-└── <a href="memo_2026_10_17.md">メモ 2026-10-17 waypoint_editor</a> ..... memo_2026_10_17.md
+├── <a href="16_software_architecture.md">第16章 ソフトウェア構成図</a> .......... 16_software_architecture.md
+└── <a href="17_waypoint_editor.md">第17章 waypoint_editor の起動と操作</a> .. 17_waypoint_editor.md (旧 memo_2026_10_17)
 </pre>
 
 ## 読み方
@@ -45,6 +46,7 @@ reRoBot 運用手引き
 - [README](../../README.md) — 最短セットアップ手順・ハードウェア udev 設定
 - [CLAUDE.md](../../CLAUDE.md) — 開発規約・ビルド規則・アーキテクチャの要約
 - `docs/claude/PROJECT_STATE.md` — 現在地・既知の問題・タイムライン
+- [docs/monthly/00_index.md](../monthly/00_index.md) — 月別の変更履歴 (何を・なぜ変えたかの索引、2026-03〜)
 - `docs/text/` — テーマ別解説書 (仕組みの理解はこちら)
 - `docs/issue/` / `docs/report/` — 問題の調査記録・事後報告
 
