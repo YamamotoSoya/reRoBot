@@ -96,7 +96,7 @@ controller_server:
       min_lookahead_dist: 0.3         # 最小先読み距離 [m]
       max_lookahead_dist: 0.9         # 最大先読み距離 [m]
       use_velocity_scaled_lookahead_dist: true  # 速度に応じ先読み距離を可変
-      transform_tolerance: 0.2        # TF 許容ずれ [s]
+      transform_tolerance: 0.5        # TF 待ち時間の上限 [s] (claude: 2026-10-22 0.2→0.5。lidar3d の map_3d->odom は scan stamp で届いた時点で 0.1〜0.5 s 古く、0.2 だと extrapolation で即 abort した — bag 2026-10-22_1743_5goukan_lidar3d)
       use_regulated_linear_velocity_scaling: true  # 曲率に応じ減速
       regulated_linear_scaling_min_radius: 0.9     # この曲率半径 [m] 未満で減速
       max_angular_accel: 3.2          # 最大角加速度 [rad/s^2]

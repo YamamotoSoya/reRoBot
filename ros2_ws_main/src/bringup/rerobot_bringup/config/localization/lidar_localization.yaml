@@ -14,6 +14,10 @@ lidar_localization:
     base_frame_id: base_link       # LiDAR (rfans) / IMU (imu_link) への TF はここから引く (URDF 由来)
     enable_map_odom_tf: true       # map_3d->odom を出す。odom->base_link は EKF が出す
     level_map_to_odom: true        # map_3d->odom の roll / pitch を 0 にする (z は残る → bridge が消す)
+    # claude: 2026-10-22 map_3d->odom の stamp を未来へずらす [s] (submodule にローカル追加したパラメータ、既定 0)。
+    #   scan stamp のままだと届いた時点で median 0.15 / max 0.49 s 古く、RPP が毎周期 TF 待ち → 制御 20→5 Hz、
+    #   0.2 s 待ちきれず abort (bag 2026-10-22_1743)、人に止められた後の旋回の発振 (bag 1756_tolC)。AMCL の transform_tolerance と同じ役割
+    map_odom_tf_future_dating_sec: 0.5
 
     # ---- 地図 ---- (map_path は launch から渡す)
     use_pcd_map: true
