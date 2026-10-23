@@ -44,8 +44,9 @@
   */
   "sensors": {
     // IMU config
-    "imu_acc_noise": 0.05,
-    "imu_gyro_noise": 0.02,
+    // claude: 2026-10-08 実験 (exp/glim-gpu-imu) — IMU 拘束を強める。元は acc 0.05 / gyro 0.02 でその 1/5。
+    "imu_acc_noise": 0.01,
+    "imu_gyro_noise": 0.004,
     "imu_int_noise": 0.001,
     "imu_bias_noise": 1e-5,
     // LiDAR config
