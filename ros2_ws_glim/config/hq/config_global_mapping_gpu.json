@@ -1,0 +1,84 @@
+{
+  /*** GlobalMapping (HQ = 24 時間かけて高品質地図を作る設定) ***
+  // claude: 2026-10-14 作成。基準は 10-08 の g1_imu_strong 構成
+  //   (= 通常 config_global_mapping_gpu.json、長距離閉合 6619 対・始終点 Δz 0.04 m)。
+  //
+  // ⚠️ enable_optimization は true のまま。false にすると iSAM2 が ISAM2ExtDummy に
+  //   差し替わり (global_mapping.cpp:103)、submap が odom 姿勢のまま並ぶ。
+  //   閉合候補の重なりは submaps[i]->T_world_origin = その時点の推定姿勢で測る
+  //   (global_mapping.cpp:316) ので、odom 段の z 幅 32.9 m がそのまま残ると
+  //   再訪箇所が鉛直にずれて重なりがゼロになり、offline_viewer で閉合を
+  //   立て直すこともできなくなる。逐次最適化は「姿勢を重なり判定が通る範囲に保つ」
+  //   役割を兼ねている。
+  //
+  // ⚠️ ボクセル系と randomsampling_rate は据置。閉合判定の粗さ (submap_voxel_resolution
+  //   まわり) は既にこの設定で 6619 対の閉合が立っており、これ以上粗くすると VRAM が
+  //   増える。10-08 のピークは 5793 MiB / 8192 MiB で残り 2.4 GB しかない
+  //   (docs/issue/2026-10-08_glim_gpu_cuda_illegal_address_vram.md)。
+  //   閉合をさらに増やす試みはパス 2 (offline_viewer, config/hq_offline) に回す —
+  //   あちらは odometry と sub_mapping が動かないぶん資源が空く。
+  //
+  // See config_global_mapping_gpu.json for the full description of the parameters.
+  */
+  "global_mapping": {
+    "so_name": "libglobal_mapping.so",
+    // General settings
+    "enable_imu": true,
+    "enable_optimization": true,
+    "init_pose_damping_scale": 1e10,
+    // Relative pose factors
+    "create_between_factors": false,
+    "between_registration_type": "GICP",
+    // Registration error factors
+    "registration_error_factor_type": "VGICP_GPU",
+    // claude: 0.2 → 0.15 (2026-10-14、較正 cal3 の後)。
+    //   ⚠️ この値は「因子と voxelmap を作るときの間引き率」であって、dump に保存される
+    //      地図の点密度には影響しない。load()/insert_submap() は subsampled_submaps から
+    //      voxelmap と因子を作る一方、保存されるのは間引き前の submap->frame。
+    //      つまり下げても地図は薄くならず、VRAM と計算量だけが減る。
+    //   下げた理由: 1 因子あたりの点数を、完走実績のある基準と揃えるため。
+    //      基準 g1_imu_strong : 50000 × 0.2  = 10000 点/因子 (ピーク 5793 MiB で完走)
+    //      cal3 のまま        : 70000 × 0.2  = 14000 点/因子 (= VRAM 1.4 倍)
+    //      本番               : 70000 × 0.15 = 10500 点/因子 ← 基準とほぼ同じ
+    //   10-08 の cudaErrorIllegalAddress は復路で因子が一気に立ち VRAM 99.5% に達した
+    //   経路で起きており、GLIM は終了時にしか dump を書かないので 10 時間走って
+    //   97% で落ちると全損する。密度を犠牲にせずリスクだけ減らせる唯一の軸なので入れる。
+    "randomsampling_rate": 0.15,
+    "submap_voxel_resolution": 0.5,
+    "submap_voxel_resolution_max": 1.0,
+    "submap_voxel_resolution_dmin": 5.0,
+    "submap_voxel_resolution_dmax": 20.0,
+    // claude: 2 → 3 (2026-10-14、hq run の結果を受けて)。★閉合を増やすための主変更★
+    //   閉合するかは最粗レベル voxelmaps.back() の重なりで決まる (global_mapping.cpp:316)。
+    //   レベルを 1 段足すと back() の解像度が 2.0 → 4.0 m になり、再訪が「同じ場所」と
+    //   認識されやすくなる。一方、照合精度を決める最細レベル (submap_voxel_resolution
+    //   = 0.5 m) は変えないので registration の精度は落ちない。
+    //   粗いレベルは占有ボクセル数が少ない (voxelmap のサイズは点数でなく占有ボクセル数で
+    //   決まる) ので VRAM の増分も小さい。
+    //
+    //   背景: hq run (levels 2, overlap 0.2) は長距離閉合 2237 対にとどまり、基準
+    //   g1_imu_strong の 6619 対の 1/3 だった。その結果、復路が往路に水平方向で
+    //   重ならず (xy 最近傍 25%点が 1.54 m → 7.61 m)、地図上で壁が横に二重化する。
+    //   垂直方向は逆に改善していた (再訪 |Δz| 中央値 0.08 → 0.02 m) ので、
+    //   不足しているのは閉合の数そのもの。
+    // claude: 2026-10-23 修正 — run 後に 2 -> 3 に編集されており dump 内の実行条件とずれていた。
+    //   hq / hq2 が実際に走った値 (2) に戻す。実行条件の正は常に dump の config/。
+    "submap_voxelmap_levels": 2,
+    "submap_voxelmap_scaling_factor": 2.0,
+    "max_implicit_loop_distance": 100.0,
+    // claude: 0.2 → 0.15 (同上)。閾値を直接下げて閉合を拾う。
+    // claude: 2026-10-23 修正 — 同上。hq の実行時は 0.2。
+    "min_implicit_loop_overlap": 0.2,
+    // Optimizer settings
+    // claude: false → true。Dogleg (信頼領域法) に変更。閉合が 6000 対規模で立つと
+    //   Gauss-Newton は一手が大きくなりすぎて暴れることがある。遅くなるがそれは今回の
+    //   予算内。⚠️ 24 時間で終わらない risk が一番大きいのがこの 1 行なので、
+    //   較正走行 (bag 先頭 10 分) の所要時間を見て判断する。
+    "use_isam2_dogleg": true,
+    "isam2_relinearize_skip": 1,
+    // claude: 0.1 → 0.01 (10 倍頻繁に再線形化)。global 段は変数が多く非線形性も強いので
+    //   ここの効きは odometry より大きい。0.0 (常時) はパス 2 で offline_viewer が
+    //   強制するため、パス 1 では 0.01 に留める。
+    "isam2_relinearize_thresh": 0.01
+  }
+}

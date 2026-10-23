@@ -1,0 +1,33 @@
+{
+  /*** Global Configuration (HQ パス 2 = offline_viewer での再最適化) ***/
+  // claude: 2026-10-14 作成。パス 1 (config/hq) の dump を読み直して閉合を立て直す用。
+  // コンテナ内からは /glim_config/hq_offline として見える。
+  //
+  //   docker exec -it glim_gpu_env /ros_entrypoint.sh \
+  //     ros2 run glim_ros offline_viewer \
+  //       /workspace/bags/glim/2026-10-03_1126_tsukuba_dump/hq \
+  //       --config_path /glim_config/hq_offline
+  //
+  // 実際に効くのは config_global_mapping_gpu.json だけ (offline_viewer は odometry も
+  // sub_mapping も動かさない)。他のファイルは GlobalConfig が参照を解決できるように
+  // 置いてあるだけで、パス 1 からのコピー。
+  //
+  // パス 1 との差分 (config_global_mapping_gpu.json):
+  //   submap_voxel_resolution      0.5 → 1.0    閉合判定を粗く (★主役)
+  //   submap_voxel_resolution_max  1.0 → 2.0
+  //   submap_voxelmap_levels       2   → 3      最粗 back() が 4.0〜8.0 m に
+  //   max_implicit_loop_distance   100 → 150    候補の探索半径
+  //   min_implicit_loop_overlap    0.2 → 0.15   閾値を下げて閉合を拾う
+  //   isam2_relinearize_thresh     0.01 → 0.0   常時フル再線形化 (viewer が強制)
+  "global": {
+    "config_path": "",
+    "config_ros": "config_ros.json",
+    "config_logging": "config_logging.json",
+    "config_viewer": "config_viewer.json",
+    "config_sensors": "config_sensors.json",
+    "config_preprocess": "config_preprocess.json",
+    "config_odometry": "config_odometry_gpu.json",
+    "config_sub_mapping": "config_sub_mapping_gpu.json",
+    "config_global_mapping": "config_global_mapping_gpu.json"
+  }
+}

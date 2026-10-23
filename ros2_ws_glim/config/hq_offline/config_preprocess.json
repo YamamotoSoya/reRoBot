@@ -1,0 +1,55 @@
+{
+  /*** Preprocessing parameters (HQ = 24 時間かけて高品質地図を作る設定) ***
+  // claude: 2026-10-14 作成。基準は通常 config_preprocess.json。
+  // 変更の方針 = 「CPU 時間と RAM で品質を買う。VRAM は増やさない」。
+  //
+  // distance_(near|far)_thresh  : Points out of this range will be filtered out
+  // use_random_grid_downsampling: If false, use the conventional voxelgrid downsampling
+  //                             : Otherwise, use voxel-based random sampling (recommended)
+  // downsample_resolution       : Voxel grid resolution for downsampling
+  // random_downsample_target    : Target number of points for voxel-based random sampling (Enabled when > 0)
+  // random_downsample_rate      : Sampling rate for voxel-based random sampling (Enabled when target <= 0)
+  // enable_outlier_removal      : If true, enable statistical outlier removal
+  // outlier_removal_k           : Number of neighbors for outlier removal
+  // outlier_std_mul_factor      : Standard deviation multiplier for outlier removal
+  // enable_cropbox_filter       : If true, filter points out points within box
+  // crop_bbox_frame             : Bounding box reference frame
+  // crop_bbox_min               : Bounding box min point
+  // crop_bbox_max               : Bounding box max point
+  // k_correspondences           : Number of neighbors for covariance estimation
+  // num_threads                 : Number of threads for preprocessing
+  */
+  "preprocess": {
+    "distance_near_thresh": 0.5,
+    "distance_far_thresh": 100.0,
+    "use_random_grid_downsampling": true,
+    // claude: 1.0 → 0.5。ダウンサンプルのボクセルを半分にして、遠方や細い構造の点を残す。
+    //   点数が増えるので RAM と処理時間に効くが VRAM には乗らない (preprocess は CPU 段)。
+    "downsample_resolution": 0.5,
+    // claude: 10000 → 20000 (2 倍)。1 フレームあたりの点数の上限。
+    //   これが実質の密度決定要因 — downsample_resolution を下げてもここで頭打ちになるため、
+    //   2 つはセットで変える必要がある。3 倍以上にすると下流の submap 側 (RAM) が持たないと
+    //   見て 2 倍に留めた。較正走行の実測で調整する。
+    "random_downsample_target": 20000,
+    "random_downsample_rate": 0.1,
+    // claude: false → true。統計的外れ値除去を有効化。各点の k 近傍までの平均距離が
+    //   全体分布の mean + std*factor を超えたら捨てる。雨滴・虫・多重反射・LiDAR の
+    //   飛び点といった孤立点が消えるので、地図の「もや」が減る。
+    //   コストは k 近傍探索ぶんの CPU 時間のみで、保持する点はむしろ減る = RAM 中立。
+    //   「時間で買える品質」の代表格なので 24 時間プランでは最優先で入れる。
+    "enable_outlier_removal": true,
+    // claude: 10 → 20。近傍数を倍にして距離統計を安定させる (少ないと疎な遠方点を
+    //   正常でも外れ値と誤判定しやすい)。計算量は k に比例するので純粋に時間のコスト。
+    "outlier_removal_k": 20,
+    // claude: 1.0 のまま。下げると削りすぎて壁が痩せる。まず既定の厳しさで様子を見る。
+    "outlier_std_mul_factor": 1.0,
+    "enable_cropbox_filter": false,
+    "crop_bbox_frame": "lidar",
+    "crop_bbox_min": [-1.0, -1.0, -1.0],
+    "crop_bbox_max": [1.0, 1.0, 1.0],
+    "k_correspondences": 20,
+    // claude: 2 → 6。外れ値除去を足した分、preprocess が律速になりやすいので並列化する。
+    //   この機は 12 コア。odometry 側にも 6 を与えて合計 12 に収める (取り合いを避ける)。
+    "num_threads": 6
+  }
+}

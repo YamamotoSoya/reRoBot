@@ -1,0 +1,77 @@
+{
+  /*** GlobalMapping (HQ パス 2 = offline_viewer で dump を再最適化する設定) ***
+  // claude: 2026-10-14 作成。パス 1 (config/hq) が作った dump を offline_viewer で
+  // 読み直し、閉合を立て直してから本気で最適化し直すための設定。
+  //
+  // ★この config が効く仕組み★
+  //   GlobalMapping::load() は dump を読むたびに voxelmap を作り直す
+  //   (global_mapping.cpp:727-759)。submap_voxel_resolution / _max / _dmin / _dmax /
+  //   submap_voxelmap_levels / randomsampling_rate はいずれも「ロード時の判断」で、
+  //   dump に焼き付いてはいない。つまり同じ dump を好きな粗さで読み直せる。
+  //   10-10 issue で「CPU 側は粗ボクセル設定を完走させられなかった (RAM 不足)」
+  //   という壁に当たったが、offline_viewer では odometry と sub_mapping が動かないぶん
+  //   主記憶も VRAM も空くので、ここで試せる。
+  //
+  // ★使い方★
+  //   docker exec -it glim_gpu_env /ros_entrypoint.sh \
+  //     ros2 run glim_ros offline_viewer \
+  //       /workspace/bags/glim/2026-10-03_1126_tsukuba_dump/hq \
+  //       --config_path /glim_config/hq_offline
+  //   - 起動時の "Do optimization?" は Yes
+  //     (このとき isam2_relinearize_thresh は 0.0 に強制される — offline_viewer.cpp:202-204。
+  //      下の値は無視されるが、意図を残すため 0.0 を書いてある)
+  //   - GUI の "Find overlapping submaps" を Min overlap 0.3 → 0.2 → 0.15 と段階的に叩き、
+  //     その都度 Optimize。全 submap 対の総当たりで重なりを測り直し、閾値を超えた対に
+  //     matching cost 因子を後付けする (global_mapping.cpp:285-340)。
+  //   - 往路と復路が結ばれない箇所は "Loop begin" / "Loop end" で手動指定。
+  //   - 仕上げは File > Save Map で別ディレクトリへ。
+  //
+  // ⚠️ 一気に min_overlap を下げない。因子が数千本立った直後の最適化で VRAM が跳ねる。
+  //    10-08 の cudaErrorIllegalAddress はまさにその経路。必ず高い方から刻む。
+  */
+  "global_mapping": {
+    "so_name": "libglobal_mapping.so",
+    // General settings
+    "enable_imu": true,
+    "enable_optimization": true,
+    "init_pose_damping_scale": 1e10,
+    // Relative pose factors
+    "create_between_factors": false,
+    "between_registration_type": "GICP",
+    // Registration error factors
+    "registration_error_factor_type": "VGICP_GPU",
+    // claude: 0.2 据置。上げると 1 係数の source_inliers が増えて VRAM が跳ねる。
+    //   閉合の数を増やす方が効くので、点の方は我慢する。
+    "randomsampling_rate": 0.2,
+    // claude: 0.5 → 1.0。★パス 2 の主役★
+    //   閉合するかは最粗レベル voxelmaps.back() の重なりで決まる。10-10 issue §2 の実測では
+    //   同じ再訪対の重なりが 0.5 m で 0.047〜0.148 (閾値 0.2 に届かない)、
+    //   1.0 m で 0.143〜0.282、2.0 m で 0.236〜0.434。粗いほど再訪が「同じ場所」と認識される。
+    "submap_voxel_resolution": 1.0,
+    // claude: 1.0 → 2.0。遠方 (dmax 20 m 以遠) の submap はさらに粗く見る。
+    "submap_voxel_resolution_max": 2.0,
+    "submap_voxel_resolution_dmin": 5.0,
+    "submap_voxel_resolution_dmax": 20.0,
+    // claude: 2 → 3。back() = base × 2^2 なので、近傍で 4.0 m・遠方で 8.0 m まで粗くなる。
+    //   レベルを足すぶん保持する voxelmap は増えるが、粗いレベルは占有ボクセル数が
+    //   少ないので増分は小さい (voxelmap のサイズは点数でなく占有ボクセル数で決まる)。
+    "submap_voxelmap_levels": 3,
+    "submap_voxelmap_scaling_factor": 2.0,
+    // claude: 100.0 → 150.0。閉合候補として距離で足切りする半径。つくばは往復 2.3 km で
+    //   往路と復路が最大で数十 m 横にずれる区間があるため広げる。
+    //   総当たりは O(N²) だが 651 submap = 21 万対で、重なり計算自体は数分で終わる。
+    "max_implicit_loop_distance": 150.0,
+    // claude: 0.2 → 0.15。閾値を下げて閉合を拾う。
+    //   ⚠️ GUI の "Find overlapping submaps" はスライダの Min overlap を使い、
+    //      この値は使わない (引数で渡される)。この値が効くのは逐次の自動閉合判定の方。
+    "min_implicit_loop_overlap": 0.15,
+    // Optimizer settings
+    // claude: false → true。6000 対規模の閉合を一度に入れると Gauss-Newton は一手が
+    //   大きくなりすぎる。パス 2 は時間制約が緩い (対話操作) ので頑健さを取る。
+    "use_isam2_dogleg": true,
+    "isam2_relinearize_skip": 1,
+    // claude: 0.0 = 常時フル再線形化。offline_viewer が load 時に強制的に 0.0 を入れるので
+    //   実際にはこの値は使われないが、意図を明示するために合わせてある。
+    "isam2_relinearize_thresh": 0.0
+  }
+}

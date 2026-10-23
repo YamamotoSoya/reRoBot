@@ -1,0 +1,46 @@
+{
+  /*** SubMapping (HQ = 24 時間かけて高品質地図を作る設定) ***
+  // claude: 2026-10-14 作成。基準は通常 config_sub_mapping_gpu.json (上流デフォルト)。
+  // ここが「最終的な地図の細かさ」を直接決める段 — submap に残った点がそのまま
+  // dump に保存され、2D 変換でも offline_viewer の表示でも使われる。
+  // See config_sub_mapping_gpu.json for the full description of the parameters.
+  */
+  "sub_mapping": {
+    "so_name": "libsub_mapping.so",
+    "enable_imu": true,
+    "enable_optimization": false,
+    // Keyframe update strategy
+    // claude: 15 → 20。submap を構成するキーフレーム数。多いほど 1 submap が
+    //   厚く (視点が多く) なり、遮蔽で欠けた面が埋まる。
+    "max_num_keyframes": 20,
+    "keyframe_update_strategy": "OVERLAP",
+    "keyframe_update_min_points": 500,
+    "keyframe_update_interval_rot": 3.14,
+    "keyframe_update_interval_trans": 1.0,
+    "max_keyframe_overlap": 0.6,
+    // Relative pose factors
+    "create_between_factors": false,
+    "between_registration_type": "GICP",
+    // Registration error factors
+    "registration_error_factor_type": "VGICP_GPU",
+    "keyframe_randomsampling_rate": 1.0,
+    "keyframe_voxel_resolution": 0.25,
+    "keyframe_voxelmap_levels": 2,
+    "keyframe_voxelmap_scaling_factor": 2.0,
+    // Post processing
+    // claude: 0.1 → 0.07。submap を作るときのマージ用ボクセル解像度。
+    //   体積比で約 2.9 倍、面状の構造なら約 2 倍の点が残る計算。
+    "submap_downsample_resolution": 0.07,
+    // claude: 50000 → 100000 (2 倍)。★ここが実質の上限★
+    //   merge_frames() はボクセル間引きの結果がこの数を超えると、超過分を
+    //   std::sample() で無作為に捨てる (gaussian_voxelmap_cpu_funcs.cpp:88-92)。
+    //   つまり submap_downsample_resolution だけ下げても、この値に当たった時点で
+    //   密度は頭打ちになる。2 つは必ずセットで変える。
+    //   ⚠️ CPU 版 config はこの項目を持たず、既定 -1 (= size_t にキャストされて上限なし)。
+    //      GPU 版だけが 50000 で頭を押さえられていた。
+    //   4 倍 (200000) も検討したが、全 submap が RAM 常駐する global_mapping 側で
+    //   651 submap × 4 倍 = 20 GB 超となり 31 GB では持たないと見て 2 倍に留めた。
+    "submap_target_num_points": 100000,
+    "submap_voxel_resolution": 0.5
+  }
+}

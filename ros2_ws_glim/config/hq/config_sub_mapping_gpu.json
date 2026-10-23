@@ -1,0 +1,77 @@
+{
+  /*** SubMapping (HQ = 24 時間かけて高品質地図を作る設定) ***
+  // claude: 2026-10-14 作成。基準は通常 config_sub_mapping_gpu.json (上流デフォルト)。
+  // ここが「submap の細かさ」と「最終的な地図の点密度」の両方を決める段。
+  //
+  // ★2026-10-14 較正走行での重要な発見★
+  //   preprocess の点を濃くしたら submap 数が基準の 1/7 に激減した。
+  //     基準 g1_imu_strong : 651 submap / 2300 m = 3.5 m に 1 個
+  //     cal600 (点 2 倍)   : 18 submap / 289 m  = 16 m に 1 個
+  //     cal2   (点 3 倍)   : 11 submap / 281 m  = 25.5 m に 1 個
+  //   原因は sub_mapping.cpp:252-254 — キーフレーム挿入の判定が
+  //     overlap = overlap_auto(直前キーフレームの最粗ボクセルマップ, 現フレーム)
+  //     insert_as_keyframe = overlap < max_keyframe_overlap
+  //   で、点が濃いほど占有ボクセルが増えて overlap が上がり、閾値に届かなくなる。
+  //   つまり OVERLAP 戦略では submap 密度が点密度に連動してしまう。
+  //
+  //   submap が減るのは致命的: ループ閉合は submap 対で立つので、submap が 1/7 なら
+  //   候補対は 1/49 になる。10-10 issue では閉合が始終点 Δz を 56 m → 0.04 m にしており、
+  //   幾何の正しさは点密度より優先度が高い。
+  //
+  //   対策として max_keyframe_overlap を緩める手もあるが、連動の構造自体は残る。
+  //   ここでは DISPLACEMENT 戦略に切り替えて「距離で固定」し、点密度から切り離す。
+  //
+  // See config_sub_mapping_gpu.json for the full description of the parameters.
+  */
+  "sub_mapping": {
+    "so_name": "libsub_mapping.so",
+    "enable_imu": true,
+    "enable_optimization": false,
+    // Keyframe update strategy
+    // claude: 20 → 15 (= 上流既定・基準と同値に戻した)。cal2 で 20 にしていたのも
+    //   submap 数が減った一因。submap 数を稼ぐ方向に倒す。
+    "max_num_keyframes": 15,
+    // claude: "OVERLAP" → "DISPLACEMENT"。★今回いちばん重要な変更★
+    //   重なり基準をやめ、走行距離基準でキーフレームを入れる。点をいくら濃くしても
+    //   submap の間隔が変わらなくなる (上のコメントの連動を断ち切る)。
+    "keyframe_update_strategy": "DISPLACEMENT",
+    "keyframe_update_min_points": 500,
+    // claude: 3.14 (= 実質無効) → 0.3 rad (約 17°)。曲がり角でもキーフレームを入れる。
+    //   距離基準だけだと、その場旋回や急カーブで姿勢が大きく変わっても
+    //   キーフレームが増えず submap 内に歪みを抱え込む。
+    "keyframe_update_interval_rot": 0.3,
+    // claude: 1.0 → 0.25 m。基準 g1_imu_strong の実効間隔に合わせた値:
+    //   2300 m / 651 submap / 15 キーフレーム = 0.235 m/キーフレーム。
+    //   これで submap は 15 × 0.25 = 3.75 m ごと = 全体で約 610 個の見込み
+    //   (基準 651 とほぼ同じ)。
+    "keyframe_update_interval_trans": 0.25,
+    // claude: DISPLACEMENT では使われない (OVERLAP 戦略専用) が、戻すとき用に残す。
+    "max_keyframe_overlap": 0.6,
+    // Relative pose factors
+    "create_between_factors": false,
+    "between_registration_type": "GICP",
+    // Registration error factors
+    "registration_error_factor_type": "VGICP_GPU",
+    "keyframe_randomsampling_rate": 1.0,
+    "keyframe_voxel_resolution": 0.25,
+    "keyframe_voxelmap_levels": 2,
+    "keyframe_voxelmap_scaling_factor": 2.0,
+    // Post processing
+    // claude: 0.1 → 0.07。submap を作るときのマージ用ボクセル解像度。
+    "submap_downsample_resolution": 0.07,
+    // claude: 50000 → 70000 (1.4 倍。cal2 の 100000 から引き下げた)。★密度の実質上限★
+    //   merge_frames() はボクセル間引きの結果がこの数を超えると、超過分を
+    //   std::sample() で無作為に捨てる (gaussian_voxelmap_cpu_funcs.cpp:88-92)。
+    //   submap_downsample_resolution だけ下げてもここで頭打ちになるので 2 つはセット。
+    //   ⚠️ CPU 版 config はこの項目を持たず、既定 -1 (= size_t にキャストされ上限なし)。
+    //      GPU 版だけが 50000 で頭を押さえられていた。
+    //   100000 から下げたのは、submap 数を基準の 651 に戻すと RAM が釣り合わなくなるため。
+    //   較正実測の増分 38 MB/submap @100k = 0.38 MB/1k点 から:
+    //      651 submap × 50k  = 12.4 GB (基準)
+    //      651 submap × 70k  = 17.3 GB  ← ここ。基礎 + 因子 4 GB を足して約 21 GB / 31 GB
+    //      651 submap × 100k = 24.7 GB  ← 因子ぶんを足すと 29 GB で危険
+    //   「点を 2 倍」より「submap を 7 倍 = 閉合候補を 49 倍」を優先した結果。
+    "submap_target_num_points": 70000,
+    "submap_voxel_resolution": 0.5
+  }
+}

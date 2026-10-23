@@ -1,0 +1,106 @@
+{
+  /*** Keyframe-based VGICP odometry estimation (HQ = 24 時間かけて高品質地図を作る設定) ***
+  // claude: 2026-10-14 作成。基準は通常 config_odometry_gpu.json (上流デフォルト)。
+  // 前段 odometry の精度は global 段では取り返せない (10-10 issue §6(a): odom 段の
+  // z 幅がそのまま traj の z 幅の下限になる) ので、ここに時間を使うのが効率が良い。
+  //
+  // --- Initialization ---
+  // initialization_mode         : "LOOSE" performs loose coupling-based IMU state initialization that takes a few seconds
+  //                             : "NAIVE" simply uses the linear acceleration direction as the gravity direction
+  // initialization_window_size  : Initialization window size for the "LOOSE" initialization mode
+  // init_pose_damping_scale     : Damping scale for the initial pose (to fix the gauge freedom)
+  //
+  // --- Optimization params ---
+  // smoother_lag                : Fixed-lag smoothing window size [sec]
+  // use_isam2_dogleg            : Use the dogleg optimizer as the backend of ISAM2 that is slow but more robust
+  // isam2_relinearize_skip      :
+  // isam2_relinearize_thresh    :
+  // fix_imu_bias                : If true, disable IMU bias estimation and use the initial IMU bias
+  // compute_covs                : If true, compute marginal covariances of the latest frame (takes a few milliseconds per frame)
+  //
+  // --- Voxel params ---
+  // voxel_resolution            : Base resolution for VGICP voxels
+  // voxel_resolution_max        : Maximum base resolution for VGICP voxels.
+  //                             : When voxel_resolution_max > voxel_resolution, the voxel resolution is adaptively increased
+  //                             : depending on the median of point distances clamped by dmin and dmax.
+  // voxelmap_levels             : Multi-resolution voxelmap levels
+  // voxelmap_scaling_factor     : Multi-resolution voxelmap scaling factor
+  // full_connection_window_size : Latest sensor pose variable is connected with all of the past $full_connection_window_size poses
+  //                             : Must be >1. Increase this param for aggressive motion data (3~5)
+  //
+  // --- Keyframe params ---
+  // keyframe_update_strategy    : "OVERLAP" / "DISPLACEMENT" / "ENTROPY"
+  // max_num_keyframes           : Maximum number of keyframes
+  // keyframe_min_overlap        : Keyframes that overlap to the latest keyframe with a rate smaller than this will be eliminated
+  // keyframe_max_overlap        : If the overlap between the latest frame and keyframes is smaller than this,
+  //                             : it is inserted into the keyframe list (lager = more frequent keyframe insertion)
+  // keyframe_delta_(trans|rot)  : Keyframe displacement threshold [m / rad]
+  //
+  // --- MISC ---
+  // validate_imu                 : If true, perform IMU validation and log the validation results
+  // save_imu_rate_trajectory     : If true, save the IMU rate trajectory
+  // num_threads                  : Number of threads for odometry estimation
+  */
+  "odometry_estimation": {
+    "so_name": "libodometry_estimation_gpu.so",
+    // Initialization params
+    "initialization_mode": "LOOSE",
+    "initialization_window_size": 1.0,
+    "init_pose_damping_scale": 1e10,
+    // Optimization params
+    // claude: 5.0 → 10.0。固定ラグ平滑化の窓を 2 倍にして、過去 10 秒ぶんの姿勢を
+    //   同時に最適化する。窓から出た変数は周辺化されて二度と直らないので、窓が広いほど
+    //   「あとから効く観測」で修正できる余地が増える。コストは窓内の変数数に対して
+    //   おおむね線形〜準線形の計算時間と、窓ぶんの RAM。VRAM には乗らない。
+    "smoother_lag": 10.0,
+    // claude: 一度 true にしたが false に戻した (2026-10-14 較正走行 cal600 の結果)。
+    //   bag 先頭 10 分に 100 分かかり (0.10x)、全体 85.8 分の外挿が 14.3 時間 + 減衰で
+    //   24 時間を割りかねなかった。一方 RAM 20 GB / 31 GB・VRAM 1074 MB / 8192 MiB と
+    //   資源には余裕があったので、削るべきは時間と判断。
+    //   odometry は毎フレーム走るので dogleg の定数倍が全体に乗る。対して基準の
+    //   g1_imu_strong は dogleg なしで既に始終点 Δz 0.04 m を出しており限界利益が小さい。
+    //   global_mapping 側の dogleg は submap ごと = 実行頻度が桁違いに低いので残してある。
+    "use_isam2_dogleg": false,
+    "isam2_relinearize_skip": 1,
+    // claude: 0.1 → 0.005 (20 倍頻繁に再線形化。較正後に 0.01 から更に下げた)。
+    //   非線形因子の 1 次近似をやり直す閾値。小さいほど近似のズレが溜まらないが、
+    //   やり直しのたびに計算が走る = 純粋に時間のコスト。
+    "isam2_relinearize_thresh": 0.005,
+    "fix_imu_bias": false,
+    // claude: false のまま。周辺共分散は viewer の表示にしか使われず、推定には寄与しない。
+    //   headless で回すので入れても無駄。
+    "compute_covs": false,
+    // Voxel params
+    // claude: ボクセル系は据置。ここを細かくすると VGICP_GPU の voxelmap が VRAM に乗り、
+    //   8 GB のうち残り 2.4 GB しか余裕が無い (10-08 実測ピーク 5793 MiB) ため危険。
+    //   密度は preprocess 側 (CPU/RAM) で稼ぐ方針。
+    "voxel_resolution": 0.25,
+    "voxel_resolution_max": 0.5,
+    "voxel_resolution_dmin": 5.0,
+    "voxel_resolution_dmax": 20.0,
+    "voxelmap_levels": 2,
+    "voxelmap_scaling_factor": 2.0,
+    // claude: 2 → 5 (上流コメント「aggressive motion は 3〜5」の上限。較正後に 4 から引き上げ)。
+    //   最新姿勢を過去 5 姿勢と結ぶ。つくばのコースは段差・路面の凹凸・歩道の切り下げで
+    //   姿勢が跳ねるので該当する。拘束が増えるぶん 1 ステップが重くなるが、
+    //   点を増やすのと違って RAM/VRAM はほぼ不変 = 時間だけのコスト。
+    "full_connection_window_size": 5,
+    // Keyframe params
+    "keyframe_update_strategy": "OVERLAP",
+    // claude: 15 → 35 (較正後に 25 から引き上げ)。保持するキーフレームを増やす =
+    //   現フレームが照合できる相手が増える → odom 段の精度が上がる。
+    //   キーフレームは GPU 側に voxelmap を持つので VRAM に効くが、較正走行 (25 本) の
+    //   ピークが 1074 MB / 8192 MiB と大幅に余っていたので引き上げた。
+    "max_num_keyframes": 35,
+    "keyframe_min_overlap": 0.01,
+    "keyframe_max_overlap": 0.7,
+    "keyframe_delta_trans": 2.0,
+    "keyframe_delta_rot": 0.5,
+    "keyframe_entropy_thresh": 0.99,
+    // MISC
+    "validate_imu": true,
+    "save_imu_rate_trajectory": true,
+    // claude: 2 → 6。preprocess と合わせて 12 コアちょうど。
+    "num_threads": 6
+  }
+}

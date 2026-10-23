@@ -1,0 +1,33 @@
+{
+  /*** Global Configuration (HQ = 24 時間かけて高品質地図を作る設定、パス 1) ***/
+  // claude: 2026-10-14 作成。通常運用の config/ を一切触らずに重い設定で回すための
+  // 自己完結した config セット。/glim_config がディレクトリごと mount されているので
+  // このサブディレクトリはコンテナ内から /glim_config/hq として見える。
+  //
+  //   ros2 run glim_ros glim_rosbag /workspace/bags/raw/2026-10-03_1126_tsukuba \
+  //     --ros-args -p config_path:=/glim_config/hq -p auto_quit:=true \
+  //     -p dump_path:=/workspace/bags/glim/2026-10-03_1126_tsukuba_dump/hq
+  //
+  // 実行は GPU コンテナ (glim_gpu_env)。odometry のみ GPU 専用 .so で、
+  // sub/global mapping は CPU と同じ .so が VGICP_GPU 係数だけ GPU に流す。
+  //
+  // 変更点の要約 (基準 = 10-08 の g1_imu_strong 構成):
+  //   preprocess      : 外れ値除去 ON (k 20) / target 10000→20000 / 解像度 1.0→0.5 / threads 2→6
+  //   odometry        : dogleg ON / relin 0.1→0.01 / smoother_lag 5→10 /
+  //                     full_connection 2→4 / keyframes 15→25 / threads 2→6
+  //   sub_mapping     : submap 解像度 0.1→0.07 / 点数上限 50000→100000 / keyframes 15→20
+  //   global_mapping  : dogleg ON / relin 0.1→0.01 (ボクセルと randomsampling は据置 = VRAM 保護)
+  //
+  // パス 2 (offline_viewer での再最適化) は config/hq_offline を使う。
+  "global": {
+    "config_path": "",
+    "config_ros": "config_ros.json",
+    "config_logging": "config_logging.json",
+    "config_viewer": "config_viewer.json",
+    "config_sensors": "config_sensors.json",
+    "config_preprocess": "config_preprocess.json",
+    "config_odometry": "config_odometry_gpu.json",
+    "config_sub_mapping": "config_sub_mapping_gpu.json",
+    "config_global_mapping": "config_global_mapping_gpu.json"
+  }
+}
