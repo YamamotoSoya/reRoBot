@@ -7,6 +7,7 @@
 - 対象 bag: `bags/raw/2026-10-03_1126_tsukuba` (mcap 48 GB、5149 s = 86 分、`/rfans_driver/rfans_points` 51378 件、`/imu/data` 1029105 件)
 - 環境: `glim_gpu_env` (`koide3/glim_ros2:jazzy_cuda12.5` ベース、2026-10-07 構築)、GTX 1080 (VRAM 8 GB、compute capability 6.1)、driver 580.173.02、ホストは QEMU ゲスト + GPU パススルー
 - 関連: GPU 構成の導入は PROJECT_STATE 10-07 の行、手順は `docs/manual/07_glim.md` §GPU mode
+- **続き**: CPU 版と GPU 版の差 (閉合が立つかどうか)・IMU 拘束強化・分割 bag の検証は `2026-10-10_glim_cpu_gpu_loop_closure_difference.md` に分離 (本 issue §6.5 の発展)
 
 ## 1. 何が起きたか (観測)
 
