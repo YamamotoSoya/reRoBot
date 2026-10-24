@@ -1,0 +1,30 @@
+{
+  "preprocess": {
+    "crop_bbox_frame": "lidar",
+    "crop_bbox_max": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "crop_bbox_min": [
+      -1.0,
+      -1.0,
+      -1.0
+    ],
+    // claude: 2026-10-23 ユーザ指示 — 100 -> 180 m。R-Fans の遠方点まで地図に使う。
+    //   スキャンあたりの生点が増えるので密度の天井も上がるが、遠方点はノイズ率が高い
+    //   (09-18 の 2D 変換の実測で 30 m 超は 31%)。資源は cal で確認すること。
+    "distance_far_thresh": 180.0,
+    "distance_near_thresh": 0.5,
+    "downsample_resolution": 0.15,
+    "enable_cropbox_filter": false,
+    "enable_outlier_removal": true,
+    "k_correspondences": 25,
+    "num_threads": 6,
+    "outlier_removal_k": 20,
+    "outlier_std_mul_factor": 1.0,
+    "random_downsample_rate": 0.1,
+    "random_downsample_target": 50000,
+    "use_random_grid_downsampling": true
+  }
+}

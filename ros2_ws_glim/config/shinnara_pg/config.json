@@ -1,0 +1,18 @@
+{
+  /*** Global Configuration (pose_graph 版の検証用) ***/
+  // claude: 2026-10-23 作成。gpu_default と同条件 (既定密度 + GPU odometry + GPU sub_mapping) で、
+  //   global_mapping だけ libglobal_mapping_pose_graph.so に差し替えた 1 変数比較用。
+  //   狙い: (1) submap 点群の GPU 常駐が無くなり VRAM の天井が外れるか
+  //         (2) 重なり率ではなく「距離 + ICP」でループ候補を選ぶので、z がずれていても閉合できるか
+  "global": {
+    "config_path": "",
+    "config_ros": "config_ros.json",
+    "config_logging": "config_logging.json",
+    "config_viewer": "config_viewer.json",
+    "config_sensors": "config_sensors.json",
+    "config_preprocess": "config_preprocess.json",
+    "config_odometry": "config_odometry_gpu.json",
+    "config_sub_mapping": "config_sub_mapping_gpu.json",
+    "config_global_mapping": "config_global_mapping_pose_graph.json"
+  }
+}

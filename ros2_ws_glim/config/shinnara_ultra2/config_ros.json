@@ -1,0 +1,33 @@
+{
+  "glim_ros": {
+    "acc_scale": 0.0,
+    "base_frame_id": "glim_base",
+    "enable_global_mapping": true,
+    "enable_local_mapping": true,
+    "extension_modules": [
+      "libmemory_monitor.so"
+    ],
+    "image_qos": {
+      "profile": "sensor_data"
+    },
+    "image_topic": "/image",
+    "imu_frame_id": "",
+    "imu_qos": {
+      "depth": 1000,
+      "profile": "sensor_data"
+    },
+    "imu_time_offset": 0.0,
+    "imu_topic": "/imu/data",
+    "keep_raw_points": false,
+    "lidar_frame_id": "",
+    "map_frame_id": "map",
+    "odom_frame_id": "odom",
+    "points_qos": {
+      "profile": "sensor_data"
+    },
+    "points_time_offset": 0.0,
+    "points_topic": "/rfans_driver/rfans_points",
+    "publish_imu2lidar": false,
+    "tf_time_offset": 1e-06
+  }
+}
