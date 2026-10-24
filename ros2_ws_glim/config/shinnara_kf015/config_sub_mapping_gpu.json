@@ -1,0 +1,41 @@
+{
+  "sub_mapping": {
+    "between_registration_type": "GICP",
+    "create_between_factors": true,
+    "enable_imu": true,
+    "enable_optimization": true,
+    "keyframe_randomsampling_rate": 1.0,
+    "keyframe_update_interval_rot": 0.18,
+    // claude: 2026-10-23 tsukuba_ultra — 0.25 -> 0.10。キーフレームを 1 m あたり 4 枚 -> 10 枚に。
+    //   1 submap に入る生スキャンが 2.5 倍になり、地図の「m あたり点数」の上限そのものが上がる。
+    // claude: 2026-10-23 shinnara_ultra — 0.10 -> 0.07。走行 0.45 m/s・10 Hz = 0.045 m/scan なので、
+    //   0.10 では約 2.2 スキャンに 1 枚、0.07 なら約 1.6 スキャンに 1 枚を採用できる。
+    //   seg4 ultra は点数上限ではなくデータ (キーフレーム数) が律速だったので、ここが密度を決める。
+    // claude: 2026-10-23 切り分け 2 — 0.07 -> 0.15。間隔 0.07 ではキーフレーム間が実測 0.096 m しかなく、
+    //   隣接間の視差が乏しい。これが odom 段の縮み (S3 で 450 -> 279 m) の原因かを見る。
+    "keyframe_update_interval_trans": 0.15,
+    "keyframe_update_min_points": 500,
+    "keyframe_update_strategy": "DISPLACEMENT",
+    "keyframe_voxel_resolution": 0.2,
+    "keyframe_voxelmap_levels": 3,
+    "keyframe_voxelmap_scaling_factor": 2.0,
+    "max_keyframe_overlap": 0.6,
+    // claude: 2026-10-23 tsukuba_ultra — 15 -> 40。間隔を 0.10 m にしたので、
+    //   submap の張る長さを従来と同じ約 4 m (40 x 0.10) に保つための枚数。
+    // claude: 2026-10-23 shinnara_ultra — 40 -> 57。間隔を 0.07 m にしたぶん枚数を増やし、
+    //   submap の張る長さを従来と同じ約 4 m (57 x 0.07) に保つ。
+    // claude: 2026-10-23 切り分け 2 — 57 -> 27。間隔を 0.15 m に戻したので、submap の張る長さを
+    //   ultra と同じ約 5 m に揃えるための枚数 (27 x 0.18 実効)。密度は落ちるが縮みの検証が目的。
+    "max_num_keyframes": 27,
+    "registration_error_factor_type": "VGICP_GPU",
+    "so_name": "libsub_mapping.so",
+    "submap_downsample_resolution": 0.02,
+    // claude: 2026-10-23 tsukuba_ultra — 30 万 -> 80 万。上のキーフレーム増でデータ上限が
+    //   45 万 -> 約 120 万点 (40 枚 x 生点 3 万) に上がるため、cap を引き上げる。
+    //   VRAM 的には 1 run 合計 8000 万点が上限なので、seg 長 400 m 級とセットで使うこと。
+    // claude: 2026-10-23 shinnara_ultra — 80 万 -> 90 万。キーフレーム 57 枚で生点は約 171 万、
+    //   2 cm 格子の重複除去後は 80 万強と見込まれるので、上限ではなくデータが律速になるようにする。
+    "submap_target_num_points": 900000,
+    "submap_voxel_resolution": 0.5
+  }
+}
