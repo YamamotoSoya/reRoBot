@@ -18,6 +18,10 @@
 - [ ] AMCL は停止時に推定を走らせない
 - [ ] R-Fans の上限 180 m を自己位置推定・地図生成に含める
 - [ ] 自前 map と他チーム製 map、どちらがマッチしやすいか (LT)
+- [ ] 元mapの高密度化による先鋭化、2dmapの改造度upによる自己位置推定制度の変化
+- [ ] 植木や木、道路のごま塩をmapから取り除くと自己位置推定は安定するか不安定になるか
+- [ ] 車などの障害物のmapからの除去
+- [ ] スタート地点の人混み対策
 
 ## 経路計画・Nav2
 
@@ -51,10 +55,16 @@
 - [x] bag 記録中に停止位置を記録 (ティーチング) → teach_marker + teach_from_traj
 - [x] waypoint editor の位置ずれ
 - [ ] **起動の簡素化** — `auto_run.launch.py` はあるが確認表が見にくく実戦では未使用 → 表示を直す ([features](features/2026-10-16_auto_run_joy_mux.md))
-- [ ] パーティクルが見られるように → nav2.rviz を ParticleCloud 型に修正済み (10-21)、実機で確認したら [x]
+- [ ] **launch・設定の一本化 (run ファイル方式)** — 当日の起動を `run.launch.py run:=config/runs/<日付>.yaml` の 1 引数にし、差分を git で残して過去設定を再現できるようにする (10-23 検討、未着手)
+  - 方式: (1) run yaml に `stack` (起動部品) / `nav` (amcl・emcl2・lidar3d) / `args` (launch 引数) / `params` (ノード差分 = overlay、ROS の params 複数渡し後勝ちで上書き) の 4 節。auto_run.launch.py の一般化
+  - 代替: (2) 引数だけの env ファイル (launch 引数しか変えられない) / (3) git hash + diff を bag dir に書くだけ (仕組み最小、変更点が見えない) / (4) 全 ROS yaml を 1 ファイルに物理統合 (`/**:` 漏れの事故面が広がる)
+  - 再現性を閉じる記録: bag dir に run yaml のコピー + git hash + 全ノード `ros2 param dump` (起動後の実効値)
+  - 統合できないもの: GLIM JSON (base + 差分をマージ生成)、bus.yml (ビルド時設定)、URDF (xacro 化が要る)、別コンテナの slam / GLIM は起動コマンドが別に残る
+  - ログ混在の対処: Node `output='log'` でノード別ファイル (`ROS_LOG_DIR` を bag と並べる) + /rosout 選別の console ノード (WARN 以上 + 節目) + 常駐の状態表。GUI は独立アプリでなく RViz のオーバーレイ (rviz_2d_overlay_plugins) → 必要なら RViz パネル plugin。launch の制御は GUI に持たせない
+- [x] パーティクルが見られるように → nav2.rviz を ParticleCloud 型に修正済み (10-21)、実機で確認したら [x]
 - [ ] bag の起動コマンドが長い (auto_run には統合済み、単体記録は未)
 - [ ] 非常停止後の再起動不要へ / USB を抜いても止まるように ([issue 10-22](issue/2026-10-22_epos_fault_8250_pdo_freeze_lidar3d_run.md)、[引き継ぎ](claude/handoff/2026-10-22_epos_fault_monitor_fix.md))
-- [ ] ThinkPad の Chrome Remote Desktop + GNOME 設定が奪い合う問題 / Parsec 導入
+- [ ] ThinkPad の Chrome Remote Desktop + GNOME 設定が奪い合う問題 / ~~Parsec 導入~~
 
 ## 電源・PC・機体
 
@@ -62,6 +72,7 @@
 - [ ] **PC バッテリ低下で powersaver → EPOS エラー** (performance 固定は済、バッテリ時の降格経路が残る)
 - [ ] 日光で PC が熱い / ロボットの角の突起 / ホイールの挟み込み防止カバー
 - [ ] joy_teleop の加減速をもう少しゆっくり
+- [ ] R-Fans16の電源隔離
 
 ## 参考: Claude 側の整備 (コードではなく repo の衛生)
 
