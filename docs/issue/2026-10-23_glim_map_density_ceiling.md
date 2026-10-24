@@ -197,3 +197,198 @@ bag は `rclone cat "cit-share-bags:bags/raw/<bag>.tar.zst" | zstd -dc --long=31
   --height_mode base_link --base_to_sensor_z 0.80246 --range_max 30 --min_height 0.3 --max_height 1.5 --export_pcd <...>.pcd`
   (`--base_to_sensor_z` は 09-30 以前の取付高。10-01 以降の bag は 0.79396)
 - `bags/exp/glim_hq/<bag>/*.{glim.log,resource.csv}` — 各 run の標準出力と 10〜15 秒間隔の RAM/VRAM 記録
+
+## 9. 新習志野チャレンジ bag (2026-10-22_1622_shinnarachallenge) の試走 — 2026-10-23
+
+bag: 63.9 分 / 3,832 s / 走行 1,697 m (車輪オドメトリ) / mcap 36 GB。うち点群トピックだけで 31.1 GB。
+`/rfans_driver/rfans_points` 10.0 Hz、`/imu/data` 199.9 Hz、`/imu_wit/data` 200.6 Hz。2D は `/scan` ではなく **`/urg_front/scan`**。
+
+| run | config | submap/点数 | odom 段 z 幅 | 最適化後 z 幅 | 始終点 (3 次元) | 照合因子 | 壁の厚み | VRAM | 所要 |
+|---|---|---|---|---|---|---|---|---|---|
+| `cpu_default` | 既定 (CPU) | 535 / 1,928 万 | — | 81.57 m | — | 415 対 | 44.1 mm (※) | 0 | 16 分 |
+| `gpu_default` | 既定 (GPU) | 374 / 1,868 万 | 43.32 m | **35.11 m** | 44.90 m | 5,175 対 | **20.4 mm** | 2,465 MB | 25.6 分 |
+| `posegraph` | GPU + pose_graph | 376 / 1,877 万 | 50.19 m | 52.51 m | 67.78 m | 0 | — | **311 MB** | 26 分 |
+| `cal300` | `shinnara_ultra` 先頭 300 s | 20 / 1,500 万 | — | — | — | — | — | 2,563 MB | 4 分 |
+| `cal300b` | `shinnara_ultra2` 先頭 300 s | 21 / 2,292 万 | — | — | — | — | — | 6,369 MB | 10 分 |
+
+※ CPU 版の 44.1 mm は平面と判定できたボクセルが 55 個しかなく統計として不成立 (GPU 版は 10,028 個)。地図が崩れている指標として読む。
+
+### 分かったこと
+
+1. **この走行は周回。** 車輪オドメトリでは始終点が 202 m 離れて見えるが、GLIM の補正後では 24〜29 m。残りは未補正のドリフト。
+   補正後軌跡で検出できる再訪は **走行 1,621 m ↔ 26 m (出発点) の 1 箇所だけ** (水平 14.5 m / z 差 33.7 m)。
+2. **CPU も GPU も長距離ループ閉合が 0 対** (最大 \|i−j\| が CPU 10 / GPU 42)。つくば bag では GPU が 1,215 対を出したのと対照的。
+3. **z ドリフトが約 2.2 m/100 m (傾き 1.26°) でほぼ一定。** 特定区間への集中はなく、系統的な傾き。
+   → 区間を短くしても傾きは消えず絶対量が比例して減るだけ。150 m 区切りでも中央値 3.5 m 溜まる。
+4. **これが全ての根。** 既定版は重なり率が 0.2 に届かず閉合せず、pose_graph 版は距離が閾値を超えて候補にすら挙がらない。
+   09-27 時点で odom 段の車体固定傾きは 0.91° まで追い込めていた記録があるので、10-22 で条件が変わった可能性がある
+   (`docs/issue/2026-09-10_glim_z_drift_not_vangle.md` 参照)。
+
+### pose_graph 版 (`libglobal_mapping_pose_graph.so`) の評価 — 1 run
+
+- **VRAM は 2,465 → 311 MB (1/8)。** critic がソースで指摘した通り、submap 点群を GPU に常駐させない
+  (`global_mapping_pose_graph.cpp:254` で voxelmaps を clear、`PointCloudGPU::clone` を呼ばない)。
+  **密度の制約が VRAM からホスト RAM (200 B/点、約 1 億 1,500 万点) に移る。**
+- **ただしループは 1 本も張られなかった。** `find_loop_candidates` (同 310 行) は submap 間の直線距離が
+  `max_neighbor_dist` を超える候補を捨てる。5.0 → 40.0 m に上げたが、この run の始終点は 3 次元で 67.8 m 離れていた。
+- **地図は悪化した。** ただし odom 段から既に悪く (z 幅 43.3 → 50.2 m)、**実行ごとのばらつきと混ざっている**。
+  そのうえで global_mapping が改善しなくなった (既定版は odom 48.4 → 44.9 m、pose_graph 版は 67.5 → 67.8 m と素通し)。
+  既定版が持つ 5,175 本の暗黙の照合因子 (近接 submap 間の局所拘束) を失い、odom 因子だけになったため。
+- **含意**: pose_graph は「VRAM を外す手段」としては成功、「地図を良くする手段」としては失敗。
+  暗黙閉合 (既定) と明示閉合 (pose_graph) を両取りする設定は無い。
+
+### sub_mapping の VRAM 構造 (ソースで確認)
+
+`sub_mapping.cpp:276-312` のキーフレーム間因子は **全結合 × voxelmap レベル数**で作られ、
+**`enable_optimization` では囲まれていない** (同 436 行が唯一の参照箇所で、そこは最適化の実行可否)。
+したがって `enable_optimization: false` にしても因子は同数作られ GPU を消費する — VRAM は減らず品質だけ落ちる。
+
+| キーフレーム数 | 対の数 | × levels 3 | 実測 VRAM (bag 107 m 時点) |
+|---|---|---|---|
+| 57 (`shinnara_ultra`) | 1,596 | 4,788 | 2,563 MB |
+| 110 (`shinnara_ultra2`) | 5,995 | 17,985 | 6,369 MB |
+
+VRAM を下げるなら `registration_error_factor_type` を `VGICP` (CPU) にするか、`keyframe_voxelmap_levels` を下げる。
+
+### 密度の実測 (bag 先頭 300 s での較正)
+
+| config | KF 間隔/枚数 | 点/submap | 間隔 | 密度 | seg4 ultra 比 | 再生速度 |
+|---|---|---|---|---|---|---|
+| `shinnara_ultra` | 0.07 m / 57 | 750,183 | 5.49 m | 140,636 点/m | 1.13x | 1.09x |
+| `shinnara_ultra2` | 0.03 m / 110 | 1,091,606 | 5.35 m | 214,026 点/m | 1.72x | 0.40x |
+
+⚠️ **キーフレーム間隔は走行速度で量子化される。** 0.45 m/s・10 Hz = 0.045 m/scan なので、しきい値 0.07 でも 0.05 でも
+「2 スキャンに 1 枚」で同じ。全スキャンを使うには 0.045 を下回る値 (0.03) が要る。
+
+### 再生成コマンド (削除した run)
+
+```bash
+# bag: rclone copy は不可 (tar.zst)。下記で取得
+rclone cat "cit-share-bags:bags/raw/2026-10-22_1622_shinnarachallenge.tar.zst" | zstd -dc --long=31 | tar -xf - -C bags/raw/
+
+# cpu_default (CPU コンテナ)
+docker exec -d glim_env /ros_entrypoint.sh bash -c "ros2 run glim_ros glim_rosbag \
+  /workspace/bags/raw/2026-10-22_1622_shinnarachallenge --ros-args -p config_path:=/glim_config \
+  -p auto_quit:=true -p dump_path:=/workspace/bags/glim/2026-10-22_1622_shinnarachallenge_dump/cpu_default"
+
+# cal300 / cal300b
+CONFIG=shinnara_ultra  ./scripts/glim_hq.sh 2026-10-22_1622_shinnarachallenge cal300  300
+CONFIG=shinnara_ultra2 ./scripts/glim_hq.sh 2026-10-22_1622_shinnarachallenge cal300b 300
+```
+
+### 4 分割の境界 (GLIM 補正後軌跡から算出、前後 30 秒の重なり込み)
+
+| | start_offset | playback_duration | 区間 |
+|---|---|---|---|
+| S1 | 0 | 1065.6 | 0 → 406 m |
+| S2 | 1005.6 | 1015.0 | 406 → 812 m |
+| S3 | 1960.7 | 955.2 | 812 → 1,217 m |
+| S4 | 2855.9 | 973.7 | 1,217 → 1,623 m |
+
+⚠️ 唯一のループ (始点↔終点) は S1 と S4 にまたがるため、分割すると失われる。
+
+## 10. 高密度化で odometry が追従喪失する — 原因確定 (2026-10-23)
+
+**ステータス: 原因確定・修正済み。** `preprocess.random_downsample_target` が生点数を超えると
+間引きが無効化され、odometry が走行途中で追従を失う。目標点数を生点数未満に戻すだけで直る。
+
+### 症状
+
+`shinnara_ultra` (キーフレーム 0.07 m / 57 枚、submap 格子 0.02 m、上限 90 万点、遠方 180 m、
+外れ値除去 ON、目標点数 50,000) で 4 区間を処理したところ、推定された走行距離が実際より最大 40% 短くなった。
+
+| 区間 | 車輪オドメトリ | 通常密度 | ultra |
+|---|---|---|---|
+| S1 | 446.9 m | 410.8 m (92%) | 408.6 m (91%) |
+| S2 | 445.2 m | 434.2 m (98%) | 353.1 m (79%) |
+| S3 | 463.4 m | 450.3 m (97%) | **278.6 m (60%)** |
+| S4 | 427.7 m | 419.6 m (98%) | 344.8 m (81%) |
+
+**「縮む」のではなく「途中で地図を作らなくなる」。** S3 では区間開始から 500 秒まで通常密度と
+完全一致 (比 1.00) し、bag 時刻 2480 秒で 0.26 → 0.05 m/s と速度を失って回復しない。
+実際のロボットは 0.50 m/s で走り続けている。z も −2.3 m に張り付き、実際の上り坂 (+2 m) を追えない。
+追従を失うとキーフレーム生成条件 (0.07 m 移動) が満たされなくなるため、以後 submap が作られず
+地図がそこで終わる (貼り付き点から 6 m 以内の点は 0.0% = 積み上がりは起きない)。
+
+破綻地点は**両側を植え込みに挟まれた、進行方向に特徴のない直線通路**。
+同じ場所を通常密度は問題なく通過する。
+
+### 原因
+
+`gtsam_points/src/gtsam_points/types/point_cloud_cpu_funcs.cpp` の `randomgrid_sampling` 冒頭:
+
+```cpp
+if (sampling_rate >= 0.99) {
+  return PointCloudCPU::clone(*frame);   // 間引きせず素通し
+}
+```
+
+`sampling_rate = random_downsample_target / 点数`。R-Fans の 1 スキャンは**生点 30,045 / 有効 27,114**
+なので、目標 50,000 では rate = 1.84 となり **間引きが一度も実行されない**。
+
+間引きの実体は一様ランダムではなく、**ボクセルごとの上限による空間的な均し**:
+
+```cpp
+const size_t points_per_voxel = std::ceil((sampling_rate * frame->size()) / num_voxels);
+// 各ボクセルの点数が上限を超えたら std::sample で上限まで間引く
+```
+
+これが効くかどうかで点の構成が変わる (破綻地点付近のスキャンで実測):
+
+| | 点数 | 距離中央値 | 5 m 以内 | **20 m 超の点数** | **20 m 超の重み** |
+|---|---|---|---|---|---|
+| 素通し (ultra) | 27,157 | 3.8 m | 69% | 525 点 | **1.9%** |
+| 間引き後 (通常密度、ボクセル上限 12 点) | 5,416 | 7.8 m | 27% | **525 点** | **9.7%** |
+
+**遠方点の絶対数は 525 点で不変。変わるのは重みだけで 5 倍。**
+近傍の密なボクセルが上限で頭打ちになり、遠方の疎なボクセルは全点が残るため。
+
+進行方向を拘束できるのは遠方の構造物だけで、足元の地面は進行方向を拘束せず、植え込みの葉は
+面にならず共分散が定まらない。素通しすると前者の重みが 2% を切り、通路方向に照合が滑って解を失う。
+
+### 切り分け (最小再現 bag 2400-2550 s / 150 秒 / 実距離 75.0 m、1 本 2 分)
+
+| config | 変更点 | odom 距離 | 実距離比 |
+|---|---|---|---|
+| 通常密度 | — | 72.4 m | 97% |
+| `shinnara_ultra` | — | 33.7 m | **45%** |
+| `rp_tgt10k` | `random_downsample_target` 50,000 → 10,000 **のみ** | 72.3 m | **96%** |
+| `rp_tgt10k_res10` | 上 + `downsample_resolution` 1.0 | 72.4 m | 96% |
+| `rp_prep_default` | preprocess を全部既定へ | 72.3 m | 96% |
+| `rp_k54` | `k_correspondences` 54 のみ | 46.1 m | 61% |
+| `rp_noout` | 外れ値除去 off のみ | 47.5 m | 63% |
+| `rp_k54_noout` | 上 2 つ同時 | 47.1 m | 63% |
+| **`shinnara_fixed`** | **目標点数 10,000 + 外れ値除去 off** | **72.1 m** | **96%** |
+
+全区間 S3 (955 秒) でも同傾向: `k_correspondences` 54 で 70%、目標点数 10,000 で 81%。
+
+### 解決
+
+**`ros2_ws_glim/config/shinnara_fixed`** = `shinnara_ultra` から 2 項目のみ変更。
+
+| | 値 | 理由 |
+|---|---|---|
+| `random_downsample_target` | 50,000 → **10,000** | 縮退の唯一の原因。生点 27,114 未満にして間引きを有効化する |
+| `enable_outlier_removal` | true → **false** | 縮退とは無関係だが、S3 実測で traj z 幅が 12.88 → 5.63 m と半減 |
+
+sub_mapping 側 (キーフレーム 0.07 m / 57 枚、格子 0.02 m、上限 90 万点) は ultra のまま。
+**最小再現で実距離比 96%、点数は通常密度の 11.8 倍。**
+
+### 教訓
+
+- **地図の密度を決めるのは sub_mapping 段、軌跡の精度を決めるのは preprocess → odometry 段。
+  この 2 つは独立に設定できる。** 高密度地図が欲しいときに preprocess まで上げる必要はない。
+- `random_downsample_target` は**生点数未満に保つこと**。超えると間引きが静かに無効化され、
+  警告も出ない。R-Fans-16 の有効点は約 27,000。
+- 間引きは「情報を捨てる処理」ではなく「足元の過剰な点を削って遠方の発言権を回復させる処理」。
+
+### 棄却した仮説 (いずれも実験で否定)
+
+1. submap 内の全結合最適化がキーフレームを引き寄せて縮める → `enable_optimization: false` で変化なし
+2. キーフレーム間隔 0.07 m では視差が不足する → 0.15 m で変化なし
+3. 遠方 180 m のノイズが照合を引っ張る → 100 m で変化なし。そもそも 100 m 超の点は 1 スキャン **8 点**
+4. `downsample_resolution` 0.15 m が odometry のボクセル地図を変える → 1.0 m で変化なし
+   (目標点数が生点を超えている間、ボクセル解像度は結果に影響しない)
+5. 共分散の近傍半径が狭まる → `k_correspondences` 54 で 61%、ほぼ無効
+6. フレーム全体の距離中央値が変わり odometry のボクセル解像度が変わる → 素通しでも間引き後でも
+   中央値は変わらず (どちらも p=0 でボクセル 0.25 m)
