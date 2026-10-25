@@ -130,6 +130,8 @@ EPOS4 ×2                     │
 
 | ファイル | 内容 |
 |----------|------|
+| `2026-10-25_rfans_range_comb_ghost.md` | **本命 (10-25、critic 査読済み)**: R-Fans 生点群の約 2.7% が、隣の点から離散オフセット (±0.55〜0.67 / ±1.37 / +2.05 m ≒ 0.68 m の倍数) だけ距離が飛ぶ単発偽点。木の幹・柱の周りに出る半径 +0.5〜1 m の筒の正体 (GLIM 設定に依存しない)。孤立スパイク除去で弧が消えることを一部確認。センサ内部かドライバか未分離 (実機 UDP tcpdump で判定)。壁の手前にも偽点 (costmap に偽の壁の恐れ)。**除去フィルタ = 次の作業の有力候補** |
+| `2026-10-25_glim_slip_shinnara_s1.md` | **本命 (10-25、critic 査読済み、因果実験未実施)**: 新習志野 S1 の直線通路 A (bag 442〜492 s) で GLIM の速度推定が約 0.1 m/s に落ち、3 設定とも前進が十数 m 不足 → 壁が進行方向に伸びる。車輪の正しさは URG 正面距離で独立確認済み。縮退だけでは十分条件でない (より縮退の強い区間で滑らない)、前進不足側にだけずれる理由は未特定 (H3 IMU 結合 / H4 センサ固定構造 / H5 B は停止過渡) |
 | `2026-09-26_rfans_frame_stamp_bundle_quantization.md` | **原因特定済み・修正実装済み (submodule 未コミット)・bag 再生で検証済み・live 未確認**: R-Fans フレーム stamp が UDP 32 個 bundle の到着 (40.9 ms) に量子化され、隣接間隔が 83/123 ms 交互 = 真のスキャン開始から ±20 ms 揺れる。GLIM の `imu_rate stamp does not cover (~17 ms)` 警告・残留時刻オフセット −15 ms と一致。修正 = bundle 先頭 UDP の到着時刻と機器 µs カウンタの offset (32 bundle の最小) で stamp を機器時計に anchor → 再生で 100.1 ± 0.5 ms |
 | `2026-09-24_bno086_auto_tare_rotates_motion_outputs.md` | **原因特定済み (09-24、因果実験 ×2 + critic)・対策未適用**: BNO086 の `auto_tare: all` (ドライバ既定) が accel/gyro に起動時姿勢の定数回転 R_tare を掛ける。`/imu/data` は物理センサ座標ではなく、yaw は起動方位依存 (今日 24°)。GLIM の T_lidar_imu が bag ごとにずれる。対策 = `auto_tare: off` → 物理 yaw 実測 → URDF/T_lidar_imu 更新 |
 | `2026-07-07_repository_audit.md` | 全体監査の 25 issue 一覧 (サマリ表付き) |
@@ -291,6 +293,8 @@ EPOS4 ×2                     │
   `.claude/skills/annotate/SKILL.md`。「知ってる」と言われた語はリストに追記)。
 
 ## 10. 次にやることになっている作業
+
+**次の作業の有力候補 (10-25 ユーザ指示): R-Fans 距離偽点の除去フィルタ** — `exp/glim-gpu-imu` ブランチでは**やらない** (別ブランチで着手)。設計案・副作用は `docs/issue/2026-10-25_rfans_range_comb_ghost.md` §4 (同じレーザの列方向の 1 次元孤立スパイク除去 + 櫛オフセット判定。「隣列より 0.5〜0.8 m 遠い点だけ落とす」案は不可)。
 
 **🔴 割込み最優先 (09-19): 通信断で止まらない層の封鎖 + 電源容量の確定 — 済むまで急指令・負荷・段差試験は中止、走行は 0.25 m/s turbo なし** (`docs/issue/2026-09-19_epos_stop_link_loss_rpdo_timeout_power.md` §7〜8, §10): ✅ (1) `epos4_controller` の指令ウォッチドッグ・(2) fault 監視 → 0x1003 即読みログ + `/diagnostics`・can0 再作成検知は **09-19 夕方に実装・実機 3 テスト合格** (feature doc `2026-09-19_epos4_controller_watchdog_fault_monitor.md`)。**残: 実機 `/etc/systemd/system/canusb-up.service` に README の `ExecStartPost` (起動後 4 s で受信ゼロなら slcand やり直し) を反映 (sudo) → 抜き差し 3 回で受信が戻るか検証** (sleep 2 だけでは 17:59 に再発)、candump 常時記録の scripts 組込み (未)、bag に `/diagnostics` を含める → (3) **0x2200:01 10 Hz ポーリングしながら段差・0.5 m/s ステップ** (RSD-60L-24 折り返し H5 の実証。落ちれば電源容量問題に分類変更) → (4) 機械 vs 電気 A/B (車輪浮かせ・固定で電流のみ / ロジックのみでコネクタ揺らし) → (5) ユーザ確認 (14:57 暴走の秒数・LB・RViz 凍結、DB9 の CAN GND 結線、ハブ電源元) → (6) ハード: 絶縁 CAN アダプタ or USB アイソレータ、モータ電源の作り直し (A: バッテリ直結 + DSR 70/30 38〜42 V + Max output current 見直し / B: 300 W 級絶縁 DC-DC)。設定衛生: 0x60C2 20〜30 ms、0x6077 ポーリング停止。**運用: フォルト後は主電源を切らず非常停止のみ → `cansend can0 60x#400310{01..05}00000000` で履歴を読む → 電源断**。`docs/reference/wiring_diagram.mmd` を v2 に更新 (未着手)。
 
