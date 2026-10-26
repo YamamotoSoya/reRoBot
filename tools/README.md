@@ -300,3 +300,16 @@ python3 tools/map_crop/crop_map_dir.py maps/2d/glim/2026-10-03_1126_tsukuba_comp
 
 範囲 = course.yaml の点 (`--until` まで) + `--extra` 点 (スタート位置など。負の値があるので `=` 必須) の外接矩形 + `--margin` [m]。
 `--bbox=xmin,xmax,ymin,ymax` で直接指定も可。出力先が既にあれば止まる。検査は `waypoint_editor.py <dst>/nav2/map.yaml <dst>/waypoints/course.yaml --check`。
+
+## rfans_comb_check (自作, 2026-10-26)
+
+<!-- claude: 2026-10-26 追加 -->
+R-Fans-16 の生パケット (tcpdump の pcap、または bag の `/rfans_driver/rfans_packets`) を
+ドライバを通さずにデコードし、0.686 m の倍数だけずれた「櫛状の距離偽点」の率を条件ごとに比べる。
+背景と実機検査の手順は `docs/issue/2026-10-25_rfans_range_comb_ghost.md` §7。依存は numpy
+(+ `--png` で matplotlib、bag 入力で rosbag2_py) なので **rerobot_env** で実行する。
+
+```bash
+python3 /workspace/tools/rfans_comb_check/rfans_comb_check.py --png out.png a.pcap b.pcap ...
+python3 /workspace/tools/rfans_comb_check/rfans_comb_check.py /workspace/bags/raw/<bag> --bag-start 600 --duration 30  # 要 ROS source
+```
