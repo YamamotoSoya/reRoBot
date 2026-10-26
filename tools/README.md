@@ -232,3 +232,16 @@ docker exec -it rerobot_env bash -c "source /workspace/install/setup.bash && \
 # キー: g=開始/再開 (--resume-key で変更) / q=終了 (待機中) / p=一時停止 (走行中、残りの点から再開) / Ctrl-C=ゴールをキャンセルして終了
 # 区間失敗 (ABORTED) も待機に入り、g で残りの点から再送。--start N で waypointN から始める
 ```
+
+## rfans_comb_check (自作, 2026-10-26)
+
+<!-- claude: 2026-10-26 追加 -->
+R-Fans-16 の生パケット (tcpdump の pcap、または bag の `/rfans_driver/rfans_packets`) を
+ドライバを通さずにデコードし、0.686 m の倍数だけずれた「櫛状の距離偽点」の率を条件ごとに比べる。
+背景と実機検査の手順は `docs/issue/2026-10-25_rfans_range_comb_ghost.md` §7。依存は numpy
+(+ `--png` で matplotlib、bag 入力で rosbag2_py) なので **rerobot_env** で実行する。
+
+```bash
+python3 /workspace/tools/rfans_comb_check/rfans_comb_check.py --png out.png a.pcap b.pcap ...
+python3 /workspace/tools/rfans_comb_check/rfans_comb_check.py /workspace/bags/raw/<bag> --bag-start 600 --duration 30  # 要 ROS source
+```
