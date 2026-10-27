@@ -1,4 +1,4 @@
-<!-- 自動生成: python3 docs/claude/gen_docs_index.py (2026-10-23)。手で編集しない — 元ファイルのタイトル / ステータス行を直して再生成。 -->
+<!-- 自動生成: python3 docs/claude/gen_docs_index.py (2026-10-27)。手で編集しない — 元ファイルのタイトル / ステータス行を直して再生成。 -->
 
 # docs/features — 追加機能の設計文書
 

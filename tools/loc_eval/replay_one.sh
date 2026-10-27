@@ -56,17 +56,69 @@ done
 log "localizer ready after ${i} s"
 [ "$LOC" = emcl2 ] && sleep 2   # emcl2 本体の起動待ち
 
-python3 "$HERE/record_pose.py" "$RUN" --init "$REF/initialpose.yaml" --initialpose_delay "$INIT_DELAY" >> "$LOG" 2>&1 &
-sleep 2
 if [ "$START" != 0 ]; then
   ros2 bag play "$BAG" --topics /tf_static --playback-duration 1 --disable-keyboard-controls >/dev/null 2>&1
 fi
 DUR_ARG=(); [ -n "$DUR" ] && DUR_ARG=(--playback-duration "$DUR")
+# claude: 2026-10-24 PREWARM=1 — AMCL は最初のスキャンで尤度場を作る間 (つくば composite 地図 280 M セルで約 30 s)
+#   コールバックを抜けないので、その間に bag が進むと initialpose が効くのは出発後になる (人垣試験で 8 m 先だった)。
+#   --start-paused で開始し play_next で最初の点群 1 枚だけ流し、`ros2 param get` が返る (= 単一スレッド executor が
+#   空いた = 尤度場完成) のを待ってから record_pose を起動して resume する。時刻は飛ばない (play_next は再生時刻を進めるだけ)。
+#   PREWARM_PROC (既定 nav2_amcl/amcl) で待つプロセスを変えられる。emcl2 / lidar3d では不要 (地図の前処理は起動時)。
+PAUSED=(); [ "${PREWARM:-0}" = 1 ] && PAUSED=(--start-paused)
 # shellcheck disable=SC2086
 # QoS 上書き: bag の /rfans/scan は best_effort 記録で emcl2 (reliable 購読) に届かない → reliable で再生 (qos_override.yaml)
 ros2 bag play "$BAG" --clock 100 --rate "$RATE" --start-offset "$START" "${DUR_ARG[@]}" --disable-keyboard-controls \
-  --qos-profile-overrides-path "$HERE/qos_override.yaml" --topics $TOPICS >> "$LOG" 2>&1 &
+  "${PAUSED[@]}" --qos-profile-overrides-path "$HERE/qos_override.yaml" --topics $TOPICS >> "$LOG" 2>&1 &
 PP=$!
+if [ "${PREWARM:-0}" = 1 ]; then
+  #   10-24 (2): 待つのは「localizer の入力 topic が実際に出た」こと (既定 /rfans/scan_all = 点群→scan 変換後)。点群が届いただけでは
+  #   変換ノードが TF 待ちで止まっていることがあり、AMCL が何もしていない静けさを完了と誤判定した (near_amcl_off_r1)。
+  PREWARM_TOPIC=${PREWARM_TOPIC:-/rfans/scan_all}; PREWARM_MSG=${PREWARM_MSG:-sensor_msgs/msg/LaserScan}
+  for i in $(seq 1 60); do ros2 service list 2>/dev/null | grep -q /rosbag2_player/play_next && break; sleep 1; done
+  python3 - "$PREWARM_TOPIC" "$PREWARM_MSG" <<'PY' >> "$LOG" 2>&1
+import sys, rclpy
+from rclpy.node import Node
+from rclpy.qos import qos_profile_sensor_data
+from rosidl_runtime_py.utilities import get_message
+from rosbag2_interfaces.srv import PlayNext
+rclpy.init(); n = Node("prewarm_step"); got = []
+n.create_subscription(get_message(sys.argv[2]), sys.argv[1], lambda m: got.append(1), qos_profile_sensor_data)
+cli = n.create_client(PlayNext, "/rosbag2_player/play_next"); cli.wait_for_service(timeout_sec=30.0)
+k = 0
+while not got and k < 3000:
+    fut = cli.call_async(PlayNext.Request()); rclpy.spin_until_future_complete(n, fut, timeout_sec=5.0); k += 1
+    rclpy.spin_once(n, timeout_sec=0.02)
+for _ in range(20):
+    if got: break
+    rclpy.spin_once(n, timeout_sec=0.1)
+print(f"[prewarm] stepped {k} messages, {sys.argv[1]} received={bool(got)}")
+n.destroy_node(); rclpy.shutdown()
+PY
+  # 尤度場の完成待ち: AMCL の parameter サービスは別スレッドで応答してしまう (10-24 実測) ので、プロセスの CPU 時間が
+  #   2 s 連続でほぼ増えなくなる (= コールバックを抜けて待機) ことを合図にする。PREWARM_PROC = pgrep -f のパターン。
+  PREWARM_PROC=${PREWARM_PROC:-nav2_amcl/amcl}
+  #   ⚠ 10-24 critic: 点群が届く前の静かな 5 s を「完了」と誤判定した run が 4 本あった → 一度 busy (≥50 tick/s) を見てから
+  #   idle 2 s で完了とする。20 s 待っても busy が来なければ (小さい地図で一瞬で終わった等) そのまま進む。
+  PWPID=$(pgrep -f "$PREWARM_PROC" | head -1); T0=$(date +%s); idle=0; busy=0
+  start=$(awk '{print $14+$15}' /proc/$PWPID/stat 2>/dev/null || echo 0); prev=$start
+  for i in $(seq 1 300); do
+    sleep 1; cur=$(awk '{print $14+$15}' /proc/$PWPID/stat 2>/dev/null || echo 0)
+    d=$((cur - prev)); prev=$cur
+    [ $d -ge 50 ] && busy=1
+    if [ $d -lt 20 ]; then idle=$((idle + 1)); else idle=0; fi
+    # 完了 = busy を見た後に idle 2 s、かつ合計 CPU ≥ 3 s (scan 受信程度の短い busy を完了と取らない)
+    [ $busy = 1 ] && [ $idle -ge 2 ] && [ $((cur - start)) -ge 300 ] && break
+    [ $busy = 0 ] && [ $i -ge 30 ] && { log "prewarm: no busy phase seen in 30 s (small map?)"; break; }
+  done
+  log "prewarm: $PREWARM_PROC (pid $PWPID) idle after $(( $(date +%s) - T0 )) s (busy seen=$busy)"
+fi
+python3 "$HERE/record_pose.py" "$RUN" --init "$REF/initialpose.yaml" --initialpose_delay "$INIT_DELAY" >> "$LOG" 2>&1 &
+sleep 2
+if [ "${PREWARM:-0}" = 1 ]; then
+  ros2 service call /rosbag2_player/resume rosbag2_interfaces/srv/Resume >/dev/null 2>&1
+  log "prewarm: resumed"
+fi
 log "bag play started (pid $PP)"
 wait $PP
 log "bag play finished"
