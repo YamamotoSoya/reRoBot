@@ -14,3 +14,7 @@ docs/claude/USER_LEVEL.md
 docker-compose.override.yml
 # claude: 2026-10-03 つくばチャレンジ歴代レポート (研究データ) 由来の要約 — 公開しない
 docs/trial/analysis/2026-10-03_tsukuba_reports_lessons.md
+
+# claude: 2026-10-27 Python の実行キャッシュ (以前は一部が誤って管理下にあった)
+__pycache__/
+*.pyc
