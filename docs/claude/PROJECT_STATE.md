@@ -3,7 +3,7 @@
      読み順: CLAUDE.md (規約・ビルド) → 本ファイル (現在地) → docs/issue/ (問題詳細)。 -->
 # reRoBot プロジェクト状態メモ (Claude 用)
 
-- **最終更新: 2026-10-27** — R-Fans 櫛状距離偽点 (`exp/glim-gpu-imu` で発覚、issue とツールを main に取り込み) の実機検査 (10-26/27 実施、偽点はセンサ本体・設定非依存) と除去フィルタ試作 v4 (ポール奥 85% 減) を `df015f1` でコミット (§5・§10)。10-24: スタート地点の人垣 (10〜20 m・前方以外遮蔽) を bag に擬似注入した自己位置推定の再生試験 (§10 冒頭、`tools/crowd_sim/`。密な近距離人垣で現行 AMCL は 1.5〜2 m 流れ初期誤差を直せない、lidar3d は無影響)。10-23: リポジトリ全体見直し (docs/issue/2026-10-23_repository_review_incremental_cruft.md)・docs 構成変更 (issue/closed・INDEX・docs/README)・月別変更履歴 `docs/monthly/2026_MM.md` 新設。**10-16 以前の更新履歴 (旧 6〜7 行目、39 KB) と §6 タイムライン (113 KB) は同日に削除し、[docs/monthly/](../monthly/00_index.md) に委譲した** — 経緯を追うときはそちらと `git log` を見る。
+- **最終更新: 2026-10-27** — R-Fans 櫛状距離偽点 (`exp/glim-gpu-imu` で発覚、issue とツールを main に取り込み) の実機検査 (10-26/27 実施、偽点はセンサ本体・設定非依存) と除去フィルタ試作 v4 (ポール奥 85% 減) を `df015f1` でコミット (§5・§10)。10-24: スタート地点の人垣 (10〜20 m・前方以外遮蔽) を bag に擬似注入した自己位置推定の再生試験 (§10 冒頭、`tools/crowd_sim/`、10-27 に `1ae42c9` でコミット。密な近距離人垣で現行 AMCL は 1.5〜2 m 流れ初期誤差を直せない、lidar3d は無影響)。10-23: リポジトリ全体見直し (docs/issue/2026-10-23_repository_review_incremental_cruft.md)・docs 構成変更 (issue/closed・INDEX・docs/README)・月別変更履歴 `docs/monthly/2026_MM.md` 新設。**10-16 以前の更新履歴 (旧 6〜7 行目、39 KB) と §6 タイムライン (113 KB) は同日に削除し、[docs/monthly/](../monthly/00_index.md) に委譲した** — 経緯を追うときはそちらと `git log` を見る。
 - 書き手: Claude Code (Fable 5)。次の Claude はまずこれを読めば現在地が分かるようにしてある。
 
 ---
