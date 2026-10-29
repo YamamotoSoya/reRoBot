@@ -294,7 +294,8 @@ def main():
             keep &= d2 <= args.range_max ** 2
         world_pts.append(w[keep, :2])
         if args.mark_unknown:
-            views.append((vp[::max(args.view_stride, 1)], w[:, :2].copy(), keep))
+            # claude: 2026-10-29 全点 xy を抱えるので float32 (fixed2 の 0.025 m 版が float64 で OOM。誤差 < 0.1 mm)
+            views.append((vp[::max(args.view_stride, 1)], w[:, :2].astype(np.float32), keep))
     sel = np.concatenate(world_pts)
     print(f"submaps: {len(ids)}, points in height band: {len(sel)}")
     if traj is not None and n_fallback:
@@ -331,11 +332,16 @@ def main():
     dropped = np.count_nonzero(~ok)
     if dropped:
         print(f"warning: {dropped} points fell outside the map ({100*dropped/len(sel):.1f}%)")
-    counts = np.bincount(py[ok] * W + px[ok], minlength=W * H).reshape(H, W)
+    counts = np.bincount(py[ok] * W + px[ok], minlength=W * H).astype(np.int32).reshape(H, W)
+    del px, py, ok
 
     # 既製ツールと同じ濃度変換: count<=min → 白 (自由), count>=max → 黒 (占有)
+    # claude: 2026-10-29 0.025 m 版 (3 億画素) で float64 の一時配列が重なり OOM → float32・in-place で計算
     lo, hi = args.min_points_in_pix, args.max_points_in_pix
-    img = np.clip(255.0 - 255.0 * (counts - lo) / (hi - lo), 0, 255).astype(np.uint8)
+    f = counts.astype(np.float32)
+    f -= lo; f *= 255.0 / (hi - lo); np.subtract(255.0, f, out=f); np.clip(f, 0, 255, out=f)
+    img = f.astype(np.uint8)
+    del f
 
     if args.mark_unknown:
         # claude: 2026-10-02 白 (点数 <= lo) のうち、どの視点からも見えていない画素を unknown に
