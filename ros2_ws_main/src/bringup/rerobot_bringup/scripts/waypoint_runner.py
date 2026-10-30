@@ -29,12 +29,31 @@
 #     いる」と計画が一度も成功せず約 15 s で区間失敗になる (critic H3)。前が抜けるまで待つには再送を続ける
 #     しかない。10 回 × (15 s + retry-wait 5 s) ≈ 3〜4 分。本当に通れない場所なら随伴者が Back で止める。
 #
+#   claude: 2026-10-30 global costmap を自機中心 60 m の追従窓にした (nav2_params.yaml global_costmap rolling_window) のに合わせ、
+#     区間を 1 本で送るのをやめた。ComputePathThroughPoses は渡された点を全部計画するので、窓の外に 1 点でもあると
+#     GoalOutsideMapBounds で区間が始まらない (つくばは 1 区間 11 点 281 m)。代わりに:
+#       - 自機 (TF map→base_link) から --send-radius 以内にある先頭の点だけを 1 本の goal で送る (「窓」)
+#       - 1 s ごとに自機位置から窓を選び直し、「今送っている最後の点より先へ伸ばせる」かつ「送った点の残りが --resend-left 以下」
+#         なら次の窓を送って差し替える。bt_navigator は同じ BT の goal なら木を作り直さず blackboard の {goals} だけ
+#         入れ替える (onPreempt、台上で 10 ms で受理を確認) ので、FollowPath は旧経路で走り続け、次の計画 tick
+#         (RateController 3 s) で新経路に乗る = 止まらない。旧 goal は ABORTED で返るが無視する
+#         (残り点数だけを条件にすると、次の点がまだ半径外のときに 1 点だけの窓を送ってそこで止まる — 台上で確認)
+#       - 隣接点の間隔が --max-spacing を超える区間には中間点を自動で挿む (つくば course.yaml は 72 m / 91 m 間隔があり、
+#         それでは次の 1 点すら窓に入らない)。中間点の名前は <前の点>+k、向きは線分方向、stop ではない
+#     send_radius は窓幅の半分 (30 m) より小さく (差し替えまでに進む分 + costmap 更新 1 Hz の中心ずれの余裕)。
+#     差し替えが間に合わず窓の終点に着いてしまったときは Nav2 が goal 成功で止めるので、続きを送り直す (一瞬止まるだけ)。
+#     --send-radius 0 で従来どおり区間全点を 1 本で送る (rolling_window: false 用)。
+#
 #   使い方 (rerobot_env 内、nav2.launch.py 起動 + AMCL 初期位置合わせ済みで。キー入力を使うなら -it):
 #     ros2 run rerobot_bringup waypoint_runner.py <course.yaml> [--resume-key g] [--start N] [--auto-retry 10] [--retry-wait 5] \
+#       [--send-radius 20] [--resend-left 2] [--max-spacing 10] \
 #       [--ros-args --params-file <share>/config/joy_teleop.yaml]   # joy ボタンの割り当てを読む (省略時は既定値)
 #     --start N : waypointN から始める (途中で止めて再起動したとき用)
 #     --auto-retry N : 区間失敗の自動再送回数 (0 で無効 = 旧挙動)
 #     --retry-wait S : 再送までの待ち秒数 (R-Fans ディップは 5〜7 s なので既定 5)
+#     --send-radius R : 1 本の goal に入れる点は自機から R [m] 以内 (既定 20、0 = 区間全点)
+#     --resend-left N : 送った点の残りが N 以下になったら次の窓を送る (既定 2)
+#     --max-spacing D : 隣接点の間隔が D [m] を超えたら中間点を挿む (既定 10 → 窓 20 m に 2〜3 点入る、0 = 挿まない)
 import argparse
 import collections
 import math
@@ -53,7 +72,9 @@ from rclpy.action import ActionClient
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from rclpy.signals import SignalHandlerOptions
+from rclpy.time import Time
 from sensor_msgs.msg import Joy  # claude: 2026-10-16 ゲームパッド入力
+from tf2_ros import Buffer, TransformListener  # claude: 2026-10-30 自機位置 (窓の選点用)
 from std_msgs.msg import String
 from visualization_msgs.msg import Marker
 
@@ -69,6 +90,24 @@ def load_course(path):
         w, _, _, z = (float(v) for v in wp["orientation"])
         wps.append((name, x, y, z, w, bool(wp.get("stop", False))))
     return wps
+
+
+def densify(wps, max_spacing):
+    """隣接点の間隔が max_spacing [m] を超える区間に等間隔の中間点を挿む (claude: 2026-10-30)。
+    中間点 = (<前の点の名前>+k, 線分上の等分点, 線分方向の向き, stop=False)。max_spacing <= 0 なら無変更。"""
+    if max_spacing <= 0 or len(wps) < 2:
+        return list(wps)
+    out = [wps[0]]
+    for a, b in zip(wps, wps[1:]):
+        dx, dy = b[1] - a[1], b[2] - a[2]
+        n = int(math.ceil(math.hypot(dx, dy) / max_spacing))
+        if n > 1:
+            yaw = math.atan2(dy, dx)
+            qz, qw = math.sin(yaw / 2), math.cos(yaw / 2)
+            for k in range(1, n):
+                out.append((f"{a[0]}+{k}", a[1] + dx * k / n, a[2] + dy * k / n, qz, qw, False))
+        out.append(b)
+    return out
 
 
 def split_segments(n, stops, start):
@@ -168,13 +207,17 @@ class Input:
 
 
 class WaypointRunner(Node):
-    def __init__(self, wps, resume_key, auto_retry=10, retry_wait=5.0):
+    def __init__(self, wps, resume_key, auto_retry=10, retry_wait=5.0, send_radius=20.0, resend_left=2):
         super().__init__("waypoint_runner")
         self.wps, self.resume_key = wps, resume_key
         self.auto_retry, self.retry_wait = auto_retry, retry_wait  # claude: 区間失敗の自動再送 (2026-10-16)
+        self.send_radius, self.resend_left = send_radius, resend_left  # claude: 2026-10-30 窓送り (ヘッダ参照)
         self.client = ActionClient(self, NavigateThroughPoses, "navigate_through_poses")
-        self.remaining = 0  # 走行中区間の未到達点数 (feedback の number_of_poses_remaining)
         self.goal_handle = None  # 走行中ゴールのハンドル (Ctrl-C 時のキャンセル用)
+        self.tf_buffer = Buffer()  # claude: 2026-10-30 map→base_link (窓の選点)。spin_once で溜まる
+        self.tf_listener = TransformListener(self.tf_buffer, self, spin_thread=False)
+        self.tf_warned = False
+        self.far_warned = set()  # 半径外を警告済みの点 (index)
         # claude: 2026-10-16 現在状態を外に出す (端末ログは auto_run の他ノード出力に流されて追えないため)。
         #   /waypoint_runner/status (String) と /waypoint_runner/marker (車体上 1.6 m のテキスト、nav2.rviz に表示あり)。
         #   transient_local なので後から購読した auto_run_check / RViz にも最新が届く。
@@ -215,14 +258,48 @@ class WaypointRunner(Node):
             goal.poses.append(p)
         return goal
 
-    def spin_until(self, future, kb, on_key=None):
-        """future 完了まで spin。走行中のキーは on_key に渡す。"""
+    def spin_until(self, future, kb, on_key=None, until=None):
+        """future 完了まで spin。走行中のキーは on_key に渡す。
+        claude: 2026-10-30 until() が True になったら完了を待たず None を返す (次の窓を送るため)。"""
         while rclpy.ok() and not future.done():
+            if until is not None and until():
+                return None
             rclpy.spin_once(self, timeout_sec=0.05)
             k = kb.get()
             if k is not None and on_key is not None:
                 on_key(k)
-        return future.result()
+        return future.result() if future.done() else None
+
+    def robot_xy(self):
+        """map→base_link の (x, y)。TF が無ければ None (claude: 2026-10-30)。"""
+        try:
+            t = self.tf_buffer.lookup_transform("map", "base_link", Time()).transform.translation
+            return (t.x, t.y)
+        except Exception:  # noqa: BLE001 — tf2 の例外型は複数 (Lookup/Connectivity/Extrapolation)
+            return None
+
+    def select_window(self, idx, cursor):
+        """idx[cursor:] のうち自機から send_radius 以内に収まる先頭の連続部分 (最低 1 点) (claude: 2026-10-30)。
+        途中で 1 点でも外れたらそこで打ち切る (順序は変えられない)。send_radius <= 0 なら残り全点。"""
+        rest = idx[cursor:]
+        if self.send_radius <= 0:
+            return rest
+        xy = self.robot_xy()
+        if xy is None:
+            if not self.tf_warned:
+                self.log(f"{YELLOW}⚠ map→base_link の TF が無い — 先頭の点を自機位置とみなして窓を選ぶ{RESET}")
+                self.tf_warned = True
+            xy = self.wps[rest[0]][1:3]
+        sub = []
+        for i in rest:
+            if sub and math.dist(xy, self.wps[i][1:3]) > self.send_radius:
+                break
+            sub.append(i)
+        if math.dist(xy, self.wps[sub[0]][1:3]) > self.send_radius and sub[0] not in self.far_warned:
+            self.far_warned.add(sub[0])
+            self.log(f"{YELLOW}⚠ 次の点 {self.wps[sub[0]][0]} が自機から {math.dist(xy, self.wps[sub[0]][1:3]):.0f} m "
+                     f"(> --send-radius {self.send_radius:.0f}) — costmap の窓の外なら計画は失敗する{RESET}")
+        return sub
 
     def wait_key(self, kb, prompt):
         """再開キー → True / q → False。待機中も spin して DDS を回しておく。"""
@@ -249,44 +326,74 @@ class WaypointRunner(Node):
         return rclpy.ok()
 
     def run_segment(self, idx, kb):
-        """idx の点列を 1 本の NavigateThroughPoses で走る。
-        戻り値: ("ok"|"paused"|"failed", 未到達の idx 末尾)。"""
-        self.remaining = len(idx)
-        head, tail = self.wps[idx[0]][0], self.wps[idx[-1]][0]
+        """idx の点列を走る。戻り値: ("ok"|"paused"|"failed", 未到達の idx 末尾)。
+        claude: 2026-10-30 窓送り: select_window で選んだ先頭の点だけ 1 本の NavigateThroughPoses で送り、
+          feedback の残りが resend_left 以下になったら次の窓を送って差し替える (仕組みはヘッダ参照)。"""
+        cursor = 0  # idx 内の最初の未到達点
+        tail = self.wps[idx[-1]][0]
+        while rclpy.ok():
+            sub = self.select_window(idx, cursor)
+            end_of_seg = cursor + len(sub) == len(idx)
+            head = self.wps[idx[cursor]][0]
+            st = {"remaining": len(sub), "resend": False, "t_check": time.monotonic()}
+            if cursor > 0 or len(sub) < len(idx):
+                self.log(f"↻ 窓: {head} → {self.wps[sub[-1]][0]} ({len(sub)} 点、区間の残り {len(idx) - cursor} 点)")
 
-        def on_fb(fb):
-            if fb.feedback.number_of_poses_remaining != self.remaining:  # claude: 残り点数が変わったときだけ状態更新
-                self.remaining = fb.feedback.number_of_poses_remaining
-                self.set_status(f"▶ 走行中 {head} → {tail}  残り {self.remaining} 点  (LB で介入 / Back で一時停止)",
-                                (0.3, 1.0, 0.3))
+            def on_fb(fb, sub=sub, st=st, cursor=cursor, end_of_seg=end_of_seg):
+                r = fb.feedback.number_of_poses_remaining
+                if r == st["remaining"]:  # claude: 残り点数が変わったときだけ状態更新
+                    return
+                st["remaining"] = r
+                left = len(idx) - (cursor + len(sub) - r)
+                self.set_status(f"▶ 走行中 {head} → {tail}  残り {left} 点  (LB で介入 / Back で一時停止)", (0.3, 1.0, 0.3))
 
-        send = self.client.send_goal_async(self.make_goal(idx), feedback_callback=on_fb)
-        handle = self.spin_until(send, kb)
-        if handle is None or not handle.accepted:
-            self.log(f"{RED}✘ ゴールが拒否された (bt_navigator が active か確認){RESET}")
-            return "failed", idx
-        self.goal_handle = handle
-        paused = []
+            def want_resend(sub=sub, st=st, cursor=cursor, end_of_seg=end_of_seg):
+                """1 s ごと: 自機位置で窓を選び直し、今の窓より先へ伸ばせる & 残りが resend_left 以下なら差し替え。"""
+                if end_of_seg or st["resend"] or time.monotonic() - st["t_check"] < 1.0:
+                    return st["resend"]
+                st["t_check"] = time.monotonic()
+                first = cursor + len(sub) - st["remaining"]
+                if first < len(idx) and st["remaining"] <= self.resend_left:
+                    cand = self.select_window(idx, first)
+                    st["resend"] = cand[-1] > sub[-1]
+                return st["resend"]
 
-        def on_key(k):
-            if k == "p" and not paused:
-                paused.append(True)
-                self.log(f"{YELLOW}… 一時停止: ゴールをキャンセル中{RESET}")
-                handle.cancel_goal_async()
+            send = self.client.send_goal_async(self.make_goal(sub), feedback_callback=on_fb)
+            handle = self.spin_until(send, kb)
+            if handle is None or not handle.accepted:
+                self.log(f"{RED}✘ ゴールが拒否された (bt_navigator が active か確認){RESET}")
+                return "failed", idx[cursor:]
+            self.goal_handle = handle
+            paused = []
 
-        res = self.spin_until(handle.get_result_async(), kb, on_key)
-        self.goal_handle = None
-        left = idx[len(idx) - max(1, self.remaining):]  # 最低でも区間の終点 (停止点) は残す
-        if res is None:
+            def on_key(k):
+                if k == "p" and not paused:
+                    paused.append(True)
+                    self.log(f"{YELLOW}… 一時停止: ゴールをキャンセル中{RESET}")
+                    handle.cancel_goal_async()
+
+            res = self.spin_until(handle.get_result_async(), kb, on_key, until=want_resend)
+            first_unreached = cursor + len(sub) - st["remaining"]
+            if res is None and st["resend"] and rclpy.ok():
+                cursor = first_unreached  # 次の send が旧ゴールを差し替える (旧ゴールの ABORTED は見ない)
+                continue
+            self.goal_handle = None
+            left = idx[min(first_unreached, len(idx) - 1):]  # 最低でも区間の終点 (停止点) は残す
+            if res is None:
+                return "failed", left
+            if res.status == GoalStatus.STATUS_SUCCEEDED:
+                if end_of_seg:
+                    return "ok", []
+                self.log(f"{YELLOW}… 差し替えが間に合わず窓の終点 {self.wps[sub[-1]][0]} で停止 → 続きを送る{RESET}")
+                cursor = cursor + len(sub)
+                continue
+            if res.status == GoalStatus.STATUS_CANCELED and paused:
+                return "paused", left
+            r = res.result
+            self.log(f"{RED}✘ 区間失敗 (status {res.status}, error_code {r.error_code}: {r.error_msg}){RESET}")
+            self.set_status(f"✘ 区間失敗 error_code {r.error_code}", (1.0, 0.2, 0.2))
             return "failed", left
-        if res.status == GoalStatus.STATUS_SUCCEEDED:
-            return "ok", []
-        if res.status == GoalStatus.STATUS_CANCELED and paused:
-            return "paused", left
-        r = res.result
-        self.log(f"{RED}✘ 区間失敗 (status {res.status}, error_code {r.error_code}: {r.error_msg}){RESET}")
-        self.set_status(f"✘ 区間失敗 error_code {r.error_code}", (1.0, 0.2, 0.2))
-        return "failed", left
+        return "failed", idx[cursor:]
 
     def cancel_active(self):
         """走行中ゴールがあればキャンセルし、受理されるまで最大 2 s 待つ。"""
@@ -347,31 +454,47 @@ def main():
     ap.add_argument("--start", type=int, default=0, help="waypointN から始める (index、既定 0)")
     ap.add_argument("--auto-retry", type=int, default=10, help="区間失敗時の自動再送回数 (既定 10、0 で無効)")
     ap.add_argument("--retry-wait", type=float, default=5.0, help="自動再送までの待ち秒数 (既定 5)")
+    # claude: 2026-10-30 窓送り (global costmap rolling_window 60 m に合わせる。ヘッダ参照)
+    ap.add_argument("--send-radius", type=float, default=20.0, help="1 本の goal に入れる点は自機から R m 以内 (既定 20、0 = 区間全点)")
+    ap.add_argument("--resend-left", type=int, default=2, help="送った点の残りが N 以下で次の窓を送る (既定 2)")
+    ap.add_argument("--max-spacing", type=float, default=10.0, help="隣接点の間隔が D m を超えたら中間点を挿む (既定 10、0 = 挿まない)")
     args, ros_args = ap.parse_known_args()
     if len(args.resume_key) != 1 or args.resume_key in "qp":
         sys.exit("--resume-key は q / p 以外の 1 文字")
     # claude: 2026-10-16 端末なし (launch 配下) でも起動できる — その場合の入力は joy ボタンだけ (class Input)
 
-    wps = load_course(args.course)
-    if not 0 <= args.start < len(wps):
-        sys.exit(f"--start {args.start} が範囲外 (0..{len(wps) - 1})")
-    segs = split_segments(len(wps), [w[5] for w in wps], args.start)
-    total = sum(math.dist(a[1:3], b[1:3]) for a, b in zip(wps[args.start:], wps[args.start + 1:]))
-    print(f"コース: {args.course} — {len(wps)} 点 (waypoint{args.start} から), {total:.1f} m, "
-          f"停止点 {[w[0] for w in wps[args.start:] if w[5]] or 'なし'}", flush=True)  # launch 配下は stdout がブロックバッファ
+    raw = load_course(args.course)
+    if not 0 <= args.start < len(raw):
+        sys.exit(f"--start {args.start} が範囲外 (0..{len(raw) - 1})")
+    # claude: 2026-10-30 --start は元ファイルの index。中間点を挿んだ後は同じ名前の点を探し直す
+    wps = densify(raw, args.max_spacing)
+    start = next(i for i, w in enumerate(wps) if w[0] == raw[args.start][0])
+    segs = split_segments(len(wps), [w[5] for w in wps], start)
+    total = sum(math.dist(a[1:3], b[1:3]) for a, b in zip(wps[start:], wps[start + 1:]))
+    print(f"コース: {args.course} — {len(raw)} 点 (+ 中間点 {len(wps) - len(raw)}, 間隔 ≤ {args.max_spacing:g} m), "
+          f"{raw[args.start][0]} から, {total:.1f} m, 停止点 {[w[0] for w in wps[start:] if w[5]] or 'なし'}, "
+          f"窓 {args.send_radius:g} m / 残り {args.resend_left} 点で差し替え", flush=True)  # launch 配下は stdout がブロックバッファ
 
     # claude: 既定の SIGINT ハンドラは context を即 shutdown してキャンセルを送れなくなるので外し、
     #   KeyboardInterrupt として受けてから走行中ゴールをキャンセルする (走りっぱなし防止)
     rclpy.init(args=ros_args, signal_handler_options=SignalHandlerOptions.NO)
-    node = WaypointRunner(wps, args.resume_key, max(0, args.auto_retry), max(0.0, args.retry_wait))
+    node = WaypointRunner(wps, args.resume_key, max(0, args.auto_retry), max(0.0, args.retry_wait),
+                          args.send_radius, max(1, args.resend_left))
     try:
         with Input(node, args.resume_key) as kb:  # claude: 2026-10-16 キーボード + joy ボタン
             node.log(f"入力: {kb.describe()}")
             node.run(segs, kb)
-    except KeyboardInterrupt:
-        print(f"\n{YELLOW}Ctrl-C: 走行中のゴールをキャンセルして終了{RESET}")
+    except BaseException as e:  # noqa: BLE001
+        # claude: 2026-10-30 SIGINT が rclpy の pybind 呼び出し中 (feedback 変換等) に届くと KeyboardInterrupt が
+        #   TypeError に包まれて except KeyboardInterrupt を素通りし、ゴールを残したまま落ちた (台上で再現)。
+        #   どの例外でも先にキャンセルしてから、Ctrl-C 由来でなければ再送出する (走りっぱなし防止)。
+        from_sigint = isinstance(e, KeyboardInterrupt) or isinstance(e.__cause__, KeyboardInterrupt) \
+            or isinstance(e.__context__, KeyboardInterrupt)
+        print(f"\n{YELLOW}{'Ctrl-C' if from_sigint else type(e).__name__}: 走行中のゴールをキャンセルして終了{RESET}")
         node.cancel_active()
-        node.set_status("■ waypoint_runner 終了 (Ctrl-C)", (0.7, 0.7, 0.7))
+        node.set_status(f"■ waypoint_runner 終了 ({'Ctrl-C' if from_sigint else type(e).__name__})", (0.7, 0.7, 0.7))
+        if not from_sigint:
+            raise
     finally:
         node.destroy_node()
         rclpy.try_shutdown()

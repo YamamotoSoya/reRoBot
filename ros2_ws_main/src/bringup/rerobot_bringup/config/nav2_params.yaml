@@ -210,12 +210,30 @@ global_costmap:
       #   planner_server が 1 コア常時占有 → /rfans/scan の変換が 1〜1.5 s 抜け → AMCL の map→odom TF が失効 → FollowPath 失敗
       #   (10-11 走行 bag、bags/exp/2026-10-11_amcl_load/README.md)。近距離の精度は local_costmap (0.05) が担う。
       resolution: 0.1           # 解像度 [m/cell]
-      track_unknown_space: true # 未知領域を未知として扱う
+      # claude: 2026-10-30 地図全面 (つくば 3776×2176 = 8.2M セル) → 自機中心 60 m 四方 (600×600 = 0.36M セル) の追従窓。
+      #   costmap の層更新 (1 Hz) と NavFn の探索範囲が両方 1/20 以下になる (つくば地図で計画 6〜9 s かかっていた)。
+      #   制約: (1) ComputePathThroughPoses は渡された点を全部計画するので、窓の外に 1 点でもあると
+      #   GoalOutsideMapBounds で区間が始まらない → waypoint_runner が「自機から --send-radius (既定 20 m) 以内の点だけ」
+      #   送って進んだら差し替える (scripts/waypoint_runner.py 2026-10-30)。--send-radius は width/2 より小さくすること
+      #   (差し替えまでに進む分 + costmap 更新 1 Hz の中心ずれの余裕)。(2) 窓の外を通る迂回路は見つからない (歩道コースは窓内で足りる)。
+      #   (3) StaticLayer は rolling だとセルごとに TF 変換して書く別経路になるが、use_maximum はそこでも効く (Jazzy static_layer.cpp 確認)。
+      #   戻すときは rolling_window: false にする (width/height は無視される)。
+      rolling_window: true      # 自機中心の追従窓にする (2026-10-30)
+      width: 60                 # 窓の幅 [m]
+      height: 60                # 窓の高さ [m]
+      # claude: 2026-10-30 true → false。rolling 窓だと StaticLayer は別経路 (static_layer.cpp updateCosts の isRolling 分岐) で
+      #   use_maximum 時に max(地図の値, master の値) を書くが、master は毎周期 既定値に戻る。track_unknown_space: true だと
+      #   既定値 = NO_INFORMATION (255) で lethal (254) より大きく、地図も keepout も一度も書かれない (台上で costmap 全面 unknown を実測、
+      #   bags/exp/2026-10-30_rolling_window/)。非 rolling の updateWithMax は unknown を特別扱いするので 10-16 までは顕在化しなかった。
+      #   false にすると既定値 = FREE (0) で max 合成が成立する。副作用: 地図の未知セルが unknown でなく free になる
+      #   (NavFn allow_unknown の「未知は高コストで通過可」が効かなくなる) — コース外は keepout マスクが lethal で覆うので実害なし。
+      track_unknown_space: false # 未知領域は free 扱い (rolling + use_maximum の制約、上記)
       # claude: 2026-10-16 keepout を StaticLayer 化 (理由は local_costmap の keepout_static の注記)。
-      #   マスクと地図は同じ 3776×2176 / 0.1 m / origin なので StaticLayer 2 枚でサイズ衝突は起きない。
+      #   マスクと地図は同じサイズ / 0.1 m / origin (10-16 時点 3776×2176、つくば composite は 9984×4736) なので StaticLayer 2 枚でサイズ衝突は起きない。
       #   ⚠ use_maximum は costmap 直下に置く (local_costmap の注記参照)。レイヤ配下だと無視されて既定の「上書き」になり、
       #     後の StaticLayer が前の StaticLayer の値を消す (10-16 隔離ドメインの試験で lethal 数が片方の占有数と一致して発覚)。
-      #     master は毎周期 既定値 (unknown) に戻ってから各層が書くので、max 合成なら順序によらず地図 ∪ keepout になる。
+      #     master は毎周期 既定値に戻ってから各層が書くので、max 合成なら順序によらず地図 ∪ keepout になる
+      #     (既定値は track_unknown_space で決まる。global は 10-30 から free — rolling だと unknown 255 に max で負けるため、下の注記)。
       plugins: ["static_layer", "keepout_static", "obstacle_layer", "inflation_layer"]
       use_maximum: true         # StaticLayer (static_layer / keepout_static の両方) を master と max 合成にする
       keepout_static:           # keepout マスクを静的レイヤとして取り込む (壁と同じ扱い → 膨張される)
