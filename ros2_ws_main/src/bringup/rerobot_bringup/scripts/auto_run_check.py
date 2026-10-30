@@ -44,9 +44,11 @@ LIFECYCLE_NODES = [
     ("keepout filter_mask_server", "filter_mask_server", "keep_out/ のマスクを確認"),
     ("自己位置 amcl", "amcl", "loc_amcl.launch.py のログ / loc_map_yaml"),
     ("Nav2 controller_server", "controller_server", "nav2_params.yaml / navigation.launch.py のログ"),
+    ("Nav2 smoother_server", "smoother_server", "同上 (claude: 2026-10-30 経路平滑化)"),
     ("Nav2 planner_server", "planner_server", "同上"),
     ("Nav2 behavior_server", "behavior_server", "同上"),
     ("Nav2 bt_navigator", "bt_navigator", "同上 (plugin_lib_names を列挙すると segfault)"),
+    ("Nav2 velocity_smoother", "velocity_smoother", "同上 (claude: 2026-10-30 速度平滑化。/cmd_vel の publisher はこれ 1 つ)"),
 ]
 TL_QOS = QoSProfile(reliability=ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.TRANSIENT_LOCAL,
                     history=HistoryPolicy.KEEP_LAST, depth=1)

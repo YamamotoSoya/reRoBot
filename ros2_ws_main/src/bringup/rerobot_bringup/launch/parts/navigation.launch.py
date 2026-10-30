@@ -7,6 +7,12 @@
 # 常駐させる twist_mux が /cmd_vel (優先 10) と joy の /joy_vel (優先 100) を調停して /robot_speed_cmd へ流す。
 # それ以前はここで /cmd_vel → /robot_speed_cmd に remap していた (joy と publisher を取り合っていた)。
 # Twist 化は params 側の enable_stamped_cmd_vel: false で行う (twist_mux も use_stamped: false)。
+#
+# 平滑化 2 段 (claude: 2026-10-30、経路追従のカクつき対策。設計は docs/features/2026-10-30_nav2_smoothing.md):
+#   - smoother_server (SimpleSmoother): planner の折れ線経路を BT の SmoothPath で滑らかにする (追従 BT のみ)
+#   - velocity_smoother: controller/behavior の速度指令を加速度制限して出し直す
+#     配線: controller_server / behavior_server → /cmd_vel_nav → velocity_smoother → /cmd_vel → twist_mux
+#     (Nav2 公式 navigation_launch.py と同じ。公式は collision_monitor が最後段だがここでは無し)
 import os
 
 from ament_index_python.packages import get_package_share_directory
@@ -35,7 +41,16 @@ def generate_launch_description():
         name="controller_server",
         output="screen",
         parameters=[params_file, {"use_sim_time": use_sim_time}],
-        # claude: 2026-10-16 /cmd_vel のまま (twist_mux が /robot_speed_cmd へ中継)
+        # claude: 2026-10-30 /cmd_vel_nav へ逃がし、/cmd_vel は velocity_smoother だけが出す (twist_mux が /robot_speed_cmd へ中継)
+        remappings=[("cmd_vel", "cmd_vel_nav")],
+    )
+    smoother_server = Node(
+        package="nav2_smoother",
+        executable="smoother_server",
+        name="smoother_server",
+        output="screen",
+        parameters=[params_file, {"use_sim_time": use_sim_time}],
+        # claude: 2026-10-30 経路平滑化 (global_costmap/costmap_raw を既定で読む。追従窓でも可)
     )
     planner_server = Node(
         package="nav2_planner",
@@ -50,7 +65,17 @@ def generate_launch_description():
         name="behavior_server",
         output="screen",
         parameters=[params_file, {"use_sim_time": use_sim_time}],
-        # claude: 2026-10-16 復帰行動の速度司令も /cmd_vel のまま (twist_mux 経由)
+        # claude: 2026-10-30 復帰行動 (Wait/BackUp) の速度司令も velocity_smoother を通す
+        remappings=[("cmd_vel", "cmd_vel_nav")],
+    )
+    velocity_smoother = Node(
+        package="nav2_velocity_smoother",
+        executable="velocity_smoother",
+        name="velocity_smoother",
+        output="screen",
+        parameters=[params_file, {"use_sim_time": use_sim_time}],
+        # claude: 2026-10-30 入力 cmd_vel → /cmd_vel_nav、出力 cmd_vel_smoothed → /cmd_vel (twist_mux の Nav2 入力)
+        remappings=[("cmd_vel", "cmd_vel_nav"), ("cmd_vel_smoothed", "cmd_vel")],
     )
     bt_navigator = Node(
         package="nav2_bt_navigator",
@@ -74,14 +99,18 @@ def generate_launch_description():
         parameters=[{
             "use_sim_time": use_sim_time,
             "autostart": True,  # 起動時に自動で全ノードを activate
-            "node_names": ["controller_server", "planner_server", "behavior_server", "bt_navigator"],
+            # claude: 2026-10-30 smoother_server / velocity_smoother を追加 (どちらも lifecycle ノード、未登録だと無音)
+            "node_names": ["controller_server", "smoother_server", "planner_server", "behavior_server",
+                           "bt_navigator", "velocity_smoother"],
         }],
     )
 
     return LaunchDescription(args + [
         controller_server,
+        smoother_server,
         planner_server,
         behavior_server,
         bt_navigator,
+        velocity_smoother,
         lifecycle_manager_navigation,
     ])

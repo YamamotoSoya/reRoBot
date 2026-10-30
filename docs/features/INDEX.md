@@ -19,3 +19,4 @@
 | [2026-10-16_follow_bt_narrow_corridor.md](2026-10-16_follow_bt_narrow_corridor.md) | 2026-10-16 | 追従型 NavigateThroughPoses BT: 計画失敗でも旧経路を保持して前方ロボットに stop-and-go 追従する |
 | [2026-10-16_rfans_yaw_calib.md](2026-10-16_rfans_yaw_calib.md) | 2026-10-16 | R-Fans / urg の yaw 較正ツール (rfans_yaw_calib) と 2026-10-16 の較正結果の反映 |
 | [2026-10-30_global_costmap_rolling_window.md](2026-10-30_global_costmap_rolling_window.md) | 2026-10-30 | global costmap の追従窓化 (rolling_window 60 m) と waypoint_runner の窓送り |
+| [2026-10-30_nav2_smoothing.md](2026-10-30_nav2_smoothing.md) | 2026-10-30 | Nav2 の平滑化 2 段 (経路 SimpleSmoother + 速度 velocity_smoother) |

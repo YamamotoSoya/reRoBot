@@ -53,6 +53,13 @@
                   <RemovePassedGoals input_goals="{goals}" output_goals="{goals}" radius="0.7"/>
                   <ComputePathThroughPoses goals="{goals}" path="{new_path}" planner_id="{selected_planner}" error_code_id="{compute_path_error_code}"/>
                 </ReactiveSequence>
+                <!-- claude: 2026-10-30 計画成功時だけ smoother_server で平滑化 (変更点 4)。失敗・タイムアウト時は
+                     smoothed_path が書かれず未平滑の {new_path} をそのまま採用する。ForceSuccess で包むのは、
+                     smoother の失敗で Sequence が落ちて「旧経路保持」の枝に逃げ、出来たばかりの新経路を捨てないため -->
+                <ForceSuccess>
+                  <SmoothPath unsmoothed_path="{new_path}" smoothed_path="{new_path}"
+                              smoother_id="simple_smoother" max_smoothing_duration="0.5"/>
+                </ForceSuccess>
                 <SetBlackboard output_key="path" value="{new_path}"/>
                 <Script code="have_path := true; plan_fail := 0"/>
               </Sequence>

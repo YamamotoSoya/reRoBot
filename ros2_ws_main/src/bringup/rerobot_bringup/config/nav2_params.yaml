@@ -115,6 +115,41 @@ controller_server:
       rotate_to_heading_angular_vel: 1.0  # 方位合わせ旋回速度 [rad/s]
 
 # ============================================================================
+# velocity_smoother : 速度指令の加速度制限 (claude: 2026-10-30 追加)。
+#   controller_server / behavior_server の出力 (/cmd_vel_nav) を受け、加減速の上限をかけて /cmd_vel に出し直す。
+#   それまで平滑化層がどこにも無く (epos4_controller の slew 15000 rpm/s は実質無制限)、RPP の速度段差が
+#   そのまま車体に出ていた。配線は navigation.launch.py の remap 参照。joy (/joy_vel) は通らない。
+# ============================================================================
+velocity_smoother:
+  ros__parameters:
+    smoothing_frequency: 20.0        # 出し直しの周期 [Hz] (controller_frequency と同じ)
+    feedback: "OPEN_LOOP"            # 直前の自分の出力を現在速度とみなす (CLOSED_LOOP なら odom_topic: /odometry/filtered)
+    max_velocity: [0.4, 0.0, 1.0]    # [x, y, θ] 上限。RPP の desired_linear_vel / rotate_to_heading_angular_vel と揃える
+    min_velocity: [-0.4, 0.0, -1.0]  # 後退・逆旋回の下限 (BackUp 用)
+    max_accel: [0.5, 0.0, 3.2]       # 加速上限 [m/s^2, -, rad/s^2]。前進 0→0.4 m/s を 0.8 s で。角は RPP max_angular_accel と同じ
+    max_decel: [-2.5, 0.0, -3.2]     # 減速上限。緩めると collision ahead の停止が遅れるので大きいまま
+    deadband_velocity: [0.0, 0.0, 0.0]  # この絶対値未満は 0 に丸める (モータ唸り対策、今は未使用)
+    velocity_timeout: 1.0            # 入力がこの秒数途絶えたら 0 を出す (twist_mux の 0.5 s timeout より長いので先に twist_mux が落とす)
+    enable_stamped_cmd_vel: false    # twist_mux と同じ素の Twist
+
+# ============================================================================
+# smoother_server : 経路平滑化 (claude: 2026-10-30 追加)。
+#   NavFn の 0°/45° 折れ線経路を隣接点の重み付き平均で滑らかにする。追従 BT (behavior_trees/) の SmoothPath から
+#   計画成功のたびに呼ばれる。衝突チェックは global_costmap/costmap_raw (既定トピック、追従窓でも可)。
+# ============================================================================
+smoother_server:
+  ros__parameters:
+    smoother_plugins: ["simple_smoother"]
+    simple_smoother:
+      plugin: "nav2_smoother::SimpleSmoother"
+      tolerance: 1.0e-10             # 反復の収束判定
+      max_its: 1000                  # 反復上限
+      do_refinement: true            # 収束後にもう refinement_num 回かけ直す
+      refinement_num: 2
+      w_data: 0.2                    # 元経路への忠実度
+      w_smooth: 0.3                  # 滑らかさ (上げるほど折れが消えるが壁に寄る)
+
+# ============================================================================
 # local_costmap : 障害物回避用の自機周辺ローリングコストマップ。
 # ============================================================================
 local_costmap:
