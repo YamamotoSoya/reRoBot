@@ -29,7 +29,8 @@
 #     いる」と計画が一度も成功せず約 15 s で区間失敗になる (critic H3)。前が抜けるまで待つには再送を続ける
 #     しかない。10 回 × (15 s + retry-wait 5 s) ≈ 3〜4 分。本当に通れない場所なら随伴者が Back で止める。
 #
-#   claude: 2026-10-30 global costmap を自機中心 60 m の追従窓にした (nav2_params.yaml global_costmap rolling_window) のに合わせ、
+#   claude: 2026-10-30 global costmap を自機中心の追従窓にした (nav2_params.yaml global_costmap rolling_window。60 m → 同日夕 200 m
+#     = 半径 100 m、ユーザ指定) のに合わせ、
 #     区間を 1 本で送るのをやめた。ComputePathThroughPoses は渡された点を全部計画するので、窓の外に 1 点でもあると
 #     GoalOutsideMapBounds で区間が始まらない (つくばは 1 区間 11 点 281 m)。代わりに:
 #       - 自機 (TF map→base_link) から --send-radius 以内にある先頭の点だけを 1 本の goal で送る (「窓」)
@@ -38,22 +39,25 @@
 #         入れ替える (onPreempt、台上で 10 ms で受理を確認) ので、FollowPath は旧経路で走り続け、次の計画 tick
 #         (RateController 3 s) で新経路に乗る = 止まらない。旧 goal は ABORTED で返るが無視する
 #         (残り点数だけを条件にすると、次の点がまだ半径外のときに 1 点だけの窓を送ってそこで止まる — 台上で確認)
-#       - 隣接点の間隔が --max-spacing を超える区間には中間点を自動で挿む (つくば course.yaml は 72 m / 91 m 間隔があり、
-#         それでは次の 1 点すら窓に入らない)。中間点の名前は <前の点>+k、向きは線分方向、stop ではない
-#     send_radius は窓幅の半分 (30 m) より小さく (差し替えまでに進む分 + costmap 更新 1 Hz の中心ずれの余裕)。
+#       - (廃止 2026-10-31) 間隔の広い区間に直線上の中間点を自動で挿む --max-spacing は削除した。5 号館 waypoint2→3 (47 m) で
+#         中間点が植え込みと keepout に落ちて計画失敗 (308) → 追従 BT が旧経路の終点で「成功」→ 本ノードが窓の終点と誤認、
+#         の連鎖になったため (nav_2026-10-30_1757.log、bags/tools/2026-10-30_5goukan_midpoint/)。waypoint は人が道なりに置く。
+#       - 起動時に隣接点の間隔を検査し、--warn-spacing (既定 100 m = 窓 200 m の半幅) を超える区間を全部警告する。
+#         窓は自機中心なので、前の点に立ったとき次の点が窓に入るのは半幅まで。超える区間は間に点を足すこと
+#     send_radius (既定 80 m) は窓幅の半分 (100 m) より小さく (差し替えまでに進む分 + costmap 更新 1 Hz の中心ずれの余裕)。
 #     差し替えが間に合わず窓の終点に着いてしまったときは Nav2 が goal 成功で止めるので、続きを送り直す (一瞬止まるだけ)。
 #     --send-radius 0 で従来どおり区間全点を 1 本で送る (rolling_window: false 用)。
 #
 #   使い方 (rerobot_env 内、nav2.launch.py 起動 + AMCL 初期位置合わせ済みで。キー入力を使うなら -it):
 #     ros2 run rerobot_bringup waypoint_runner.py <course.yaml> [--resume-key g] [--start N] [--auto-retry 10] [--retry-wait 5] \
-#       [--send-radius 20] [--resend-left 2] [--max-spacing 10] \
+#       [--send-radius 80] [--resend-left 2] [--warn-spacing 100] \
 #       [--ros-args --params-file <share>/config/joy_teleop.yaml]   # joy ボタンの割り当てを読む (省略時は既定値)
 #     --start N : waypointN から始める (途中で止めて再起動したとき用)
 #     --auto-retry N : 区間失敗の自動再送回数 (0 で無効 = 旧挙動)
 #     --retry-wait S : 再送までの待ち秒数 (R-Fans ディップは 5〜7 s なので既定 5)
-#     --send-radius R : 1 本の goal に入れる点は自機から R [m] 以内 (既定 20、0 = 区間全点)
+#     --send-radius R : 1 本の goal に入れる点は自機から R [m] 以内 (既定 80、0 = 区間全点)
 #     --resend-left N : 送った点の残りが N 以下になったら次の窓を送る (既定 2)
-#     --max-spacing D : 隣接点の間隔が D [m] を超えたら中間点を挿む (既定 10 → 窓 20 m に 2〜3 点入る、0 = 挿まない)
+#     --warn-spacing W : 起動時に隣接点の間隔が W [m] を超える区間を警告する (既定 100 = 窓の半幅)
 import argparse
 import collections
 import math
@@ -90,24 +94,6 @@ def load_course(path):
         w, _, _, z = (float(v) for v in wp["orientation"])
         wps.append((name, x, y, z, w, bool(wp.get("stop", False))))
     return wps
-
-
-def densify(wps, max_spacing):
-    """隣接点の間隔が max_spacing [m] を超える区間に等間隔の中間点を挿む (claude: 2026-10-30)。
-    中間点 = (<前の点の名前>+k, 線分上の等分点, 線分方向の向き, stop=False)。max_spacing <= 0 なら無変更。"""
-    if max_spacing <= 0 or len(wps) < 2:
-        return list(wps)
-    out = [wps[0]]
-    for a, b in zip(wps, wps[1:]):
-        dx, dy = b[1] - a[1], b[2] - a[2]
-        n = int(math.ceil(math.hypot(dx, dy) / max_spacing))
-        if n > 1:
-            yaw = math.atan2(dy, dx)
-            qz, qw = math.sin(yaw / 2), math.cos(yaw / 2)
-            for k in range(1, n):
-                out.append((f"{a[0]}+{k}", a[1] + dx * k / n, a[2] + dy * k / n, qz, qw, False))
-        out.append(b)
-    return out
 
 
 def split_segments(n, stops, start):
@@ -454,26 +440,37 @@ def main():
     ap.add_argument("--start", type=int, default=0, help="waypointN から始める (index、既定 0)")
     ap.add_argument("--auto-retry", type=int, default=10, help="区間失敗時の自動再送回数 (既定 10、0 で無効)")
     ap.add_argument("--retry-wait", type=float, default=5.0, help="自動再送までの待ち秒数 (既定 5)")
-    # claude: 2026-10-30 窓送り (global costmap rolling_window 60 m に合わせる。ヘッダ参照)
-    ap.add_argument("--send-radius", type=float, default=20.0, help="1 本の goal に入れる点は自機から R m 以内 (既定 20、0 = 区間全点)")
+    # claude: 2026-10-30 窓送り (global costmap rolling_window 200 m に合わせる。ヘッダ参照)
+    ap.add_argument("--send-radius", type=float, default=80.0, help="1 本の goal に入れる点は自機から R m 以内 (既定 80 = 窓半幅 100 − 余裕、0 = 区間全点)")
     ap.add_argument("--resend-left", type=int, default=2, help="送った点の残りが N 以下で次の窓を送る (既定 2)")
-    ap.add_argument("--max-spacing", type=float, default=10.0, help="隣接点の間隔が D m を超えたら中間点を挿む (既定 10、0 = 挿まない)")
+    ap.add_argument("--warn-spacing", type=float, default=100.0,
+                    help="起動時に隣接点の間隔が W m を超える区間を警告 (既定 100 = global costmap の窓 200 m の半幅、0 = 検査しない)")
     args, ros_args = ap.parse_known_args()
     if len(args.resume_key) != 1 or args.resume_key in "qp":
         sys.exit("--resume-key は q / p 以外の 1 文字")
     # claude: 2026-10-16 端末なし (launch 配下) でも起動できる — その場合の入力は joy ボタンだけ (class Input)
 
-    raw = load_course(args.course)
-    if not 0 <= args.start < len(raw):
-        sys.exit(f"--start {args.start} が範囲外 (0..{len(raw) - 1})")
-    # claude: 2026-10-30 --start は元ファイルの index。中間点を挿んだ後は同じ名前の点を探し直す
-    wps = densify(raw, args.max_spacing)
-    start = next(i for i, w in enumerate(wps) if w[0] == raw[args.start][0])
+    wps = load_course(args.course)
+    if not 0 <= args.start < len(wps):
+        sys.exit(f"--start {args.start} が範囲外 (0..{len(wps) - 1})")
+    start = args.start
     segs = split_segments(len(wps), [w[5] for w in wps], start)
     total = sum(math.dist(a[1:3], b[1:3]) for a, b in zip(wps[start:], wps[start + 1:]))
-    print(f"コース: {args.course} — {len(raw)} 点 (+ 中間点 {len(wps) - len(raw)}, 間隔 ≤ {args.max_spacing:g} m), "
-          f"{raw[args.start][0]} から, {total:.1f} m, 停止点 {[w[0] for w in wps[start:] if w[5]] or 'なし'}, "
+    print(f"コース: {args.course} — {len(wps)} 点, "
+          f"{wps[start][0]} から, {total:.1f} m, 停止点 {[w[0] for w in wps[start:] if w[5]] or 'なし'}, "
           f"窓 {args.send_radius:g} m / 残り {args.resend_left} 点で差し替え", flush=True)  # launch 配下は stdout がブロックバッファ
+    # claude: 2026-10-30 隣接点の間隔検査 (ヘッダ参照)。global costmap の窓 (200 m) は自機中心なので、前の点に立ったとき
+    #   次の点が窓に入るのは半幅 100 m まで。超える区間は GOAL_OUTSIDE_MAP (304) で区間が始まらないので起動時に全部出す。
+    #   止めはしない (--start で手前を飛ばす運用があるため)。
+    if args.warn_spacing > 0:
+        wide = [(a[0], b[0], math.dist(a[1:3], b[1:3])) for a, b in zip(wps[start:], wps[start + 1:])
+                if math.dist(a[1:3], b[1:3]) > args.warn_spacing]
+        for a, b, d in wide:
+            print(f"{YELLOW}⚠ {a} → {b} が {d:.0f} m (> --warn-spacing {args.warn_spacing:g}): global costmap の窓 ({2 * args.warn_spacing:g} m, 自機中心) "
+                  f"の外になり計画は GOAL_OUTSIDE_MAP で失敗する。間に waypoint を足すこと{RESET}", flush=True)
+        if wide:
+            print(f"{YELLOW}⚠ 間隔超過 {len(wide)} 区間。走る前に course.yaml を直すこと (このまま続行はできるが該当区間で止まる){RESET}",
+                  flush=True)
 
     # claude: 既定の SIGINT ハンドラは context を即 shutdown してキャンセルを送れなくなるので外し、
     #   KeyboardInterrupt として受けてから走行中ゴールをキャンセルする (走りっぱなし防止)

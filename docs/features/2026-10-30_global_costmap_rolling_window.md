@@ -20,7 +20,7 @@ global costmap の層更新 (1 Hz) と NavFn の探索が地図全面を対象�
 
 実装した機能:
 - `nav2_params.yaml` global_costmap: `rolling_window: true` / `width: 60` / `height: 60` / `track_unknown_space: false` (§2.2)
-- `waypoint_runner.py`: 窓送り (`--send-radius` 20 m、`--resend-left` 2)、中間点の自動挿入 (`--max-spacing` 10 m)、自機位置は TF map→base_link
+- `waypoint_runner.py`: 窓送り (`--send-radius` 20 m、`--resend-left` 2)、起動時の間隔検査 (`--warn-spacing` 30 m)、自機位置は TF map→base_link。中間点の自動挿入 (`--max-spacing`) は同日夕方に既定 off → 10-31 にコードごと削除 (§2.3, §7)
 - `waypoint_runner.py`: 例外終了時も走行中ゴールを必ずキャンセル (SIGINT が rclpy の pybind 内で TypeError 化する件、§2.4)
 
 スコープ外 (意図的に未対応):
@@ -74,11 +74,12 @@ local_costmap は `track_unknown_space` 未指定 (Costmap2DROS 既定 false) �
 - (a) 上流修正を static_layer.cpp にバックポートして `track_unknown_space: true` を維持: Nav2 のローカルビルドが要る (保留)
 - (b) keepout を地図 pgm に焼き込んで StaticLayer 1 枚 + `use_maximum: false`: 未知の意味を保てるが地図生成 (make_maps.sh) の変更 (保留)
 
-### 2.3 中間点の自動挿入
+### 2.3 中間点の自動挿入 (廃止)
 
-つくば course.yaml の隣接間隔は `20 14 12 10 14 72 91 12 29 6 25 33` m で、72/91 m は窓 20 m に次の 1 点すら入らない。
-runner が読み込み時に `--max-spacing` (10 m) を超える区間を等分して中間点を挿む (名前 `<前の点>+k`、向きは線分方向、stop ではない)。
-`--start N` は元ファイルの index で受け、挿入後に同名の点を探し直す。地図リポジトリ (maps/2d) の course.yaml は触らない。
+初版 (10-30 昼) は、つくば course.yaml の隣接間隔 `20 14 12 10 14 72 91 12 29 6 25 33` m のうち 72/91 m が窓 20 m に入らないため、
+runner が読み込み時に `--max-spacing` (10 m) を超える区間を等分して直線上に中間点を挿んでいた (`densify()`)。同日夕方の実走で
+直線が道を外れる区間で中間点が障害物に落ちる連鎖 (§7) が出て既定 off にし、**10-31 にユーザ指示で `densify()` と `--max-spacing` を
+コードごと削除**した。waypoint は人が道なりに置き、間隔は起動時の `--warn-spacing` 検査で見る。`--start N` は元ファイルの index そのまま。
 
 ### 2.4 例外終了時のゴールキャンセル
 
@@ -90,7 +91,7 @@ Ctrl-C 由来 (`__cause__`/`__context__` も見る) でなければ再送出す�
 ## 3. データフロー
 
 ```
-course.yaml ──load_course──▶ densify(max_spacing 10 m) ──split_segments(stop)──▶ 区間 [i0..i1]
+course.yaml ──load_course──▶ (中間点挿入なし、10-31 から) ──split_segments(stop)──▶ 区間 [i0..i1]
                                                                                     │
   TF map→base_link ──▶ select_window(idx, cursor): 自機から send_radius 以内の先頭の点列 (sub)
                                                                                     │
@@ -107,7 +108,7 @@ course.yaml ──load_course──▶ densify(max_spacing 10 m) ──split_seg
 
 ```bash
 # 本番は auto_run.launch.py がそのまま起動する (runner の既定値で窓送り)。単体:
-ros2 run rerobot_bringup waypoint_runner.py <map_dir>/waypoints/course.yaml [--send-radius 20] [--resend-left 2] [--max-spacing 10]
+ros2 run rerobot_bringup waypoint_runner.py <map_dir>/waypoints/course.yaml [--send-radius 80] [--resend-left 2] [--warn-spacing 100]
 # 台上試験 (隔離ドメイン 151、実機なし。bags/exp/2026-10-30_rolling_window/README.md)
 /workspace/bags/exp/2026-10-30_rolling_window/run_headless.sh "" A        # map + keepout + navigation + 静的 TF
 python3 plan_test.py "47.4,-6.33;50.34,-15.96;53.28,-25.59" --repeat 3    # 計画時間
@@ -116,11 +117,12 @@ python3 costmap_check.py                                                   # 地
 
 | 項目 | 値 | 説明 |
 |---|---|---|
-| global_costmap `rolling_window` / `width` / `height` | true / 60 / 60 | 自機中心 60 m 窓。戻すときは false (width/height は無視) |
+| global_costmap `rolling_window` / `width` / `height` | true / **200 / 200** | 自機中心 200 m 窓 (半径 100 m。10-30 夕に 60 → 200、§8)。戻すときは false (width/height は無視) |
+| global_costmap `publish_frequency` | **0.2 Hz** | 可視化 publish。200 m 窓は 1 発 4 MB で rolling は毎回全面送信になるため 1.0 → 0.2 (§8) |
 | global_costmap `track_unknown_space` | false | §2.2。true だと rolling で地図が書かれない |
-| `--send-radius` | 20 m | 1 本の goal に入れる点は自機からこの距離以内。0 = 区間全点 (rolling_window: false 用) |
+| `--send-radius` | **80 m** | 1 本の goal に入れる点は自機からこの距離以内 (窓半幅 100 − 余裕 20)。0 = 区間全点 (rolling_window: false 用) |
 | `--resend-left` | 2 | 送った点の残りがこれ以下で、かつ伸ばせるときに次窓へ差し替え |
-| `--max-spacing` | 10 m | 隣接点の間隔がこれを超えたら中間点を挿む。0 = 挿まない |
+| `--warn-spacing` | **100 m** | 起動時に隣接点の間隔がこれを超える区間を全部警告 (窓 200 m の半幅)。0 = 検査しない |
 
 計画時間 (このノート PC、同じ地図・同じゴール、planning_time): 全面 0.78 s (3 点 20 m) / 2.78 s (8 点 239 m) → 窓 0.002〜0.004 s。
 ロボット PC では全面で 6〜9 s だった (costmap 更新と競合)。
@@ -128,7 +130,7 @@ python3 costmap_check.py                                                   # 地
 ## 5. 変更ファイル一覧
 
 - `ros2_ws_main/src/bringup/rerobot_bringup/config/nav2_params.yaml` — global_costmap に rolling_window/width/height、track_unknown_space true→false (注記つき)
-- `ros2_ws_main/src/bringup/rerobot_bringup/scripts/waypoint_runner.py` — densify()、select_window()/robot_xy() (tf2_ros)、run_segment の窓送り、spin_until の until、main() の例外時キャンセル、CLI 3 引数
+- `ros2_ws_main/src/bringup/rerobot_bringup/scripts/waypoint_runner.py` — select_window()/robot_xy() (tf2_ros)、run_segment の窓送り、spin_until の until、main() の例外時キャンセル、起動時の間隔検査、CLI 引数 (`--send-radius` / `--resend-left` / `--warn-spacing`)。densify() は 10-31 に削除
 - `bags/exp/2026-10-30_rolling_window/` — 台上試験 (run_headless.sh / plan_test.py / costmap_check.py / nav2_params_full.yaml / ログ / README.md)
 - 再ビルド不要 (yaml・scripts とも symlink install)
 
@@ -139,4 +141,24 @@ python3 costmap_check.py                                                   # 地
 - 未知セルが free になるので、keepout が覆っていない未知領域があればそこを通る経路が出うる (今の地図はコース外を keepout が覆う)
 - 差し替えで bt_navigator の `number_recoveries` と start_time がリセットされる (リカバリ回数の上限が窓ごとになる)
 - 通過判定 (RemovePassedGoals 0.7 m) で取りこぼした点が窓の後ろに残ると、その点が窓外に出た時点で GOAL_OUTSIDE_MAP → 旧経路保持 20 回 → 区間失敗 → 自動再送 (再送は残り点数から組むので取りこぼし点は捨てられる)
-- `--start N` を中間点 (`waypointK+j`) には指定できない (元ファイルの index のみ)
+
+## 7. 実走で判明した中間点の穴と方針変更 (2026-10-30 夕方)
+
+5 号館 `2026-10-09_1643_5goukan_chal` の初実走 (nav_2026-10-30_1757.log、bag `2026-10-30_1751_5goukan_chal_auto`) で、waypoint2 → waypoint3 (47 m) に挿まれた直線上の中間点 wp2+2 / +3 が植え込みと keepout に落ちた (失敗時の global costmap で cost 100、図 `bags/tools/2026-10-30_5goukan_midpoint/map_wp2_wp3.png`)。道はこの区間で曲がっていて、10-16 の実走では 1 本の goal で NavFn が道なりに曲げていた。連鎖は:
+
+```
+wp2+1 到着 → 窓 wp2+1→+3 を送る → wp2+2 が lethal → 308 NO_VALID_PATH
+  → 追従 BT が旧経路 (終点 wp2+1) を保持 → FollowPath 成功 → 「Goal succeeded」
+  → runner が「窓の終点に着いた」と誤認 → 28 m 先の wp2+4 を 1 点送る (窓の外) → 308 → 自動再送 ×10
+```
+
+- **方針 (ユーザ決定)**: 中間点の自動挿入はやめ (`--max-spacing` 既定 0 → 10-31 に `densify()` ごと削除)、waypoint は人が道なりに置く。runner は起動時に隣接点の間隔を検査し `--warn-spacing` (既定 30 m) 超を全部警告する。閾値が 60 でなく 30 なのは、窓 60 m が自機中心で、前の点に立ったとき次の点が入るのが半幅 30 m までだから。
+- **未対処**: runner は `Goal succeeded` を窓の終点到達と見なしているが、追従 BT の旧経路保持と組み合わさると計画失敗の途中でも成功が返る (上の連鎖の 2 行目)。到達判定は自機と窓終点の距離で見るべき。中間点を切った今は、計画失敗 → 自動再送の経路で救われるため後回し。
+
+## 8. 窓を 200 m (半径 100 m) に拡大 (2026-10-30 夕、ユーザ指定)
+
+§7 の方針 (waypoint は人が置く) と合わせて「計画範囲を半径 100 m に」との指示で、global costmap の窓を 60 → 200 m にした。それに合わせて runner の既定も `--send-radius` 20 → 80 m、`--warn-spacing` 30 → 100 m (本文・§2・§3 の「60 m / 30 m / 20 m」は変更前の値)。
+
+- 規模: 2000×2000 = 4M セル (60 m 窓の 11 倍、つくば全面 47M の 1/12)。計画時間は未実測 (60 m 窓 0.003 s・全面 0.78 s のノート PC 比例なら 0.07 s 程度、ロボット PC で全面 6〜9 s なら 0.5〜0.8 s の見込み)。
+- 副作用と対処: rolling window は原点が動くたび costmap 全面 (4 MB) を publish するので、`publish_frequency` 1.0 のままだと bag の `/global_costmap/costmap` が 14 GB/h 増える → 0.2 Hz に下げた (RViz の global costmap 表示が 5 s に 1 回になるだけ。計画に使う `update_frequency` は 1.0 のまま)。
+- 5 号館 (最大 62 m)・つくば (最大 91 m) の現 course.yaml は半幅 100 m に収まるので、起動時の間隔警告は出ない。**実走未検証**。

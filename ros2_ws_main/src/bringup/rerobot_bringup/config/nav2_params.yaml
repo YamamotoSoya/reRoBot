@@ -232,7 +232,8 @@ global_costmap:
   global_costmap:
     ros__parameters:
       update_frequency: 1.0     # コスト更新周波数 [Hz]
-      publish_frequency: 1.0    # 可視化 publish 周波数 [Hz]
+      publish_frequency: 0.2    # 可視化 publish 周波数 [Hz] (claude: 2026-10-30 夕 1.0→0.2。窓 200 m = 4M セル = 1 発 4 MB、
+                                #   rolling は原点が動くたび全面送信になるので 1 Hz だと bag が 14 GB/h 増える。RViz 用途なので 5 s に 1 回)
       global_frame: map         # 地図フレーム
       robot_base_frame: base_link  # ロボット基準フレーム
       # claude: 2026-10-15 円 (robot_radius 0.35) → 実寸の四角 (base_link = 車軸中心)。実測: 幅 0.65 (車輪外面間)、車軸から前 0.14 / 後 0.51。
@@ -254,8 +255,8 @@ global_costmap:
       #   (3) StaticLayer は rolling だとセルごとに TF 変換して書く別経路になるが、use_maximum はそこでも効く (Jazzy static_layer.cpp 確認)。
       #   戻すときは rolling_window: false にする (width/height は無視される)。
       rolling_window: true      # 自機中心の追従窓にする (2026-10-30)
-      width: 60                 # 窓の幅 [m]
-      height: 60                # 窓の高さ [m]
+      width: 200                # 窓の幅 [m] (claude: 2026-10-30 夕 60→200 = 半径 100 m、ユーザ指定。2000×2000 = 4M セル、つくば全面 47M の 1/12)
+      height: 200               # 窓の高さ [m]。変えたら waypoint_runner の --send-radius / --warn-spacing (半幅基準) も合わせる
       # claude: 2026-10-30 true → false。rolling 窓だと StaticLayer は別経路 (static_layer.cpp updateCosts の isRolling 分岐) で
       #   use_maximum 時に max(地図の値, master の値) を書くが、master は毎周期 既定値に戻る。track_unknown_space: true だと
       #   既定値 = NO_INFORMATION (255) で lethal (254) より大きく、地図も keepout も一度も書かれない (台上で costmap 全面 unknown を実測、
