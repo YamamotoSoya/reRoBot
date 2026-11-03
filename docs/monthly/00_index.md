@@ -23,7 +23,8 @@
 | ├─ [7 月](2026_07.md) | リポジトリ監査 → Docker 4 コンテナ再編、エンコーダ 4 倍ズレの根本修正、LIO-SAM / RealSense、Claude 作業基盤 |
 | ├─ [8 月](2026_08.md) | GLIM 導入とドリフト調査、BNO086 IMU + EKF、R-Fans ドライバ刷新、取付プリセット、3D 地図→Nav2、車体改修 |
 | ├─ [9 月](2026_09.md) | GLIM z ドリフトの正体 (GICP、k_correspondences 10→20)、EPOS 停止調査と watchdog、BNO086 auto_tare と再較正、R-Fans stamp 修正 |
-| └─ [10 月](2026_10.md) | つくば本番へ向けた実戦化 — 全部入り bringup、3D 自己位置推定、twist_mux + パッド運用、追従 BT、実走 bag 解析、EPOS Fault 0x8250、R-Fans 櫛偽点 (運用判断: 消さない)、global costmap 追従窓 + Nav2 平滑化 (実走未検証) |
+| ├─ [10 月](2026_10.md) | つくば本番へ向けた実戦化 — 全部入り bringup、3D 自己位置推定、twist_mux + パッド運用、追従 BT、実走 bag 解析、EPOS Fault 0x8250、R-Fans 櫛偽点 (運用判断: 消さない)、global costmap 追従窓 + Nav2 平滑化 (実走未検証) |
+| └─ [11 月](2026_11.md) | 月初 — docs 索引再生成、0.025 m 自己位置推定地図は AMCL/RViz に重すぎると判明 (0.05 m 版を運用) |
 
 ## 読み方
 
