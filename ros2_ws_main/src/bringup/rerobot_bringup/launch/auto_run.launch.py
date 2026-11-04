@@ -50,6 +50,7 @@ RECORD_TOPICS = [
     "/imu/data", "/odom", "/odometry/filtered", "/joint_states", "/tf", "/tf_static", "/diagnostics", "/robot_speed_cmd",
     "/joy", "/joy_vel", "/cmd_vel", "/cmd_vel_nav",  # claude: 2026-10-30 /cmd_vel_nav = velocity_smoother 前 (平滑化の前後比較用)
     "/behavior_tree_log", "/rosout", "/plan", "/local_plan", "/lookahead_point", "/amcl_pose", "/particle_cloud",
+    "/lookahead_collision_arc", "/is_rotating_to_heading",  # claude: 2026-11-04 RPP の衝突掃引の当たり姿勢と旋回モード (後端振り出しラッチの直接証拠用)
     "/initialpose", "/goal_pose", "/map", "/map_loc", "/keepout_filter_mask",
     "/global_costmap/costmap", "/global_costmap/costmap_updates",
     "/local_costmap/costmap", "/local_costmap/costmap_updates", "/local_costmap/published_footprint", "/teach_marker",

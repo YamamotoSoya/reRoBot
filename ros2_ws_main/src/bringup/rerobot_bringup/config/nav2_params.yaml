@@ -324,7 +324,8 @@ global_costmap:
       inflation_layer:
         plugin: nav2_costmap_2d::InflationLayer
         cost_scaling_factor: 3.0
-        inflation_radius: 0.55
+        # claude: 2026-11-04 0.55 → 0.65。Smac Hybrid の footprint 衝突検査は外接半径 (0.62 m) 以上の膨張が前提 (planner_server 節の注記)
+        inflation_radius: 0.65
       always_send_full_costmap: true
 
 # ============================================================================
@@ -334,11 +335,59 @@ planner_server:
   ros__parameters:
     expected_planner_frequency: 1.0   # 計画要求の想定周波数 [Hz] (claude: 2026-10-12 20→1。警告の閾値のみ。実際の要求は BT の RateController 0.333 Hz)
     planner_plugins: ["GridBased"]
+    # claude: 2026-11-04 NavFn → Smac Hybrid-A* に切替 (実験走行用、実走未検証)。
+    #   理由: NavFn は点で計画するので「中心が内接半径 0.325 以内に入らない」線しか保証せず、後端 0.51 m の四角い車体が
+    #   旋回で掃く外接 0.6 m を知らない。横の物体 (11-01 bag 2114) や keepout と人の 1.2 m 隙間 (11-03 bag 2136) で、
+    #   出だしが横へ折れた経路を RPP が弧で追い、後角が振れて衝突先読みが永久に速度 0 を返した (後端振り出しラッチ)。
+    #   Smac Hybrid は向き付きの姿勢を footprint で衝突検査しながら探索するので、自機の向きから真っ直ぐ出る経路になり
+    #   (bag 再生: 11-01 939 s で横ずれ 0.25 → 0.0 m)、通せない隙間には経路を出さず待つ (11-03 150〜165 s)。
+    #   計画時間 (T480s): 6 m 0.02〜0.6 s、52 m 0.27 s。再生道具 bags/tools/2026-11-02_person_stop/replay_plan/。
+    #   ⚠ 前提: global_costmap の inflation_radius ≥ 外接半径 0.62 (下で 0.65)。満たさないと SE2 衝突検査が無効になり
+    #     起動時 ERROR 1 行だけで全計画が 0.00 s "no valid path found" になる。
+    #   ⚠ angle_quantization_bins と minimum_turning_radius は組で決める (0.1 m 格子: 16 分割 → 0.3 m、32 → 0.5 m、64 → 約 1 m が下限。分割が細かいと半径が無警告で膨らむ)。
+    #   ⚠ Smac はゴール (waypoint) の yaw を満たすので course.yaml の orientation が実態と合っている必要あり (11-04 点検済み)。
+    #   戻すときは下の NavFn 節を復活させる (inflation 0.65 は残して可)。
     GridBased:
-      plugin: nav2_navfn_planner::NavfnPlanner
-      tolerance: 0.5      # 目標に到達できない時の許容半径 [m]
-      use_astar: true     # false=ダイクストラ, true=A* (claude: 2026-10-12 true。探索セル数を減らす。経路が壁寄りになるなら false に戻す)
-      allow_unknown: true # 未知領域の通過を許可
+      plugin: nav2_smac_planner::SmacPlannerHybrid
+      tolerance: 0.5                    # 目標に到達できない時の許容半径 [m]
+      downsample_costmap: false         # global は既に 0.1 m
+      downsampling_factor: 1
+      allow_unknown: true               # 未知領域の通過を許可 (global は track_unknown_space false なので実質 free)
+      max_iterations: 1000000           # 探索の反復上限 (超えると "exceeded maximum iterations")
+      max_on_approach_iterations: 1000  # tolerance 内に入ってからの反復上限
+      max_planning_time: 5.0            # 計画時間の上限 [s]。超えると失敗 → 追従 BT が旧経路を保持
+      motion_model_for_search: DUBIN    # 前進のみ (後退を許すなら REEDS_SHEPP + allow_reverse_expansion)
+      angle_quantization_bins: 32       # 向きの刻み 11.25°。0.1 m 格子で半径 0.5 を出せる最小の分割 (16 → 0.3 m、64 → 約 1 m)
+      analytic_expansion_ratio: 3.5
+      analytic_expansion_max_length: 3.0  # 解析的に直結を試す最大長 [m]
+      # claude: 2026-11-04 再生比較 (11-01 bag 939 s、横の物体から離れる場面の出だしの横ずれ y@0.6 m): 0.3/16 分割 → −0.17 m、
+      #   0.5/32 分割 → −0.01 m (真っ直ぐ出る、最小余裕 0.14 m)、1.0/64 分割 → −0.14 m。NavFn は −0.25 m。0.5 を採用。
+      #   差動二輪なので物理的制約ではなく「出だしで急に曲がらない」ための値。狭い角で経路が出ないときは 0.3/16 に下げる。
+      minimum_turning_radius: 0.50
+      reverse_penalty: 2.0
+      change_penalty: 0.0
+      non_straight_penalty: 1.2         # 曲がる歩に掛ける係数 (直進を好む)
+      cost_penalty: 2.0                 # 膨張帯のコストに掛ける係数 (大きいほど壁から離れる)
+      retrospective_penalty: 0.015
+      lookup_table_size: 20.0           # 距離ヒューリスティックの表 [m]
+      cache_obstacle_heuristic: false   # 動く障害物があるので毎回計算
+      smooth_path: true                 # Smac 内蔵の平滑化 (追従 BT の SimpleSmoother とは別)
+      allow_reverse_expansion: false
+      use_quadratic_cost_penalty: false
+      downsample_obstacle_heuristic: true
+      smoother:
+        max_iterations: 1000
+        w_smooth: 0.3
+        w_data: 0.2
+        tolerance: 1.0e-10
+        do_refinement: true
+        refinement_num: 2
+    # --- 旧: NavFn (2026-11-04 まで) ---
+    # GridBased:
+    #   plugin: nav2_navfn_planner::NavfnPlanner
+    #   tolerance: 0.5      # 目標に到達できない時の許容半径 [m]
+    #   use_astar: true     # false=ダイクストラ, true=A* (claude: 2026-10-12 true。探索セル数を減らす。経路が壁寄りになるなら false に戻す)
+    #   allow_unknown: true # 未知領域の通過を許可
 
 # ============================================================================
 # behavior_server : 復帰行動 (旋回・後退・待機) を提供するサーバ。
