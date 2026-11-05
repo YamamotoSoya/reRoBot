@@ -1,0 +1,15 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8"><title>Nav2 公式 planner 比較表</title>
+<!-- claude: 2026-11-06 スライド貼り付け用 (Google スライドは TSV を表にしないため HTML 表をブラウザからコピーして貼る) -->
+<style>body{font-family:sans-serif;margin:24px;background:#fff;color:#222}table{border-collapse:collapse;font-size:14px}
+th,td{border:1px solid #888;padding:6px 10px;text-align:left;vertical-align:top}th{background:#e8eef6}p{font-size:13px;color:#555}</style></head><body>
+<p>表全体をドラッグで選択してコピー (Ctrl+C) → Google スライドに貼り付け (Ctrl+V)</p>
+<table>
+<tr><th>プラグイン</th><th>アルゴリズム</th><th>公式の対象ロボット</th><th>車体の形の扱い</th><th>経路の向き</th><th>その場旋回</th><th>後退</th><th>本機 (差動二輪・非円形) への適合</th></tr>
+<tr><td>NavFn</td><td>Dijkstra / A*（波面伝播）</td><td>円形の差動二輪・全方向</td><td>円（点＋膨張）</td><td>なし</td><td>controller 任せ</td><td>なし</td><td>△ 11-04 まで使用</td></tr>
+<tr><td>Smac 2D</td><td>コスト考慮 A*（8 近傍）</td><td>円形の差動二輪・全方向</td><td>円（点＋膨張）</td><td>なし</td><td>controller 任せ</td><td>なし</td><td>△ NavFn と同じ弱点</td></tr>
+<tr><td>Theta*</td><td>Lazy Theta*（任意角度の直線）</td><td>円形の差動二輪・全方向</td><td>円（点＋膨張）</td><td>なし</td><td>controller 任せ</td><td>なし</td><td>△ 線は滑らかだが点のまま</td></tr>
+<tr><td>Smac Hybrid-A*</td><td>Hybrid-A*（Dubins / Reeds-Shepp）</td><td>車型・脚型（円形・非円形）</td><td>任意形（向き付きで衝突検査）</td><td>あり</td><td>なし</td><td>あり（Reeds-Shepp 時）</td><td>△ 11-04〜現行。旋回できない</td></tr>
+<tr><td>Smac State Lattice</td><td>State Lattice（動き集合ファイル）</td><td>非円形の差動二輪・全方向、任意</td><td>任意形（向き付きで衝突検査）</td><td>あり</td><td>あり（差動用の集合）</td><td>あり</td><td>◎ 本命候補</td></tr>
+</table>
+<p>出典: Nav2 公式文書 Setting Up Navigation Plugins / Tuning Guide の planner 表 (対象ロボット列)。適合度は reRoBot の評価。</p>
+</body></html>

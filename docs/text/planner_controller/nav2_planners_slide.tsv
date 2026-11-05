@@ -1,0 +1,6 @@
+プラグイン	アルゴリズム	公式の対象ロボット	車体の形の扱い	経路の向き	その場旋回	後退	本機 (差動二輪・非円形) への適合
+NavFn	Dijkstra / A*（波面伝播）	円形の差動二輪・全方向	円（点＋膨張）	なし	controller 任せ	なし	△ 11-04 まで使用
+Smac 2D	コスト考慮 A*（8 近傍）	円形の差動二輪・全方向	円（点＋膨張）	なし	controller 任せ	なし	△ NavFn と同じ弱点
+Theta*	Lazy Theta*（任意角度の直線）	円形の差動二輪・全方向	円（点＋膨張）	なし	controller 任せ	なし	△ 線は滑らかだが点のまま
+Smac Hybrid-A*	Hybrid-A*（Dubins / Reeds-Shepp）	車型・脚型（円形・非円形）	任意形（向き付きで衝突検査）	あり	なし	あり（Reeds-Shepp 時）	△ 11-04〜現行。旋回できない
+Smac State Lattice	State Lattice（動き集合ファイル）	非円形の差動二輪・全方向、任意	任意形（向き付きで衝突検査）	あり	あり（差動用の集合）	あり	◎ 本命候補
