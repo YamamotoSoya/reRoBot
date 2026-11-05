@@ -113,3 +113,23 @@ ros2 run rerobot_bringup bringup_check.py
 ## 8. 解析スクリプト
 
 `/tmp/claude-1000/-home-nomface-reRoBot/50274584-fe41-41d1-8b08-9fe1a859e377/scratchpad/` (セッション一時領域、消える前提) の `cmdodom.py` (指令と車輪角の 0.5 s 集計) / `gaps.py` (全 topic の 0.15 s 超の穴 + 車輪角) / `diag.py` (`/diagnostics` の epos4 監視) / `stall.py` (点群・TF・照合の時系列)。いずれも `docker exec rerobot_env bash -c "source /workspace/install/setup.bash && python3 /tmp/<script> <bag> 1792662105 <開始s> <終了s>"` で実行 (コンテナ内 /tmp にコピー済み)。残す場合は `bags/exp/2026-10-22_epos_fault/` へ移す。
+
+## 11. 2026-11-04 再発 (5号館 auto_run、Smac 初走行) — 同型、PC 側は無停止
+
+- Fault: **13:45:42.6 JST** に車輪凍結 (bag t = 1063.1 s、bag `bags/raw/2026-11-04_1327_5goukan_chal_auto_SmacHybridA*`)。凍結の 1.3 s 前から 0.4 m/s → 0 へ滑らかに減速 = クイックストップ (10-22 §2.1 と同じ)。途絶開始は減速開始の ≈0.7 s 前 = **≈13:45:40.6**。指令 `/robot_speed_cmd` は凍結後も 0.40 m/s を出し続けた。
+- SDO 直読み (13:49): 両ノード statusword 0x0208、0x603F = 0x1003:01 = **0x8250**。`recover` ×2 で再起動なしに復帰 (13:50:03)。
+- 凍結 ±60 s で **PC 側の穴なし** (`bags/exp/2026-11-04_epos_8250/gaps.py`): `/imu/data` (USB, 5 ms)・`/joy` (USB, 18 ms)・`/urg_front/scan` (USB, 25 ms)・`/rfans_driver/rfans_points` (Ethernet, 96 ms)・`/tf`・`/odom`・`/cmd_vel` すべて中央値どおり。→ PC 全体の停止でも USB ハブ/ホストコントローラの停止でもない。**CAN 経路だけ**が止まった。
+- `/diagnostics` の epos4_controller 監視は凍結後も statusword 0x1237・link OK (10-22 §2.3 の見逃しと同じ)。
+- ホスト: CPU 3.9 GHz performance 固定、サーマル throttle カウンタは累積 146 万だがこの時刻の kernel ログなし。NTP 時計ステップなし。
+- **WiFi は証拠にならない**: 13:45:25 roam / 13:45:27 lease / 13:45:44 roam と前後にあるが、途絶開始 13:45:40.6 の ±1 s にログ上の事象はない。走行中は AP lost 13 回 + lease 27 回 / 19.6 分 = 約 30 s に 1 回あるので、時刻が近いのは当然。10-22 §2.1 の「偶然の可能性が高い」を維持。トリガ候補 (DDS のインタフェース変化) としては棄却もしていない。
+- ログ消失: device_container / epos4_controller の stdout は `docker exec` の pty 行き・`~/.ros/log` はコンテナ内 → `docker compose down` で消えた。**次回は候補識別の決め手になるので永続化が必須**。
+
+### 11.1 3 事象 (10-11 台上・10-22・11-04) を貫く暫定仮説と次の一手
+
+| 候補 | 支持 | 不利 | 識別法 |
+|---|---|---|---|
+| (A) device_container の lely マスタスレッドが散発的に ≈0.6〜1 s 停止 → SYNC/RPDO 途絶 | 10-11 台上 candump で SYNC 停止 0.6 s + SDO timeout 群を直接観測 (`bags/exp/2026-10-11_amcl_load/bench/README.md`)。10-22/11-04 とも PC・USB 無事でアダプタも生存 | 何がスレッドを止めるかは未特定 (PDO callback 内の DDS publish ブロック / pty への log 書き込みブロック / SDO timeout 処理) | ホストで `candump -t a -l can0` を走行中ずっと並走: 0x080 (SYNC) が止まれば (A)、SYNC は出て 0x181/182 が返らなければ (B)/(C) |
+| (B) CANUSB/slcan 経路の一時停止 (09-19 の内部リセットの軽い版) | 09-19 でアダプタ起因の実績あり | 今回はリセットなし (同じソケットで SDO 通る)。10-11 の SYNC 停止はホスト側 candump で見えた = カーネルに届く前に止まった | 同上 + `ip -s -d link show can0` の dropped/bus-off |
+| (C) バス側 (EMI・エラーパッシブ) で両 EPOS が同時に取りこぼし | 両輪同時を説明できる | 0x1003 に 0x8120/0x81FD 系なし (09-19 と同じ)。台上でも起きている | candump のエラーフレーム (`-e`) + 0x1003:02〜05 |
+
+原因が何であれ効く緩和 (安い順): ① candump 並走 + ログ永続化 (計装、次走行から)、② epos4_controller に Fault 自動 recover (joint_states 凍結 ∧ 指令≠0 → SDO 0x6041 確認 → recover → 指令を 0 から再ランプ)、③ `ROS_LOCALHOST_ONLY=1` で DDS を WiFi から切る (全ノード同一 PC・host network なので副作用小、WiFi トリガ説の A/B にもなる)。EPOS 側の RPDO timeout 延長は **非推奨** (09-19 15:35 で暴走を止めたのがこの機能)。
