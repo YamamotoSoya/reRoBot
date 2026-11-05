@@ -133,3 +133,9 @@ ros2 run rerobot_bringup bringup_check.py
 | (C) バス側 (EMI・エラーパッシブ) で両 EPOS が同時に取りこぼし | 両輪同時を説明できる | 0x1003 に 0x8120/0x81FD 系なし (09-19 と同じ)。台上でも起きている | candump のエラーフレーム (`-e`) + 0x1003:02〜05 |
 
 原因が何であれ効く緩和 (安い順): ① candump 並走 + ログ永続化 (計装、次走行から)、② epos4_controller に Fault 自動 recover (joint_states 凍結 ∧ 指令≠0 → SDO 0x6041 確認 → recover → 指令を 0 から再ランプ)、③ `ROS_LOCALHOST_ONLY=1` で DDS を WiFi から切る (全ノード同一 PC・host network なので副作用小、WiFi トリガ説の A/B にもなる)。EPOS 側の RPDO timeout 延長は **非推奨** (09-19 15:35 で暴走を止めたのがこの機能)。
+
+### 11.2 監視の見逃し (§2.3) の正体候補: `~/rpdo` がプロセス起動時間の 1/3 遅れて届く (有力・critic 未査読)
+
+11-04 bag で、13:45:42 (bag 1063 s) の Fault が `/diagnostics` の statusword には **13:56:05 (bag 1685 s)** に初めて 0x0208 として現れ、その時点の SDO live 読みは「0x603F = 0・Vcc 24.2 V・車輪は 0.8 m/s で回転中」(`bags/exp/2026-11-04_epos_8250/window.py`)。bag 終端 (1783 s) まで 0x0208 のまま。プロセス起動 (13:24:40) 基準で 1262 s の事象が 1884 s に届いた = 比 **1.49**。
+
+機構: ros2_canopen (jazzy) のドライバは `polling: true` 既定で `period` (bus.yml defaults **50 ms**) ごとに rpdo キューから最大 **10 件**取り出す = 200 件/s。TPDO1 は SYNC **10 ms** ごとに 3 オブジェクト = 300 件/s。差 100 件/s がキューに滞留し、遅れは起動時間の 1/3 で成長 (予測比 1.5 ≈ 実測 1.49)。→ §2.3 の「ドライバがキャッシュを周期 publish」推定は撤回、**キュー遅延**が本命候補。09-19 §10.5 の `~/rpdo` 購読型監視は起動数分後から無効。対策と自動復帰の設計は `docs/features/2026-11-05_epos_auto_recovery_plan.md` §2.1 / §3.2。

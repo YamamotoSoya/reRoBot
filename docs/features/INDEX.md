@@ -1,4 +1,4 @@
-<!-- 自動生成: python3 docs/claude/gen_docs_index.py (2026-11-04)。手で編集しない — 元ファイルのタイトル / ステータス行を直して再生成。 -->
+<!-- 自動生成: python3 docs/claude/gen_docs_index.py (2026-11-06)。手で編集しない — 元ファイルのタイトル / ステータス行を直して再生成。 -->
 
 # docs/features — 追加機能の設計文書
 
@@ -20,3 +20,4 @@
 | [2026-10-16_rfans_yaw_calib.md](2026-10-16_rfans_yaw_calib.md) | 2026-10-16 | R-Fans / urg の yaw 較正ツール (rfans_yaw_calib) と 2026-10-16 の較正結果の反映 |
 | [2026-10-30_global_costmap_rolling_window.md](2026-10-30_global_costmap_rolling_window.md) | 2026-10-30 | global costmap の追従窓化 (rolling_window 60 m) と waypoint_runner の窓送り |
 | [2026-10-30_nav2_smoothing.md](2026-10-30_nav2_smoothing.md) | 2026-10-30 | Nav2 の平滑化 2 段 (経路 SimpleSmoother + 速度 velocity_smoother) |
+| [2026-11-05_epos_auto_recovery_plan.md](2026-11-05_epos_auto_recovery_plan.md) | 2026-11-05 | EPOS 自動復帰 — 通信停止 (0x8250) と段差ブラウンアウト (0x3220) は自動で走行再開、非常停止後は人が Start するまで走らない |
