@@ -12,6 +12,9 @@
 #   - yaw は imu0_relative: true で「起動時からの相対角」として扱う。BNO086 の
 #     絶対 yaw は磁北基準 (auto_tare でゼロ化はされるが、磁気外乱で信用できる
 #     保証がない) ため、絶対値には依存しない。
+#     (2026-11-07 claude: bno086.yaml を use_game_rotation_vector: true に変更 —
+#     磁気 RV の yaw 跳び 10〜26° が EKF を直撃していたため。以後の IMU yaw は
+#     地磁気なしのジャイロ積分で、絶対方位の意味は持たない)
 ekf_filter_node:
   ros__parameters:
     frequency: 30.0

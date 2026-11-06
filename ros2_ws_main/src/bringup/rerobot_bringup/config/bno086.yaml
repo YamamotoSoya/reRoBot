@@ -50,7 +50,13 @@
     #        (see the known issues in the README).
     # Measured stationary indoors: both drift under 0.5 deg/min at high
     # accuracy, so the default is fine unless the magnetometer is disturbed.
-    use_game_rotation_vector: false
+    # claude: 2026-11-07 true に変更。磁気 RV の yaw が走行中に一瞬で 10〜26° 跳び
+    #   (bag 4 本中 3 本、10-22 新習志野 64 分で累計 +87°。跳びの瞬間も車輪 yaw と
+    #   ジャイロは一致 = RV 側の誤り)、EKF (imu0 yaw 融合) がそのまま odom->base_link
+    #   に通していた。Game RV の yaw はジャイロ積分 (ゆっくりドリフト) で、map 基準の
+    #   補正は AMCL / 3D 推定が担う。auto_tare は off なので tare が効かない制約は無関係。
+    #   解析 bags/tools/2026-11-07_mag_yaw/。磁気 RV に戻すときは false。
+    use_game_rotation_vector: true
 
     # Make the board's current pose the origin whenever the stream comes up
     # (node start, board reset via S1, or the reset service).
