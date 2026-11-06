@@ -362,7 +362,12 @@ planner_server:
       #   ジグザグ (waypoint3→4) で経路が出なかった。R0.5/16 は新地図の全区間を計画でき、その場旋回も最多 (67 回)。
       #   旧地図 (2026-10-09_1643_5goukan_chal) では R0.5/16 も 3→4 が出ない (Hybrid R0.5/32 と Lattice R0.5/32 は出る)。比較は config/lattice/README.md。
       lattice_filepath: /workspace/install/rerobot_bringup/share/rerobot_bringup/config/lattice/diff_10cm_r0.5_h16.json  # コンテナ内の絶対パス
-      tolerance: 0.5                    # 目標に到達できない時の許容半径 [m]
+      # claude: 2026-11-07 tolerance 0.5 → 0.1 (ユーザ指定)。ゴールが塞がれている・届かないとき、許容内の最寄り姿勢を終点にした
+      #   経路を返す半径。controller_server は「経路の終点」で到着判定するので、停止点が塞がれていると最大 tolerance +
+      #   xy_goal_tolerance (0.25) ずれた位置で「到着」になる (0.5 だと 0.75 m)。0 にすると塞がれたゴールは即 GoalOccupied で
+      #   失敗 (待つ) になるが、向きまで厳密一致が要るので未検証の間は 0.1。中間点の救済は tolerance ではなく追従 BT の通過判定
+      #   (RemovePassedGoals radius 2.5) と旧経路保持が担う (Jazzy ソース確認: a_star.cpp areInputsValid / controller_server isGoalReached)。
+      tolerance: 0.1                    # 目標に到達できない時の許容半径 [m]
       allow_unknown: true
       max_iterations: 1000000
       max_on_approach_iterations: 1000

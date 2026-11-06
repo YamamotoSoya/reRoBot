@@ -28,7 +28,11 @@
 #
 # 点の色: 緑 = 空き / 橙 = 未観測 (地図の灰) / 赤 = 壁 or keepout 上。赤い点は
 #   ComputePathThroughPoses が失敗して NavigateThroughPoses 全体が止まる原因になるので避ける。
-# 薄い円 = bt_navigator 既定 BT の RemovePassedGoals 半径 (既定 0.7 m、--radius)。
+# 薄い青の円 = 中間点の通過判定 (追従 BT の RemovePassedGoals radius、既定 2.5 m、--radius)。
+# claude: 2026-11-07 停止点と最後の点には赤い小円 = ゴール判定 (xy_goal_tolerance 0.25 m、--goal_tol)。
+#   RemovePassedGoals は最後のゴールを消さないので、停止点・終点は通過判定ではなく到着判定で終わる。
+# claude: 2026-11-07 区間距離を区間の中点に表示 (d キーで切替)。--warn_spacing (既定 30 m) 超は赤 = waypoint_runner の
+#   窓 (--send-radius 40) の差し替えが間に合わずその点で一度止まり、計画も重くなる区間。
 #
 # 依存: numpy, matplotlib (TkAgg), PIL, PyYAML。rerobot_env にある (ホストには無い)。
 #
@@ -62,7 +66,8 @@ HELP = """\
   n  番号振りモード開始: 点をクリックした順に 0, 1, 2… (空きをクリック = 新しい点を置いて番号)
        右クリック = その点の番号を外す / Enter (または n) = その順に確定 / Esc = 取り消し
        番号を振らなかった点は、元の順のまま後ろに付く
-  u  元に戻す    s  保存    r  順序を反転    o  通過半径の表示切替
+  u  元に戻す    s  保存    r  順序を反転    o  通過判定・ゴール判定の円の表示切替
+  d  区間距離の表示切替 (赤 = --warn_spacing 超: 窓の差し替えが間に合わずその点で一度止まる)
   b  背景の切替 (地図 → realmap + 地図の壁 (青) → realmap のみ)。realmap がある時だけ
   h  この説明    q  終了 (未保存なら警告)
   ズーム/パンはツールバー (虫眼鏡/十字)。そのモード中はクリック編集を無視する。"""
@@ -217,10 +222,12 @@ def keepout_hit(ko, x, y):
     return ko is not None and (ko.cell(x, y) or 0.0) > ko.occ_th
 
 
-def report(gm, ko, pts, manual, stops, extras=None):
-    """各点の判定と区間長を表で出す。戻り値 = 問題のある点の数。yaw の * = 手動指定、■ = 停止点。"""
+def report(gm, ko, pts, manual, stops, extras=None, warn_spacing=30.0):
+    """各点の判定と区間長を表で出す。戻り値 = 問題のある点の数。yaw の * = 手動指定、■ = 停止点。
+    区間 [m] の後ろの ⚠ = warn_spacing 超 (claude: 2026-11-07)。"""
     bad = 0
     total = 0.0
+    nwide = 0
     print(f"{'#':>3} {'x':>9} {'y':>9} {'yaw[deg]':>10} {'区間[m]':>8}  判定")
     for i, ((x, y), yaw) in enumerate(zip(pts, headings(pts, manual))):
         seg = math.dist(pts[i - 1], pts[i]) if i else 0.0
@@ -232,10 +239,13 @@ def report(gm, ko, pts, manual, stops, extras=None):
         bad += mark != "✔"
         ym = "*" if manual[i] is not None else " "
         sm = "  ■停止" if stops[i] else ""
+        wide = warn_spacing > 0 and seg > warn_spacing
+        nwide += wide
         if extras and extras[i].get("taught"):
             sm += f" ★{extras[i].get('label', '')}"
-        print(f"{i:>3} {x:>9.2f} {y:>9.2f} {math.degrees(yaw):>9.1f}{ym} {seg:>8.2f}  {mark} {st}{sm}")
-    print(f"計 {len(pts)} 点, 総延長 {total:.1f} m, 要確認 {bad} 点, 停止点 {sum(stops)} 点")
+        print(f"{i:>3} {x:>9.2f} {y:>9.2f} {math.degrees(yaw):>9.1f}{ym} {seg:>8.2f}{'⚠' if wide else ' '} {mark} {st}{sm}")
+    print(f"計 {len(pts)} 点, 総延長 {total:.1f} m, 要確認 {bad} 点, 停止点 {sum(stops)} 点, "
+          f"{warn_spacing:g} m 超の区間 {nwide}")
     return bad
 
 
@@ -247,8 +257,11 @@ class Editor:
 
     BG_MODES = ("地図", "realmap + 地図の壁", "realmap")  # claude: 2026-11-07 b キーで巡回
 
-    def __init__(self, plt, gm, ko, traj, out, pts, manual, stops, radius, extras=None, real=None):
+    def __init__(self, plt, gm, ko, traj, out, pts, manual, stops, radius, extras=None, real=None,
+                 goal_tol=0.25, warn_spacing=30.0):
         self.plt, self.gm, self.ko, self.out, self.radius = plt, gm, ko, out, radius
+        self.goal_tol, self.warn_spacing = goal_tol, warn_spacing  # claude: 2026-11-07
+        self.show_dist = True  # claude: 2026-11-07 区間距離 (d キー)
         self.pts = list(pts)
         self.manual = list(manual)  # pts と同じ長さ。手動 yaw [rad] or None (全編集で同期させる)
         self.stops = list(stops)  # pts と同じ長さ。停止点なら True (manual と同様に全編集で同期)
@@ -352,11 +365,25 @@ class Editor:
                                                 textcoords="offset points", fontsize=8,
                                                 color=lab_col, zorder=4, path_effects=OUTLINE))
                 if self.show_radius:
-                    circ = self.plt.Circle((x, y), self.radius, fill=False, color="tab:blue",
-                                           lw=0.6, alpha=0.5)
+                    # claude: 2026-11-07 中間点 = 通過判定 (青)、停止点・最後の点 = ゴール判定 (赤、通過判定では消えない)
+                    final = self.stops[i] or i == len(self.pts) - 1
+                    circ = (self.plt.Circle((x, y), self.goal_tol, fill=False, color="red", lw=1.2, alpha=0.9)
+                            if final else
+                            self.plt.Circle((x, y), self.radius, fill=False, color="tab:blue", lw=0.6, alpha=0.5))
                     ax.add_patch(circ)
                     self.artists.append(circ)
-        total = sum(math.dist(a, b) for a, b in zip(self.pts, self.pts[1:]))
+            if self.show_dist:  # claude: 2026-11-07 区間距離を中点に (warn_spacing 超は赤太字)
+                for a, b in zip(self.pts, self.pts[1:]):
+                    d = math.dist(a, b)
+                    wide = self.warn_spacing > 0 and d > self.warn_spacing
+                    self.artists.append(ax.annotate(
+                        f"{d:.1f} m" if d < 10 else f"{d:.0f} m", ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2),
+                        ha="center", va="center", fontsize=9 if wide else 7,
+                        fontweight="bold" if wide else "normal", color="red" if wide else "dimgray",
+                        zorder=6, path_effects=OUTLINE))
+        segs = [math.dist(a, b) for a, b in zip(self.pts, self.pts[1:])]
+        total = sum(segs)
+        nwide = sum(self.warn_spacing > 0 and d > self.warn_spacing for d in segs)  # claude: 2026-11-07
         bad = sum(self.color(x, y) != "limegreen" for x, y in self.pts)
         nman = sum(m is not None for m in self.manual)
         if self.order is not None:
@@ -368,7 +395,8 @@ class Editor:
         bg = f" / 背景: {self.BG_MODES[self.bg]}" if self.real_im is not None else ""
         ax.set_title(f"{'* ' if self.dirty else ''}{os.path.basename(self.out)} — "
                      f"{len(self.pts)} 点 / {total:.1f} m / 要確認 {bad} 点 / 向き手動 {nman} 点"
-                     f" / 停止 {sum(self.stops)} 点{bg}"
+                     f" / 停止 {sum(self.stops)} 点"
+                     f" / 最長区間 {max(segs, default=0):.0f} m ({self.warn_spacing:g} m 超 {nwide}){bg}"
                      f"   (h: 操作説明)")
         self.fig.canvas.draw_idle()
 
@@ -527,7 +555,7 @@ class Editor:
             save_waypoints(self.out, self.pts, self.manual, self.stops, self.gm.path, self.extras)
             self.dirty = False
             print(f"保存: {self.out}")
-            report(self.gm, self.ko, self.pts, self.manual, self.stops, self.extras)
+            report(self.gm, self.ko, self.pts, self.manual, self.stops, self.extras, self.warn_spacing)
         elif k == "a":
             i = self.nearest(ev)
             if i is None or self.manual[i] is None or self.locked(i):
@@ -548,6 +576,8 @@ class Editor:
             self.extras.reverse()
         elif k == "o":
             self.show_radius = not self.show_radius
+        elif k == "d":  # claude: 2026-11-07
+            self.show_dist = not self.show_dist
         elif k == "b":
             if self.real_im is None:
                 print("realmap なし (<地図 yaml と同じ所>/realmap.yaml か --realmap で指定)")
@@ -591,8 +621,12 @@ def main():
     ap.add_argument("--no_realmap", action="store_true", help="realmap を読まない (メモリ節約)")
     ap.add_argument("--background", choices=["map", "overlay", "real"], default="map",
                     help="起動時の背景 (b キーで切替。--render の出力にも効く)")
-    ap.add_argument("--radius", type=float, default=0.7,
-                    help="表示する通過判定半径 [m] (bt_navigator 既定 BT の RemovePassedGoals = 0.7)")
+    ap.add_argument("--radius", type=float, default=2.5,
+                    help="中間点の通過判定半径 [m] (追従 BT の RemovePassedGoals radius = 2.5、2026-11-07)")
+    ap.add_argument("--goal_tol", type=float, default=0.25,
+                    help="停止点・最後の点のゴール判定半径 [m] (nav2_params.yaml xy_goal_tolerance = 0.25)")
+    ap.add_argument("--warn_spacing", type=float, default=30.0,
+                    help="この距離 [m] を超える区間を赤で表示 (waypoint_runner --warn-spacing と同じ 30、0 = 無効)")
     ap.add_argument("--check", action="store_true", help="GUI を出さず各点の判定表だけ出す")
     ap.add_argument("--render", metavar="PNG", help="GUI を出さず描画を PNG に保存")
     args = ap.parse_args()
@@ -607,7 +641,7 @@ def main():
     print(f"waypoint: {args.out_yaml} ({'既存 ' + str(len(pts)) + ' 点' if pts else '新規'})")
 
     if args.check:
-        sys.exit(1 if report(gm, ko, pts, manual, stops, extras) else 0)
+        sys.exit(1 if report(gm, ko, pts, manual, stops, extras, args.warn_spacing) else 0)
 
     import matplotlib
     if args.render:
@@ -618,7 +652,8 @@ def main():
     real_path = None if args.no_realmap else (args.realmap or find_realmap(args.map_yaml))
     print(f"realmap: {real_path or 'なし'}")
     real = RealMap(real_path) if real_path else None
-    ed = Editor(plt, gm, ko, traj, args.out_yaml, pts, manual, stops, args.radius, extras, real)
+    ed = Editor(plt, gm, ko, traj, args.out_yaml, pts, manual, stops, args.radius, extras, real,
+                args.goal_tol, args.warn_spacing)
     if real is not None:  # claude: 起動時の背景 (b キーと同じ切替を必要回数だけ回す)
         for _ in range(("map", "overlay", "real").index(args.background)):
             ed.on_key(type("Ev", (), {"key": "b"})())

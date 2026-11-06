@@ -50,7 +50,11 @@
               <Sequence name="PlanAndAdopt">
                 <!-- claude: 2026-10-17 ReactiveSequence 必須 (変更点 3)。計画中も通過判定を毎 tick 回す -->
                 <ReactiveSequence name="RemovePassedAndPlan">
-                  <RemovePassedGoals input_goals="{goals}" output_goals="{goals}" radius="0.7"/>
+                  <!-- claude: 2026-11-07 radius 0.7 → 2.5 (ユーザ指定)。中間点の通過判定を広げ、障害物で塞がれた中間点も手前で
+                       通過扱いにして次の点へ進む (旧経路で近づき RPP が手前で止まっても、中心が 2.5 m 以内なら外れる)。
+                       RemovePassedGoals は最後のゴールを決して消さない (Jazzy ソース: while size > 1) ので、停止点・窓の終点の
+                       到着判定 (goal checker 0.25 m) には影響しない -->
+                  <RemovePassedGoals input_goals="{goals}" output_goals="{goals}" radius="2.5"/>
                   <ComputePathThroughPoses goals="{goals}" path="{new_path}" planner_id="{selected_planner}" error_code_id="{compute_path_error_code}"/>
                 </ReactiveSequence>
                 <!-- claude: 2026-10-30 計画成功時だけ smoother_server で平滑化 (変更点 4)。失敗・タイムアウト時は

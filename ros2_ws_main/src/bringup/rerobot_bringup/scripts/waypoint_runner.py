@@ -42,22 +42,29 @@
 #       - (廃止 2026-10-31) 間隔の広い区間に直線上の中間点を自動で挿む --max-spacing は削除した。5 号館 waypoint2→3 (47 m) で
 #         中間点が植え込みと keepout に落ちて計画失敗 (308) → 追従 BT が旧経路の終点で「成功」→ 本ノードが窓の終点と誤認、
 #         の連鎖になったため (nav_2026-10-30_1757.log、bags/tools/2026-10-30_5goukan_midpoint/)。waypoint は人が道なりに置く。
-#       - 起動時に隣接点の間隔を検査し、--warn-spacing (既定 100 m = 窓 200 m の半幅) を超える区間を全部警告する。
+#       - 起動時に隣接点の間隔を検査し、--window-half (既定 100 m = 窓 200 m の半幅) を超える区間 (計画不能) と
+#         --warn-spacing (既定 30 m) を超える区間 (その点で一度止まる・計画が重い) を全部警告する。
 #         窓は自機中心なので、前の点に立ったとき次の点が窓に入るのは半幅まで。超える区間は間に点を足すこと
-#     send_radius (既定 80 m) は窓幅の半分 (100 m) より小さく (差し替えまでに進む分 + costmap 更新 1 Hz の中心ずれの余裕)。
+#     send_radius (既定 40 m、claude: 2026-11-07 80 → 40) は窓幅の半分 (100 m) より小さく (差し替えまでに進む分 +
+#     costmap 更新 1 Hz の中心ずれの余裕)。1 回の計画距離 ≈ 送り半径なので、小さいほど planner が軽い (11-06 実測: 80 m で
+#     Smac 1 回 中央 2.9 s・planner_server 1 コア張り付き、bags/exp/2026-11-06_load_tsukuba_map/)。
+#     ⚠ 差し替えは「次の点が自機から send_radius 以内に入った」時に起きる。点の間隔 s なら窓の終点の (send_radius − s) m 手前。
+#     これが短い (s が send_radius に近い・超える) と差し替え前に窓の終点に着き、RPP が終点 0.6 m 手前から減速 → goal 成功で
+#     一度止まる。間隔は send_radius − 10 m 以下 (既定 40 なら 30 m 以下) にする = --warn-spacing。
 #     差し替えが間に合わず窓の終点に着いてしまったときは Nav2 が goal 成功で止めるので、続きを送り直す (一瞬止まるだけ)。
 #     --send-radius 0 で従来どおり区間全点を 1 本で送る (rolling_window: false 用)。
 #
 #   使い方 (rerobot_env 内、nav2.launch.py 起動 + AMCL 初期位置合わせ済みで。キー入力を使うなら -it):
 #     ros2 run rerobot_bringup waypoint_runner.py <course.yaml> [--resume-key g] [--start N] [--auto-retry 10] [--retry-wait 5] \
-#       [--send-radius 80] [--resend-left 2] [--warn-spacing 100] \
+#       [--send-radius 40] [--resend-left 2] [--warn-spacing 30] [--window-half 100] \
 #       [--ros-args --params-file <share>/config/joy_teleop.yaml]   # joy ボタンの割り当てを読む (省略時は既定値)
 #     --start N : waypointN から始める (途中で止めて再起動したとき用)
 #     --auto-retry N : 区間失敗の自動再送回数 (0 で無効 = 旧挙動)
 #     --retry-wait S : 再送までの待ち秒数 (R-Fans ディップは 5〜7 s なので既定 5)
-#     --send-radius R : 1 本の goal に入れる点は自機から R [m] 以内 (既定 80、0 = 区間全点)
+#     --send-radius R : 1 本の goal に入れる点は自機から R [m] 以内 (既定 40、0 = 区間全点)
 #     --resend-left N : 送った点の残りが N 以下になったら次の窓を送る (既定 2)
-#     --warn-spacing W : 起動時に隣接点の間隔が W [m] を超える区間を警告する (既定 100 = 窓の半幅)
+#     --warn-spacing W : 起動時に隣接点の間隔が W [m] を超える区間を警告する (既定 30 = send_radius − 10。そこで一度止まる)
+#     --window-half H : global costmap の窓の半幅 [m] (既定 100)。これを超える区間は計画不能として警告
 import argparse
 import collections
 import math
@@ -472,10 +479,13 @@ def main():
     ap.add_argument("--auto-retry", type=int, default=10, help="区間失敗時の自動再送回数 (既定 10、0 で無効)")
     ap.add_argument("--retry-wait", type=float, default=5.0, help="自動再送までの待ち秒数 (既定 5)")
     # claude: 2026-10-30 窓送り (global costmap rolling_window 200 m に合わせる。ヘッダ参照)
-    ap.add_argument("--send-radius", type=float, default=80.0, help="1 本の goal に入れる点は自機から R m 以内 (既定 80 = 窓半幅 100 − 余裕、0 = 区間全点)")
+    # claude: 2026-11-07 既定 80 → 40 (planner 軽量化、ユーザ指定)。--warn-spacing も 100 → 30 (差し替えが間に合う間隔)
+    ap.add_argument("--send-radius", type=float, default=40.0, help="1 本の goal に入れる点は自機から R m 以内 (既定 40、0 = 区間全点)")
     ap.add_argument("--resend-left", type=int, default=2, help="送った点の残りが N 以下で次の窓を送る (既定 2)")
-    ap.add_argument("--warn-spacing", type=float, default=100.0,
-                    help="起動時に隣接点の間隔が W m を超える区間を警告 (既定 100 = global costmap の窓 200 m の半幅、0 = 検査しない)")
+    ap.add_argument("--warn-spacing", type=float, default=30.0,
+                    help="起動時に隣接点の間隔が W m を超える区間を警告 (既定 30 = send-radius − 10、そこで一度止まる。0 = 検査しない)")
+    ap.add_argument("--window-half", type=float, default=100.0,
+                    help="global costmap の窓の半幅 m (既定 100 = 200 m 窓)。これを超える区間は計画不能として警告")
     args, ros_args = ap.parse_known_args()
     if len(args.resume_key) != 1 or args.resume_key in "qp":
         sys.exit("--resume-key は q / p 以外の 1 文字")
@@ -493,15 +503,21 @@ def main():
     # claude: 2026-10-30 隣接点の間隔検査 (ヘッダ参照)。global costmap の窓 (200 m) は自機中心なので、前の点に立ったとき
     #   次の点が窓に入るのは半幅 100 m まで。超える区間は GOAL_OUTSIDE_MAP (304) で区間が始まらないので起動時に全部出す。
     #   止めはしない (--start で手前を飛ばす運用があるため)。
-    if args.warn_spacing > 0:
+    # claude: 2026-11-07 2 段に分けた: 窓の半幅超 = 計画不能 / --warn-spacing 超 = 差し替えが間に合わずその点で一度止まる・計画が重い
+    if args.warn_spacing > 0 or args.window_half > 0:
+        lim = min(v for v in (args.warn_spacing, args.window_half) if v > 0)
         wide = [(a[0], b[0], math.dist(a[1:3], b[1:3])) for a, b in zip(wps[start:], wps[start + 1:])
-                if math.dist(a[1:3], b[1:3]) > args.warn_spacing]
+                if math.dist(a[1:3], b[1:3]) > lim]
         for a, b, d in wide:
-            print(f"{YELLOW}⚠ {a} → {b} が {d:.0f} m (> --warn-spacing {args.warn_spacing:g}): global costmap の窓 ({2 * args.warn_spacing:g} m, 自機中心) "
-                  f"の外になり計画は GOAL_OUTSIDE_MAP で失敗する。間に waypoint を足すこと{RESET}", flush=True)
+            if args.window_half > 0 and d > args.window_half:
+                print(f"{YELLOW}⚠ {a} → {b} が {d:.0f} m (> 窓の半幅 {args.window_half:g}): global costmap の窓 (自機中心) "
+                      f"の外になり計画は GOAL_OUTSIDE_MAP で失敗する。間に waypoint を足すこと{RESET}", flush=True)
+            else:
+                print(f"{YELLOW}⚠ {a} → {b} が {d:.0f} m (> --warn-spacing {args.warn_spacing:g}): 送り半径 {args.send_radius:g} m の窓の"
+                      f"差し替えが間に合わず {b} で一度止まる + 1 回の計画が {d:.0f} m と重い。25〜30 m おきに点を足すこと{RESET}",
+                      flush=True)
         if wide:
-            print(f"{YELLOW}⚠ 間隔超過 {len(wide)} 区間。走る前に course.yaml を直すこと (このまま続行はできるが該当区間で止まる){RESET}",
-                  flush=True)
+            print(f"{YELLOW}⚠ 間隔超過 {len(wide)} 区間。走る前に course.yaml を直すこと (続行はできる){RESET}", flush=True)
 
     # claude: 既定の SIGINT ハンドラは context を即 shutdown してキャンセルを送れなくなるので外し、
     #   KeyboardInterrupt として受けてから走行中ゴールをキャンセルする (走りっぱなし防止)
