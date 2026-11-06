@@ -23,6 +23,8 @@
 # claude: 2026-10-11 番号振りモード (n キー) を追加。点をクリックした順に 0, 1, 2… を振り、Enter で
 #   その順に並べ替える (振らなかった点は元の順で後ろに付く)。モード中に空きをクリックすると新しい点を置いて
 #   次の番号を振る → 「好きな所に点を置いてから順番を決める」が反転操作なしでできる。
+# claude: 2026-11-07 実地図 (realmap = 点の密度の濃淡、<map_dir>/nav2/realmap.yaml を自動検出) を背景に出せる。
+#   b キーで背景を 地図 → realmap + 地図の壁 (青) → realmap のみ と切り替える。点の色の判定は常に Nav2 の地図。
 #
 # 点の色: 緑 = 空き / 橙 = 未観測 (地図の灰) / 赤 = 壁 or keepout 上。赤い点は
 #   ComputePathThroughPoses が失敗して NavigateThroughPoses 全体が止まる原因になるので避ける。
@@ -61,6 +63,7 @@ HELP = """\
        右クリック = その点の番号を外す / Enter (または n) = その順に確定 / Esc = 取り消し
        番号を振らなかった点は、元の順のまま後ろに付く
   u  元に戻す    s  保存    r  順序を反転    o  通過半径の表示切替
+  b  背景の切替 (地図 → realmap + 地図の壁 (青) → realmap のみ)。realmap がある時だけ
   h  この説明    q  終了 (未保存なら警告)
   ズーム/パンはツールバー (虫眼鏡/十字)。そのモード中はクリック編集を無視する。"""
 
@@ -116,6 +119,27 @@ def find_keepout(map_yaml):
     cand = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(map_yaml))),
                         "keep_out", "keep_out.yaml")
     return cand if os.path.exists(cand) else None
+
+
+def find_realmap(map_yaml):
+    """claude: 2026-11-07 地図 yaml と同じディレクトリの realmap.yaml (表示専用の実地図) を自動検出。"""
+    cand = os.path.join(os.path.dirname(os.path.abspath(map_yaml)), "realmap.yaml")
+    return cand if os.path.exists(cand) else None
+
+
+class RealMap:
+    """claude: 2026-11-07 表示専用の濃淡地図。4700 万画素級なので float にせず uint8 のまま持つ。"""
+
+    def __init__(self, yaml_path):
+        meta = yaml.safe_load(open(yaml_path))
+        img = meta["image"]
+        if not os.path.isabs(img):
+            img = os.path.join(os.path.dirname(os.path.abspath(yaml_path)), img)
+        res = float(meta["resolution"])
+        ox, oy = float(meta["origin"][0]), float(meta["origin"][1])
+        self.img = np.asarray(Image.open(img).convert("L"))
+        h, w = self.img.shape
+        self.extent = [ox, ox + w * res, oy, oy + h * res]
 
 
 # ----------------------------------------------------------------------------
@@ -221,7 +245,9 @@ def report(gm, ko, pts, manual, stops, extras=None):
 class Editor:
     PICK_PX = 10  # 点をつかむ判定半径 [画面 px]
 
-    def __init__(self, plt, gm, ko, traj, out, pts, manual, stops, radius, extras=None):
+    BG_MODES = ("地図", "realmap + 地図の壁", "realmap")  # claude: 2026-11-07 b キーで巡回
+
+    def __init__(self, plt, gm, ko, traj, out, pts, manual, stops, radius, extras=None, real=None):
         self.plt, self.gm, self.ko, self.out, self.radius = plt, gm, ko, out, radius
         self.pts = list(pts)
         self.manual = list(manual)  # pts と同じ長さ。手動 yaw [rad] or None (全編集で同期させる)
@@ -245,8 +271,18 @@ class Editor:
         from matplotlib import patheffects
         OUTLINE = [patheffects.withStroke(linewidth=2.5, foreground="white")]  # 白地図でも読める番号
         self.fig, self.ax = plt.subplots(figsize=(11, 9))
-        self.ax.imshow(gm.img, cmap="gray", vmin=0, vmax=1, extent=gm.extent,
-                       origin="upper", interpolation="nearest")
+        self.map_im = self.ax.imshow(gm.img, cmap="gray", vmin=0, vmax=1, extent=gm.extent,
+                                     origin="upper", interpolation="nearest")
+        # claude: 2026-11-07 realmap 背景 + 地図の壁 (青) の重ね。最初は非表示で b キーで出す
+        self.bg = 0
+        self.real_im = self.wall_im = None
+        if real is not None:
+            self.real_im = self.ax.imshow(real.img, cmap="gray", vmin=0, vmax=255, extent=real.extent,
+                                          origin="upper", interpolation="nearest", visible=False)
+            walls = np.zeros((gm.h, gm.w, 4), np.uint8)
+            walls[gm.occ > gm.occ_th] = (0, 90, 255, 150)
+            self.wall_im = self.ax.imshow(walls, extent=gm.extent, origin="upper",
+                                          interpolation="nearest", visible=False)
         if ko is not None:
             mask = np.zeros((ko.h, ko.w, 4), np.float32)
             mask[ko.occ > ko.occ_th] = (1.0, 0.0, 0.0, 0.25)
@@ -329,9 +365,10 @@ class Editor:
                          color="red")
             self.fig.canvas.draw_idle()
             return
+        bg = f" / 背景: {self.BG_MODES[self.bg]}" if self.real_im is not None else ""
         ax.set_title(f"{'* ' if self.dirty else ''}{os.path.basename(self.out)} — "
                      f"{len(self.pts)} 点 / {total:.1f} m / 要確認 {bad} 点 / 向き手動 {nman} 点"
-                     f" / 停止 {sum(self.stops)} 点"
+                     f" / 停止 {sum(self.stops)} 点{bg}"
                      f"   (h: 操作説明)")
         self.fig.canvas.draw_idle()
 
@@ -511,6 +548,14 @@ class Editor:
             self.extras.reverse()
         elif k == "o":
             self.show_radius = not self.show_radius
+        elif k == "b":
+            if self.real_im is None:
+                print("realmap なし (<地図 yaml と同じ所>/realmap.yaml か --realmap で指定)")
+                return
+            self.bg = (self.bg + 1) % len(self.BG_MODES)
+            self.map_im.set_visible(self.bg == 0)
+            self.real_im.set_visible(self.bg != 0)
+            self.wall_im.set_visible(self.bg == 1)
         elif k == "h":
             print(HELP)
         elif k == "q":
@@ -542,6 +587,10 @@ def main():
     ap.add_argument("--keepout", help="keepout マスク yaml (既定: <map_dir>/keep_out/keep_out.yaml を自動検出)")
     ap.add_argument("--no_keepout", action="store_true", help="keepout を表示・判定しない")
     ap.add_argument("--traj", help="走行軌跡 (GLIM traj_lidar.txt 等) を重ねて表示")
+    ap.add_argument("--realmap", help="背景用の実地図 yaml (既定: 地図 yaml と同じ所の realmap.yaml を自動検出)")
+    ap.add_argument("--no_realmap", action="store_true", help="realmap を読まない (メモリ節約)")
+    ap.add_argument("--background", choices=["map", "overlay", "real"], default="map",
+                    help="起動時の背景 (b キーで切替。--render の出力にも効く)")
     ap.add_argument("--radius", type=float, default=0.7,
                     help="表示する通過判定半径 [m] (bt_navigator 既定 BT の RemovePassedGoals = 0.7)")
     ap.add_argument("--check", action="store_true", help="GUI を出さず各点の判定表だけ出す")
@@ -566,7 +615,13 @@ def main():
     import matplotlib.pyplot as plt
 
     traj = load_traj(args.traj) if args.traj else None
-    ed = Editor(plt, gm, ko, traj, args.out_yaml, pts, manual, stops, args.radius, extras)
+    real_path = None if args.no_realmap else (args.realmap or find_realmap(args.map_yaml))
+    print(f"realmap: {real_path or 'なし'}")
+    real = RealMap(real_path) if real_path else None
+    ed = Editor(plt, gm, ko, traj, args.out_yaml, pts, manual, stops, args.radius, extras, real)
+    if real is not None:  # claude: 起動時の背景 (b キーと同じ切替を必要回数だけ回す)
+        for _ in range(("map", "overlay", "real").index(args.background)):
+            ed.on_key(type("Ev", (), {"key": "b"})())
     if args.render:
         ed.fig.savefig(args.render, dpi=150, bbox_inches="tight")
         print(f"描画: {args.render}")
