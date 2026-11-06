@@ -350,34 +350,36 @@ planner_server:
     #   ⚠ angle_quantization_bins と minimum_turning_radius は組で決める (0.1 m 格子: 16 分割 → 0.3 m、32 → 0.5 m、64 → 約 1 m が下限。分割が細かいと半径が無警告で膨らむ)。
     #   ⚠ Smac はゴール (waypoint) の yaw を満たすので course.yaml の orientation が実態と合っている必要あり (11-04 点検済み)。
     #   戻すときは下の NavFn 節を復活させる (inflation 0.65 は残して可)。
+    # claude: 2026-11-06 Smac Hybrid-A* → Smac State Lattice (差動二輪の動き集合、その場旋回あり)。
+    #   理由: Hybrid は車用 (Dubins) でその場旋回を表現できず、角で大回り・向きを変える経路が出ない (11-04/05 実走)。
+    #   Nav2 公式も非円形の差動二輪には Lattice を勧めている。動き集合は config/lattice/ (0.1 m 格子 = global と一致必須)。
+    #   bag 再生 (11-01/03/04 の停止場面): 成功・失敗は Hybrid と同じ、経路にその場旋回が入る、計画 0.25〜0.96 s。実走未検証。
+    #   ⚠ 前提は Hybrid と同じく global の inflation_radius ≥ 外接半径 0.62 m。動き集合の格子 = global の resolution。
+    #   戻すときは下の「旧: Smac Hybrid-A*」節のコメントを外し、この節をコメントにする。
     GridBased:
-      plugin: nav2_smac_planner::SmacPlannerHybrid
+      plugin: nav2_smac_planner::SmacPlannerLattice
+      # claude: 2026-11-07 動き集合を R0.3/16 → R0.5/16 に変更。地図だけで全コースを計画した結果、R0.3/16 は新地図 (fixed2_filtered) の
+      #   ジグザグ (waypoint3→4) で経路が出なかった。R0.5/16 は新地図の全区間を計画でき、その場旋回も最多 (67 回)。
+      #   旧地図 (2026-10-09_1643_5goukan_chal) では R0.5/16 も 3→4 が出ない (Hybrid R0.5/32 と Lattice R0.5/32 は出る)。比較は config/lattice/README.md。
+      lattice_filepath: /workspace/install/rerobot_bringup/share/rerobot_bringup/config/lattice/diff_10cm_r0.5_h16.json  # コンテナ内の絶対パス
       tolerance: 0.5                    # 目標に到達できない時の許容半径 [m]
-      downsample_costmap: false         # global は既に 0.1 m
-      downsampling_factor: 1
-      allow_unknown: true               # 未知領域の通過を許可 (global は track_unknown_space false なので実質 free)
-      max_iterations: 1000000           # 探索の反復上限 (超えると "exceeded maximum iterations")
-      max_on_approach_iterations: 1000  # tolerance 内に入ってからの反復上限
-      max_planning_time: 5.0            # 計画時間の上限 [s]。超えると失敗 → 追従 BT が旧経路を保持
-      motion_model_for_search: DUBIN    # 前進のみ (後退を許すなら REEDS_SHEPP + allow_reverse_expansion)
-      angle_quantization_bins: 32       # 向きの刻み 11.25°。0.1 m 格子で半径 0.5 を出せる最小の分割 (16 → 0.3 m、64 → 約 1 m)
+      allow_unknown: true
+      max_iterations: 1000000
+      max_on_approach_iterations: 1000
+      max_planning_time: 5.0            # 超えると失敗 → 追従 BT が旧経路を保持
+      terminal_checking_interval: 5000
       analytic_expansion_ratio: 3.5
-      analytic_expansion_max_length: 3.0  # 解析的に直結を試す最大長 [m]
-      # claude: 2026-11-04 再生比較 (11-01 bag 939 s、横の物体から離れる場面の出だしの横ずれ y@0.6 m): 0.3/16 分割 → −0.17 m、
-      #   0.5/32 分割 → −0.01 m (真っ直ぐ出る、最小余裕 0.14 m)、1.0/64 分割 → −0.14 m。NavFn は −0.25 m。0.5 を採用。
-      #   差動二輪なので物理的制約ではなく「出だしで急に曲がらない」ための値。狭い角で経路が出ないときは 0.3/16 に下げる。
-      minimum_turning_radius: 0.50
+      analytic_expansion_max_length: 3.0
       reverse_penalty: 2.0
-      change_penalty: 0.0
-      non_straight_penalty: 1.2         # 曲がる歩に掛ける係数 (直進を好む)
+      change_penalty: 0.05
+      non_straight_penalty: 1.05
       cost_penalty: 2.0                 # 膨張帯のコストに掛ける係数 (大きいほど壁から離れる)
+      rotation_penalty: 5.0             # その場旋回に掛ける係数 (大きいほど旋回を避ける)
       retrospective_penalty: 0.015
-      lookup_table_size: 20.0           # 距離ヒューリスティックの表 [m]
+      lookup_table_size: 20.0
       cache_obstacle_heuristic: false   # 動く障害物があるので毎回計算
-      smooth_path: true                 # Smac 内蔵の平滑化 (追従 BT の SimpleSmoother とは別)
-      allow_reverse_expansion: false
-      use_quadratic_cost_penalty: false
-      downsample_obstacle_heuristic: true
+      allow_reverse_expansion: false    # 後退はまだ使わない (RPP の allow_reversing と対で有効化する)
+      smooth_path: true
       smoother:
         max_iterations: 1000
         w_smooth: 0.3
@@ -385,6 +387,42 @@ planner_server:
         tolerance: 1.0e-10
         do_refinement: true
         refinement_num: 2
+    # --- 旧: Smac Hybrid-A* (2026-11-04〜11-06、コミット 1ed4757) ---
+    # GridBased:
+    #   plugin: nav2_smac_planner::SmacPlannerHybrid
+    #   tolerance: 0.5                    # 目標に到達できない時の許容半径 [m]
+    #   downsample_costmap: false         # global は既に 0.1 m
+    #   downsampling_factor: 1
+    #   allow_unknown: true               # 未知領域の通過を許可 (global は track_unknown_space false なので実質 free)
+    #   max_iterations: 1000000           # 探索の反復上限 (超えると "exceeded maximum iterations")
+    #   max_on_approach_iterations: 1000  # tolerance 内に入ってからの反復上限
+    #   max_planning_time: 5.0            # 計画時間の上限 [s]。超えると失敗 → 追従 BT が旧経路を保持
+    #   motion_model_for_search: DUBIN    # 前進のみ (後退を許すなら REEDS_SHEPP + allow_reverse_expansion)
+    #   angle_quantization_bins: 32       # 向きの刻み 11.25°。0.1 m 格子で半径 0.5 を出せる最小の分割 (16 → 0.3 m、64 → 約 1 m)
+    #   analytic_expansion_ratio: 3.5
+    #   analytic_expansion_max_length: 3.0  # 解析的に直結を試す最大長 [m]
+    #   # claude: 2026-11-04 再生比較 (11-01 bag 939 s、横の物体から離れる場面の出だしの横ずれ y@0.6 m): 0.3/16 分割 → −0.17 m、
+    #   #   0.5/32 分割 → −0.01 m (真っ直ぐ出る、最小余裕 0.14 m)、1.0/64 分割 → −0.14 m。NavFn は −0.25 m。0.5 を採用。
+    #   #   差動二輪なので物理的制約ではなく「出だしで急に曲がらない」ための値。狭い角で経路が出ないときは 0.3/16 に下げる。
+    #   minimum_turning_radius: 0.50
+    #   reverse_penalty: 2.0
+    #   change_penalty: 0.0
+    #   non_straight_penalty: 1.2         # 曲がる歩に掛ける係数 (直進を好む)
+    #   cost_penalty: 2.0                 # 膨張帯のコストに掛ける係数 (大きいほど壁から離れる)
+    #   retrospective_penalty: 0.015
+    #   lookup_table_size: 20.0           # 距離ヒューリスティックの表 [m]
+    #   cache_obstacle_heuristic: false   # 動く障害物があるので毎回計算
+    #   smooth_path: true                 # Smac 内蔵の平滑化 (追従 BT の SimpleSmoother とは別)
+    #   allow_reverse_expansion: false
+    #   use_quadratic_cost_penalty: false
+    #   downsample_obstacle_heuristic: true
+    #   smoother:
+    #     max_iterations: 1000
+    #     w_smooth: 0.3
+    #     w_data: 0.2
+    #     tolerance: 1.0e-10
+    #     do_refinement: true
+    #     refinement_num: 2
     # --- 旧: NavFn (2026-11-04 まで) ---
     # GridBased:
     #   plugin: nav2_navfn_planner::NavfnPlanner

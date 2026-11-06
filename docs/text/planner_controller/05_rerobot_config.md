@@ -1,4 +1,4 @@
-<!-- claude: 経路計画・経路追従読本 第5章 (2026-11-06) -->
+<!-- claude: 経路計画・経路追従読本 第5章 (2026-11-06、同日夜に Lattice への切替を追記) -->
 
 # 第5章 reRoBot での構成と現在地 — どこまで来て、何が残っているか
 
@@ -15,9 +15,9 @@ reRoBot の走行系 (2026-11-06)
 │   ├── 再計画 3 s ごと (RateController 0.333 Hz、xml:48)
 │   ├── 計画失敗でも旧経路を保持 (連続 20 回まで)
 │   └── 経路の平滑化 SmoothPath (SimpleSmoother、失敗時は未平滑)
-├── planner: Smac Hybrid-A* (nav2_params.yaml:354)
-│   ├── DUBIN (前進のみ、:362)、向き 32 分割 (:363)、最小回転半径 0.5 m (:369)
-│   └── 内蔵の平滑化あり (:377)
+├── planner: Smac State Lattice (11-06 夜から。それまでは Smac Hybrid-A*、R 0.5 / 32 分割)
+│   ├── 動き集合 config/lattice/diff_10cm_r0.5_h16.json (0.1 m 格子・R 0.5 m・16 方位・その場旋回あり。11-07 に R0.3/16 から差し替え)
+│   └── 内蔵の平滑化あり。旧 Hybrid の設定はコメントで残置
 ├── global costmap: map 系 0.1 m、200 m 窓、1 Hz、地図 + keepout + R-Fans (5 m)、膨張 0.65、footprint 実寸
 ├── controller: RPP (:93)
 │   ├── 先読み 0.6〜0.9 m (:101〜:102)、衝突先読み 2 s (:116)、45° 超でその場旋回 (:119)
@@ -62,7 +62,8 @@ flowchart TD
 | 11-04 | global 膨張 0.55 → 0.65 | `1ed4757` | Smac の前提条件 (膨張 ≥ 外接) | 満たさないと全計画が黙って失敗 |
 | 11-04 | bag 記録に RPP の掃引と旋回状態 | `1ed4757` | 次回から凍結の証拠を直接読む | — |
 | 11-04 | global footprint を楽観 (幅 0.50 / 後 0.40) | `e3d933f` | 地図ずれ 0.15 m を planner に許す | ジグザグ再生 0/5 → 2/5 |
-| 11-06 | global footprint を実寸に戻す | 未コミット | 角の接触を防ぐ | — |
+| 11-06 | global footprint を実寸に戻す | `6fe16ea` | 角の接触を防ぐ | — |
+| 11-06〜07 | planner Smac Hybrid → Smac State Lattice (0.1 m・16 方位を公式ツールで生成、11-07 に R0.3 → R0.5) | 未コミット | その場旋回を planner に持たせる | 再生: 停止場面の成功・失敗は Hybrid と同じ、経路にその場旋回が入る。実走未検証 |
 
 ## 5.4 試して効かなかった・採らなかったもの
 
