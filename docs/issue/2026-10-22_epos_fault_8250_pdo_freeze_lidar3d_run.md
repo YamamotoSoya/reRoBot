@@ -155,3 +155,28 @@ critic 判定と表現:
 - 減速形状は quick stop 後の惰行と整合 (0x6085 と照合すれば fault reaction 確定)。
 
 次の 1 実験: 台上で車輪を浮かせ **目標≠0** で回しながら `candump -t a -l can0` 並走、device_container を `kill -STOP; sleep X; kill -CONT` で X = 20/50/100/300 ms 止め、Fault する最短 X を測る。20 ms 級なら (A')/(B') = 余裕 0 が主因候補 → 0x60C2 を広げる対策へ。数百 ms なら (A)(A') 棄却で、走行中 candump による (B')/(C) 切り分けへ。解析スクリプト `bags/exp/2026-11-06_epos_8250/` (書き込み中 MCAP をそのまま読める最小パーサ)。
+
+### 12.1 台上試験 (11-06 18:00、車輪浮かせ、目標 0.2 / 0.6 m/s 相当) — 通信パターンでは 0x8250 を再現できない
+
+詳細と表は `bags/exp/2026-11-06_epos_8250/bench/README.md`。マスタ全停止 20 ms〜10 s (30 回)、SYNC だけ 4 s、RPDO の重複・SYNC なし RPDO・圧縮、NMT Pre-Op のどれでも **Fault 0**。停止中のモータは最後の目標を保持して回り続けた。
+
+帰結 (実験事実の範囲):
+- critic が残した (A') 短い停止・(B') TX の詰まり/まとめ送り・(C) 目標≠0 の判定差、および (A) 丸ごと停止は、**台上のバス上の並びとしては 0x8250 の十分条件ではない**。10-11 の「686 ms で Fault しない」と同じ側の結果で、09-19 H1 (10 ms マージン 0) も否定側。
+- 実機の 0x8250 には台上に無い要素が要る: 接地・負荷・走行中の電気ノイズ、アダプタ (CANUSB) 自体のリセット・USB 喪失 (09-19 15:35 は USB 喪失と同時)、壊れたフレーム等。ここは未検証。
+- **安全上の事実**: マスタが黙っても EPOS は止まらず最後の速度で走り続ける。走行中に lely/USB が止まった場合、止める層が EPOS 側に無い (09-19 §85 の「EPOS は 10 ms で自衛」は台上では成り立たない)。0x1016 consumer heartbeat (マスタ heartbeat 有効化とセット) か RPDO 監視の設定を入れる価値がある。
+
+次: 回転中に CANUSB の USB を物理的に抜く (09-19 15:35 の再現)。0x8250 が出れば「アダプタ喪失」型が一つの十分条件と確定する。
+
+### 12.2 追試: 回転中に CANUSB を手で抜く (11-06 18:23、詳細は bench/README.md 末尾) — Fault せず回り続けた
+
+kernel 署名は 09-19 15:35 と同一 (`urb -32` → disconnect) だが、EPOS は 0x1237・エラー履歴 0 のまま −1376 rpm で回転を続け、再挿入後に生 SDO で 0x60FF = 0 を書くまで 58 s 止まらなかった。**USB 喪失も 0x8250 の十分条件ではない**。09-19 15:35 との差 (当時は接地走行中・急加速直後・電源 v2 直後、ファームの設定差の有無) は未特定。
+
+安全上の帰結 (確定): **今の構成では、PC 側の通信がどんな形で途絶えても EPOS は最後の速度で走り続ける**。止めるのは EPOS 側の監視しかない → マスタ heartbeat 送出 + EPOS の consumer heartbeat (0x1016) で「途絶 N ms で quick stop」を入れるのが最優先の対策候補。`epos4_controller` のリンク喪失ログ「EPOS 側は 0x8250 で自衛」は事実と異なるので要修正。
+
+### 12.3 対策適用: マスタ heartbeat + EPOS consumer (0x1016) + 0x1029:01 = 1 (11-06 18:40、台上確認済み・実走未検証)
+
+bus.yml (submodule) に master `heartbeat_producer: 100` × `heartbeat_multiplier: 5.0`、defaults `heartbeat_consumer: true` + `error_behavior: {1: 0x01}`。台上: マスタ停止 ≤400 ms は回転継続、≥600 ms で 0.43〜0.50 s 後に **0x8130 heartbeat error → quick stop**、回転中の CANUSB 抜去も即停止 (LED 赤)。0x1029:01 既定 0 だと Pre-Op に落ちて recover が効かないので 1 にした (Operational のまま → recover 1 発)。詳細 `bags/exp/2026-11-06_epos_8250/bench/README.md`。
+
+- 実走で見るべきこと: マスタの短い停止 (10-11 台上で 0.6〜0.7 s が稀) が 0x8130 の誤停止を出さないか。出るなら multiplier を上げる (今 500 ms、0.4 m/s で 0.2 m)。
+- 0x8250 の原因そのものは未解明のまま (§12.1/12.2)。今後 0x8250 と 0x8130 は別物として記録する。
+- USB 喪失後の復帰は can0 再作成のため bringup 再起動が要る (起動時の fault reset で 0x8130 は解除される)。

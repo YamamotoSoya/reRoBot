@@ -10,6 +10,7 @@
 ```
 停止の種類                         EPOS のコード      望む振る舞い
 ├─ 通信停止 (マスタ側 PDO 途絶)     0x8250 両輪同時    自動 recover → そのまま走行再開
+├─ マスタ heartbeat 途絶 (11-06 追加) 0x8130 両輪同時   (案) 通信停止と同じ扱い。ただし USB 喪失型は can0 再作成 = bringup 再起動が要り、recover では戻らない
 ├─ 段差ブラウンアウト (RSD 折り返し) 0x3220 片輪ずつ    自動 recover → そのまま走行再開
 ├─ 非常停止 (人が押した)            0x3220 両輪同時    Vcc が戻ったら motor は enable するが **走らない** → Start で再開
 └─ それ以外 (過電流・追従誤差・熱)   0x2310/0x8611/…   自動復帰しない (止まったまま報告)
@@ -46,6 +47,32 @@
 ### 2.4 `recover` サービス 1 発で CSV Operation Enabled に戻る
 
 11-04 13:50: Fault 中に `/motorN/cia402_device_N/recover` → statusword 0x1237、mode 9 (CSV) 維持。enable / cyclic_velocity_mode の再呼び出しは不要 (脱力モード復帰とは違う経路)。
+
+### 2.5 11-06 台上で判明した通信途絶時の EPOS の挙動 (実測、heartbeat 監視を追加済み)
+
+詳細 `docs/issue/2026-10-22_epos_fault_8250_pdo_freeze_lidar3d_run.md` §12.1〜12.3。**この計画の前提のうち「通信停止 = 0x8250」は崩れた** ので、実装前に読むこと。
+
+```
+11-06 の台上結果 (車輪浮かせ・目標≠0・candump で確認)
+├─ heartbeat 対策の前 (旧 bus.yml)
+│   ├─ マスタ全停止 20 ms〜10 s / SYNC のみ 4 s / RPDO の重複・圧縮 / NMT Pre-Op → Fault 0 (67 回)
+│   ├─ 回転中に CANUSB を手で抜く → Fault せず最後の速度で 58 s 回り続けた
+│   └─ ⇒ 0x8250 は「PDO 途絶」では出ない。実走の 0x8250 の原因は未解明のまま (台上に無い要素が要る)
+└─ heartbeat 対策の後 (bus.yml: master heartbeat 100 ms × 5、EPOS 0x1016 = node 6 / 500 ms、0x1029:01 = 1)
+    ├─ マスタ停止 ≤400 ms → 何も起きない (回転継続)
+    ├─ マスタ停止 ≥600 ms → 停止から 0.43〜0.50 s で EMCY 0x8130 → quick stop (約 1 s で 0 rpm)
+    │   statusword 0x0208 (NMT Operational のまま)、0x603F = 0x1003:01 = 0x8130 → recover 1 発で 0x1237
+    └─ 回転中に CANUSB を抜く → 即停止・LED 赤、0x8130。can0 が作り直されるので recover では戻らず bringup 再起動が要る
+```
+
+この計画への影響:
+- **分類 (§1・§2.3) に 0x8130 (heartbeat error) を加える**。通信途絶系の主コードは今後 0x8130。0x8250 は「原因未解明の別物」として扱う (自動 recover の対象にするかは要判断)。0x8130 は「マスタの一時停止」と「CANUSB 喪失」の 2 型があり、見分け方は can0 の ifindex (現行 link_lost 監視) — 喪失型は recover でなく再 launch 系。
+- **0x1029:01 = 1 が前提** (bus.yml defaults `error_behavior: {1: 0x01}`)。既定 0 だと heartbeat 途絶で EPOS が **NMT Pre-Operational に落ち (heartbeat 0x7F)、PDO が止まって recover (PDO の fault reset) が届かない**。その状態からの手動復帰は `cansend can0 000#0100` (NMT Start 全ノード) → recover。
+- statusword の見え方: 0x1029:01 = 1 なら Fault は **0x0208** (bit 9 remote = Operational)、0x1029 既定だと **0x0008**。
+- **0x8130 の後に指令経路が生きていれば Nav2 の残ゴールで即再発進する** のは 0x8250 と同じ (§2.2)。
+- **誤停止のリスク**: マスタの 0.6 s 級の一時停止 (10-11 台上で稀に観測) は今後 0x8130 で止まる。自動復帰の「予算」(§3.1 の 3 回/120 s) は、これが実走でどれくらい出るかを見てから決める。
+- §3.2 の「物理トリガ (指令あり・車輪不動)」は、heartbeat 型では EPOS 側が先に止めるので補助になる。逆に heartbeat が届くのに PDO だけ届かない型 (11-06 12:07 の 0x8250 の可能性) は EPOS が止めないので、物理トリガが唯一の検出手段として残る。
+- 台上の再現手順 (自動復帰の検証にそのまま使える): `docker exec rerobot_env bash -c 'kill -STOP <device_container PID>; sleep 1; kill -CONT <PID>'` で 0x8130 を 1 発作れる (`bags/exp/2026-11-06_epos_8250/bench/stop_test.sh`、bags/ は git 管理外なのでローカルのみ)。
 
 ## 3. 設計の勘所
 

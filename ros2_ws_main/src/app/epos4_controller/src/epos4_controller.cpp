@@ -136,7 +136,9 @@ public:
     decel_step_ = get_parameter("max_motor_decel_rpm_per_s").as_double() * 0.01;
 
     // claude_watchdog (2026-09-19): 「通信は生きているのに指令が更新されない」型の暴走対策。
-    //   EPOS4 側は RPDO timeout (0x8250, 補間周期 10 ms) で PDO 途絶を自衛するが、
+    //   PDO 途絶そのものは EPOS4 側の heartbeat 監視 (0x1016, 500 ms → 0x8130 quick stop) が止めるが、
+    //   (claude 2026-11-06: 以前は「0x8250 で自衛」としていたが、台上で PDO 途絶 10 s・USB 抜去でも
+    //    0x8250 は出ず回転継続を確認 → bus.yml に heartbeat を追加して担わせた)
     //   PDO が届き続ける形 (joy のデバイス喪失で teleop が publish 停止、master の受信側のみ
     //   死亡) では最後の非ゼロ指令が無期限に送られ続ける (2026-09-19 14:57 の暴走)。
     //   - cmd_timeout_s: /robot_speed_cmd がこの秒数途絶し目標が非ゼロなら 0 へランプ (0 で無効)
@@ -357,7 +359,7 @@ private:
   {
     // claude_watchdog: (a) 監視スレッドがリンク喪失を検知していれば目標を 0 に固定。
     //   PDO が届く経路が生きていれば EPOS はこの 0 を受けて止まる。届かなければ
-    //   EPOS 側の 0x8250 が止める (二重防御)。
+    //   EPOS 側の heartbeat 監視 (0x8130、bus.yml 2026-11-06) が止める (二重防御)。
     if (force_zero_.load()) {
       m1_value_ = 0.0;
       m2_value_ = 0.0;
@@ -758,7 +760,7 @@ private:
       const auto now = std::chrono::steady_clock::now();
       if (link_lost && (!link_lost_prev || now - last_link_log > 2s)) {
         RCLCPP_ERROR(
-          get_logger(), "CAN リンク喪失: %s → 目標速度を 0 に固定 (EPOS 側は 0x8250 で自衛)",
+          get_logger(), "CAN リンク喪失: %s → 目標速度を 0 に固定 (EPOS 側は heartbeat 途絶 0x8130 で停止)",
           reason.c_str());
         last_link_log = now;
       } else if (!link_lost && link_lost_prev) {
