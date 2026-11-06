@@ -74,6 +74,7 @@ RECORD_TOPICS = [
     "/initialpose", "/goal_pose", "/map", "/map_loc", "/keepout_filter_mask",
     "/global_costmap/costmap", "/global_costmap/costmap_updates",
     "/local_costmap/costmap", "/local_costmap/costmap_updates", "/local_costmap/published_footprint", "/teach_marker",
+    "/epos4_controller/state",  # claude: 2026-11-06 走行許可・自動復帰の状態 (DISARMED / RUNNING / RECOVERING / WAIT_POWER)
 ]
 T_NAV, T_RUNNER, T_RVIZ, T_RECORD, T_CHECK = 20.0, 30.0, 35.0, 40.0, 55.0
 
@@ -110,6 +111,8 @@ def setup(context):
     tag = cfg("tag") or re.sub(r"^\d{4}-\d{2}-\d{2}_\d{4}_", "", os.path.basename(map_dir)) + "_auto"
     stamp = datetime.datetime.now(zoneinfo.ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d_%H%M")
     bag_path = os.path.join(cfg("bag_dir"), f"{stamp}_{tag}")
+    # claude: 2026-11-06 EPOS の状態ログ (epos_state_log.py)。bag と同じ日時・tag で /workspace/log に置く
+    epos_log = os.path.join(cfg("epos_log_dir"), f"epos_state_{stamp}_{tag}.log")
 
     def include(rel, launch_arguments):
         # scoped=True: 子に渡した引数が後続 include に漏れないように (nav_*.launch.py と同じ約束)
@@ -153,6 +156,7 @@ def setup(context):
             f"  runner       : {'この launch で起動' if use_runner and have_course else '起動しない (端末から ros2 run)'}\n"
             f"  仮の初期姿勢 : {init_desc} → 正しい姿勢は RViz の 2D Pose Estimate で\n"
             f"  bag          : {bag_path if flag('record') else '(record:=false)'}\n"
+            f"  EPOS 状態ログ: {epos_log}  (状態が変わるたびに [EPOS 時刻] の行。走行許可はパッドの Start)\n"
             f"  joy          : {'on' if flag('joy') else 'off'}  rviz: {'on' if flag('rviz') else 'off'}\n"
             f"  時間割       : nav {t_nav:.0f} s{f' / runner {t_runner:.0f} s' if use_runner and have_course else ''}"
             f" / rviz {t_rviz:.0f} s / record {t_record:.0f} s"
@@ -165,6 +169,12 @@ def setup(context):
     ]
     if use_bringup:
         actions.append(include("rerobot_bringup.launch.py", {"rfans_scan_all": "true"}))
+    # claude: 2026-11-06 EPOS の状態 (/epos4_controller/state) と Fault の詳細 (/diagnostics) を変化のたびに 1 行ずつ
+    #   画面 (= tee しているこの launch のログ) と epos_log に書く。bringup:=false で bringup が別端末でも残る
+    actions.append(Node(
+        package="rerobot_bringup", executable="epos_state_log.py", name="epos_state_log", output="screen",
+        parameters=[{"log_file": epos_log}],
+    ))
     nav = include(os.path.join("nav", "nav_amcl_scanall.launch.py"), {
         "map_dir": map_dir, "loc_map_yaml": loc_map_yaml, "use_rviz": "false", "initial_pose": init_str,
     })
@@ -217,6 +227,8 @@ def generate_launch_description():
                               description="waypoint_runner をこの launch で起動するか。false = 端末から ros2 run"),
         DeclareLaunchArgument("record", default_value="true", description="bag を記録するか"),
         DeclareLaunchArgument("bag_dir", default_value="/workspace/bags/raw", description="bag の保存先"),
+        DeclareLaunchArgument("epos_log_dir", default_value="/workspace/log",
+                              description="EPOS 状態ログ (epos_state_<日時>_<tag>.log) の保存先"),  # claude: 2026-11-06
         DeclareLaunchArgument("tag", default_value="",
                               description="bag 名の後半。空なら map_dir 名から日時を外して _auto を付ける"),
         DeclareLaunchArgument("rviz", default_value="true", description="RViz (nav2.rviz) を 35 s 後に起動するか"),

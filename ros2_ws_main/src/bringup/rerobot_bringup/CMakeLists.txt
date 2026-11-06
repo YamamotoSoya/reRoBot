@@ -26,6 +26,7 @@ install(PROGRAMS
   scripts/teach_marker.py
   scripts/map_level_bridge.py
   scripts/map_odom_holder.py
+  scripts/epos_state_log.py  # claude: 2026-11-06 EPOS の状態をログに残す (auto_run が起動)
   DESTINATION lib/${PROJECT_NAME}
 )
 

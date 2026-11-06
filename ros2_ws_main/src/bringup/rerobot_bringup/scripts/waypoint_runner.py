@@ -211,10 +211,34 @@ class WaypointRunner(Node):
                         history=HistoryPolicy.KEEP_LAST, depth=1)
         self.status_pub = self.create_publisher(String, "~/status", tl)
         self.marker_pub = self.create_publisher(Marker, "~/marker", tl)
+        # claude: 2026-11-06 epos4_controller の走行許可 (docs/features/2026-11-05_epos_auto_recovery_plan.md §3.3)。
+        #   DISARMED / WAIT_POWER (非常停止の後など) になったら走行中のゴールを取り消して一時停止し、
+        #   再開は controller が RUNNING になってから (Start は controller の走行許可にも効く)。
+        #   RECOVERING (自動復帰中) ではゴールを生かしておく。controller が居なければ (None) 何もしない。
+        self.epos_state = None
+        self.kb_ref = None  # run() が Input を入れる (状態の変化で "p" を積むため)
+        self.create_subscription(String, "/epos4_controller/state", self.on_epos_state, tl)
 
     def log(self, msg):
         # claude: rclpy のロガーは cbreak 中に行頭が崩れるので print で直接出す
         print(msg, flush=True)
+
+    def epos_blocked(self):
+        """controller が走行許可を出していない (RUNNING 以外) か。controller が居なければ False。"""  # claude: 2026-11-06
+        return self.epos_state is not None and not self.epos_state.startswith("RUNNING")
+
+    def on_epos_state(self, msg):
+        # claude: 2026-11-06 走行許可が落ちたら (自動復帰中を除く) 走行中のゴールを取り消して一時停止
+        prev, self.epos_state = self.epos_state, msg.data
+        if prev == msg.data:
+            return
+        stopped = msg.data.startswith("DISARMED") or msg.data.startswith("WAIT_POWER")
+        was_running = prev is None or prev.startswith("RUNNING") or prev.startswith("RECOVERING")
+        if stopped and was_running:
+            self.log(f"{RED}{BOLD}⛔ EPOS: {msg.data}{RESET}")
+            self.set_status(f"⛔ EPOS: {msg.data}", (1.0, 0.2, 0.2))
+            if self.goal_handle is not None and self.kb_ref is not None:
+                self.kb_ref.queue.append("p")  # 既存の一時停止経路でゴールを取り消す
 
     def set_status(self, text, rgb=(1.0, 0.9, 0.0)):
         """現在状態を /waypoint_runner/status と RViz マーカーに出す (ログは呼び出し側で別に出す)。"""  # claude: 2026-10-16
@@ -291,13 +315,18 @@ class WaypointRunner(Node):
         """再開キー → True / q → False。待機中も spin して DDS を回しておく。"""
         self.log(f"{YELLOW}{BOLD}■ {prompt}{RESET}  [Start / {self.resume_key}] 再開 / [q] 終了")
         self.set_status(f"■ 待機: {prompt}  → Start で再開")
+        pending = False  # claude: 2026-11-06 再開キーは来たが controller の走行許可待ち
         while rclpy.ok():
             rclpy.spin_once(self, timeout_sec=0.05)
             k = kb.get()
-            if k == self.resume_key:
-                return True
             if k == "q":
                 return False
+            if k == self.resume_key:
+                pending = True
+                if self.epos_blocked():
+                    self.log(f"{YELLOW}… EPOS の走行許可待ち ({self.epos_state}) — 許可が出たら再開{RESET}")
+            if pending and not self.epos_blocked():
+                return True
         return False
 
     def wait_seconds(self, kb, sec, prompt):
@@ -390,6 +419,7 @@ class WaypointRunner(Node):
         self.log("ゴールをキャンセルした" if fut.done() else f"{RED}✘ キャンセル応答なし — RViz で停止を確認{RESET}")
 
     def run(self, segs, kb):
+        self.kb_ref = kb  # claude: 2026-11-06 on_epos_state が "p" を積む先
         self.log("navigate_through_poses サーバ待ち…")
         self.set_status("navigate_through_poses サーバ待ち (Nav2 起動中)", (0.7, 0.7, 0.7))
         waited = 0
@@ -414,12 +444,13 @@ class WaypointRunner(Node):
                 if st == "ok":
                     break
                 head = self.wps[idx[0]][0]
-                if st == "failed" and retries < self.auto_retry:
+                if st == "failed" and retries < self.auto_retry and not self.epos_blocked():
                     retries += 1
                     if not self.wait_seconds(kb, self.retry_wait,
                                              f"区間失敗 → 自動再送 {retries}/{self.auto_retry}: {head} から"):
                         return
-                    continue
+                    if not self.epos_blocked():  # claude: 2026-11-06 待つ間に走行許可が落ちたら自動再送せず待機へ
+                        continue
                 msg = "一時停止中" if st == "paused" else "失敗 (自動再送も失敗)" if retries else "失敗"
                 if not self.wait_key(kb, f"{msg} — 再開すると {head} から続ける"):
                     return

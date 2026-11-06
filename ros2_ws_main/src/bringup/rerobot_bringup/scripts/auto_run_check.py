@@ -96,9 +96,31 @@ class AutoRunCheck(Node):
             return None, "get_state 応答なし (負荷で詰まっている?)"
         return STATE_NAMES.get(fut.result().current_state.id, "?"), None
 
+    def _wait_nodes(self, timeout=6.0):
+        """ノード名の一覧を、期待するノードが全部見えるまで最大 timeout 秒取り直して和集合を返す。
+        claude: 2026-11-07 ノードが ~50 個あると DDS の発見が 1 s では終わらず、1 回の get_node_names だと
+          動いている map_odom_holder / rviz2 / rosbag2_recorder / joy_node が「未起動」と誤判定された
+          (11-06 の 4 回の起動すべてで 1〜4 件。同時刻の ros2 node list も 0→2→3 件と揺れた)。"""
+        want = ["map_odom_holder"]
+        if self.flag("joy"):
+            want += ["joy_node", "teleop_twist_joy_node"]
+        if self.flag("runner"):
+            want.append("waypoint_runner")
+        if self.flag("rviz"):
+            want.append("rviz2")
+        need_rec = self.flag("record")
+        nodes = set()
+        end = time.monotonic() + timeout
+        while True:
+            nodes |= set(self.get_node_names())
+            done = all(w in nodes for w in want) and (not need_rec or any("rosbag2_recorder" in n for n in nodes))
+            if done or time.monotonic() >= end:
+                return nodes
+            self._spin_for(0.2)
+
     def collect(self):
         rows = []  # ("SEC", title) か (判定, 名前, 詳細, ヒント)
-        nodes = set(self.get_node_names())
+        nodes = self._wait_nodes()
 
         # --- bringup (bringup_check を再利用。auto_run の bringup 構成 = 既定 + rfans_scan_all + ekf) ---
         rows.append(("SEC", "bringup (EPOS4 / センサ / EKF)"))
