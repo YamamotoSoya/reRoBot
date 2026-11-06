@@ -21,7 +21,7 @@
 消す作業 (未実施) が担う。
 
 実装した機能:
-- `behavior_trees/navigate_through_poses_follow.xml` — 計画失敗時に旧経路を保持する自作 BT。リカバリは costmap クリア + Wait のみ (Spin / BackUp を削除)。連続失敗 20 回 (≈60 s) で旧経路を諦め既定と同じ失敗経路に落ちる。
+- `behavior_trees/navigate_through_poses_follow.xml` — 計画失敗時に旧経路を保持する自作 BT。リカバリは costmap クリア + Wait のみ (Spin / BackUp を削除)。連続失敗 100 回 (≈5 分、2026-11-06 に 20 回 ≈60 s から変更) で旧経路を諦め既定と同じ失敗経路に落ちる。
 - `navigation.launch.py` が `bt_navigator` の `default_nav_through_poses_bt_xml` でこの XML を指す (waypoint_runner の NavigateThroughPoses にだけ効く。RViz 単発ゴール = NavigateToPose は既定 BT のまま)。
 - RPP `max_allowed_time_to_collision_up_to_carrot: 1.0 → 2.0` (走行中の停止距離 0.4 → 0.6 m。§2.2)。
 - `waypoint_runner.py --auto-retry` 既定 1 → 10 (区間開始時に塞がれていると約 15 s で区間失敗になるため、再送を続けて「前が抜けるまで待つ」を実現。§2.4)。
@@ -140,7 +140,7 @@ Clear / Wait のリカバリ 6 回 ≈ 15 s を経てから ABORT になる)。�
 |---|---|---|
 | `default_nav_through_poses_bt_xml` | `share/rerobot_bringup/behavior_trees/navigate_through_poses_follow.xml` | navigation.launch.py が設定 |
 | `RateController hz` | 0.333 | 再計画周期 3 s (既定と同じ) |
-| `plan_fail` 上限 | 20 回 ≈ 60 s | 旧経路を諦める連続失敗回数 |
+| `plan_fail` 上限 | 100 回 ≈ 5 分 (2026-11-06 に 20 回 ≈ 60 s から変更、待機列用) | 旧経路を諦める連続失敗回数 |
 | `max_allowed_time_to_collision_up_to_carrot` | 2.0 s | 掃引は先読み距離で頭打ち (§2.2) |
 | `waypoint_runner --auto-retry` | 10 (旧 1) | 区間失敗の自動再送回数 |
 

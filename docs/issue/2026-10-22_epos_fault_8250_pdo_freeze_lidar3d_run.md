@@ -139,3 +139,19 @@ ros2 run rerobot_bringup bringup_check.py
 11-04 bag で、13:45:42 (bag 1063 s) の Fault が `/diagnostics` の statusword には **13:56:05 (bag 1685 s)** に初めて 0x0208 として現れ、その時点の SDO live 読みは「0x603F = 0・Vcc 24.2 V・車輪は 0.8 m/s で回転中」(`bags/exp/2026-11-04_epos_8250/window.py`)。bag 終端 (1783 s) まで 0x0208 のまま。プロセス起動 (13:24:40) 基準で 1262 s の事象が 1884 s に届いた = 比 **1.49**。
 
 機構: ros2_canopen (jazzy) のドライバは `polling: true` 既定で `period` (bus.yml defaults **50 ms**) ごとに rpdo キューから最大 **10 件**取り出す = 200 件/s。TPDO1 は SYNC **10 ms** ごとに 3 オブジェクト = 300 件/s。差 100 件/s がキューに滞留し、遅れは起動時間の 1/3 で成長 (予測比 1.5 ≈ 実測 1.49)。→ §2.3 の「ドライバがキャッシュを周期 publish」推定は撤回、**キュー遅延**が本命候補。09-19 §10.5 の `~/rpdo` 購読型監視は起動数分後から無効。対策と自動復帰の設計は `docs/features/2026-11-05_epos_auto_recovery_plan.md` §2.1 / §3.2。
+
+## 12. 2026-11-06 3 回目 (5号館 auto_run_amcl、bag `2026-11-06_1201_5goukan_amcl`) — 同型、SYNC は生きていた (critic 査読済み)
+
+観測 (実測):
+- 両輪同時 Fault、0x603F = **0x8250**、履歴 0x8250 のみ、Vcc 24.2 / 24.1 V。runner を一時停止 → `recover` 1 発で 0x1237 / CSV 9 に復帰 (12:20 頃)。
+- `/joint_states` (bag) で **12:07:19.3** から両輪が 0.35 m/s → 0 を約 0.9 s で滑らかに減速、12:07:20.8 で静止。この間も 50 ms 周期で欠けずに値が更新 (位置は 0x6064 = TPDO マップで dictionary 直読み、§11.2 のキュー遅延を受けない — critic がヘッダで確認)。`/robot_speed_cmd` は 0.33〜0.36 m/s で連続 (隙間 ≤55 ms)。controller の FAULT ログは 12:10:22 (§11.2 の遅延)。
+- ホスト journal に 12:07:19 前後の CAN/USB/kernel 異常なし (WiFi ローミングは 12:07:11〜14 で完了済み)。`ip -s link` errors/dropped 0、`tc -s qdisc` dropped 0 / **requeues 86395 / sent 319390**。
+- 背景: 12:00 に AC を抜いてバッテリ、power profile **balanced** (performance 固定は外れていた)、全コア 1.9 GHz、load 32.9 (8 スレッド)、ekf 周期未達・planner 0.46 Hz。
+
+critic 判定と表現:
+- **言えること**: EPOS の TPDO (SYNC 起動) が減速中も届いていた → 0.6 s 級の「lely マスタ丸ごと停止」は今回の位置データと合わない。
+- **区別できていないもの (棄却できない代替仮説)**: (A') lely スレッドの数十 ms の短い停止 (0x60C2 = 10 ms = SYNC 周期で余裕 0、09-19 H1)、(B') slcan/CANUSB の TX 詰まり・まとめ送り (仕様上 timing violation でも 0x8250。詰まると SYNC が先頭で PDO が後ろ)、(C) 目標≠0 のときの EPOS 判定条件が別物 (10-11 の「目標 0 で 686 ms 許容」とは別)。
+- requeue 27 % は slcan の設計上平常でも出うる (基準値なし) ので背景要因とは呼ばない。11-04 は performance 3.9 GHz で起きているので CPU 低速は共通要因ではない。
+- 減速形状は quick stop 後の惰行と整合 (0x6085 と照合すれば fault reaction 確定)。
+
+次の 1 実験: 台上で車輪を浮かせ **目標≠0** で回しながら `candump -t a -l can0` 並走、device_container を `kill -STOP; sleep X; kill -CONT` で X = 20/50/100/300 ms 止め、Fault する最短 X を測る。20 ms 級なら (A')/(B') = 余裕 0 が主因候補 → 0x60C2 を広げる対策へ。数百 ms なら (A)(A') 棄却で、走行中 candump による (B')/(C) 切り分けへ。解析スクリプト `bags/exp/2026-11-06_epos_8250/` (書き込み中 MCAP をそのまま読める最小パーサ)。

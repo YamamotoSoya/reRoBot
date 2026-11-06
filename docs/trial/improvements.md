@@ -34,11 +34,11 @@
 - [ ] global plannerの生成周期が遅く、生成された経路間で右往左往
 - [ ] 常に真ん中を取ろうと凸凹な場所で凸凹に進む
 - [ ] 安全管理責任者依田の左右に謎の物体。安全ベストの反射板が原因か
-- [ ] plannnerの重さはgoal距離依存ではなくmap広さ依存
-- [ ] mapを区画ごとに使い分ける、または範囲内のみ経路計算する構成が必要
-- [ ] PCバッテリーが減りpowersavermodeへ。そしてeposエラー
-- [ ] パーティクルがみられるように
-- [ ] navigationがかくかくスムージング導入
+- [x] plannnerの重さはgoal距離依存ではなくmap広さ依存
+- [x] mapを区画ごとに使い分ける、または範囲内のみ経路計算する構成が必要
+- [x] PCバッテリーが減りpowersavermodeへ。そしてeposエラー
+- [x] パーティクルがみられるように
+- [x] navigationがかくかくスムージング導入
 - [x] 過去のwaypointへ戻る挙動 (後述)
 > 追従 BT の RemovePassedGoals + ComputePathThroughPoses を ReactiveSequence で包み、通過判定を毎 tick 回すようにした (ff8b606)
 

@@ -14,9 +14,9 @@
      あれば NavFn は成功しその経路 (追い越し・迂回) を即採用する — 迂回防止は keepout の閂の担当 (critic 10-16)。
      ⚠️ 車間は RPP の掃引 = min(2.0 s × 指令速度, 先読み距離 (実測速度 × 1.5 s を 0.3〜0.9 にクランプ)) なので
      走行中 0.4 m/s で約 0.6 m、停止すると 0.3 m まで縮む → 前方停止物には 0.3 m まで段階的に寄る。
-     旧経路の保持は連続失敗 20 回 (RateController 3 s × 20 ≈ 60 s) で諦め、既定と同じ失敗経路 (リカバリ →
+     旧経路の保持は連続失敗 100 回 (RateController 3 s × 100 ≈ 5 分。2026-11-06 に 20 回 ≈60 s から変更 — 待機列用、ユーザ指定) で諦め、既定と同じ失敗経路 (リカバリ →
      ABORT → waypoint_runner の自動再送で現在位置から引き直し) に落とす。AMCL 跳び等で旧経路が壁を貫いた
-     まま永久停止するのを防ぐため (critic H4)。前が 60 s 以上止まっていれば再送でも同じ結論になるので、
+     まま永久停止するのを防ぐため (critic H4)。前が 5 分以上止まっていれば再送でも同じ結論になるので、
      waypoint_runner 側の auto-retry 回数を増やして「待ち続ける」を実現する (既定 10 回、2026-10-16)。
 
   2. リカバリ行動から Spin / BackUp を外し、costmap クリア + Wait だけにする。狭い通路で隣にロボットが
@@ -63,10 +63,10 @@
                 <SetBlackboard output_key="path" value="{new_path}"/>
                 <Script code="have_path := true; plan_fail := 0"/>
               </Sequence>
-              <!-- 計画失敗: 以前の経路があり、連続失敗が 20 回未満ならそれを維持して成功扱い (FollowPath を止めない) -->
+              <!-- 計画失敗: 以前の経路があり、連続失敗が 100 回未満ならそれを維持して成功扱い (FollowPath を止めない)。claude: 2026-11-06 20→100 (待機列で 5 分待つ、ユーザ指定) -->
               <Sequence name="KeepOldPath">
                 <Script code="plan_fail := plan_fail + 1"/>
-                <ScriptCondition name="HaveOldPath" code="have_path == true &amp;&amp; plan_fail &lt; 20"/>
+                <ScriptCondition name="HaveOldPath" code="have_path == true &amp;&amp; plan_fail &lt; 100"/>
               </Sequence>
             </Fallback>
           </RateController>

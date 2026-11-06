@@ -45,6 +45,9 @@ def generate_launch_description():
                               description="keepout マスクを配信するか (マスク未作成の地図では false)"),
         DeclareLaunchArgument("loc_map_yaml", default_value="",
                               description="AMCL 専用地図 yaml (/map_loc)。空なら AMCL は /map を読む"),
+        # claude: 2026-11-07 起動時の仮の初期姿勢 (loc_amcl.launch.py へ素通し)。auto_run は course.yaml の waypoint0 を渡す
+        DeclareLaunchArgument("initial_pose", default_value="",
+                              description='起動時の仮の初期姿勢 "x,y,yaw_rad"。空なら与えない'),
     ]
 
     # claude: include は GroupAction(scoped=True) で包む — 子 launch に渡した引数 (params_file 等) が
@@ -67,6 +70,7 @@ def generate_launch_description():
             "scan_topic": "/rfans/scan_all",
             "max_beams": "2000",
             "loc_map_yaml": loc_map_yaml,
+            "initial_pose": LaunchConfiguration("initial_pose"),
         }),
         include("navigation.launch.py", {"use_sim_time": use_sim_time, "params_file": nav2_params}),
         include("rviz_nav.launch.py", {

@@ -13,7 +13,7 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, GroupAction, IncludeLaunchDescription
+from launch.actions import DeclareLaunchArgument, GroupAction, IncludeLaunchDescription, OpaqueFunction
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
@@ -39,20 +39,38 @@ def generate_launch_description():
         DeclareLaunchArgument(
             "loc_map_yaml", default_value="",
             description="AMCL 専用地図 yaml (/map_loc)。空なら AMCL は /map を読む"),
+        # claude: 2026-11-07 起動時の仮の初期姿勢。AMCL は初期姿勢を知るまで map->odom を出さないので、
+        #   人が RViz で置くのが遅れると global_costmap が TF 待ちで activate に失敗する (11-05 起動試験と同じ症状)。
+        #   ここで仮の姿勢を与えると最初のスキャン (尤度場構築後) から TF が出る。正しい姿勢は後から RViz で上書き。
+        DeclareLaunchArgument("initial_pose", default_value="",
+                              description='起動時の仮の初期姿勢 "x,y,yaw_rad" (map 座標)。空なら与えない (従来どおり)'),
     ]
 
-    amcl = Node(
-        package="nav2_amcl",
-        executable="amcl",
-        name="amcl",
-        output="screen",
-        parameters=[params_file, {
-            "use_sim_time": use_sim_time,
-            "map_topic": amcl_map_topic,
-            "scan_topic": LaunchConfiguration("scan_topic"),
-            "max_beams": ParameterValue(LaunchConfiguration("max_beams"), value_type=int),
-        }],
-    )
+    def make_amcl(context):
+        extra = {}
+        init = LaunchConfiguration("initial_pose").perform(context).strip()
+        if init:
+            try:
+                x, y, yaw = (float(v) for v in init.split(","))
+            except ValueError:
+                raise RuntimeError(f'initial_pose は "x,y,yaw_rad": {init!r}')
+            extra = {"set_initial_pose": True,
+                     "initial_pose.x": x, "initial_pose.y": y, "initial_pose.z": 0.0, "initial_pose.yaw": yaw}
+        return [Node(
+            package="nav2_amcl",
+            executable="amcl",
+            name="amcl",
+            output="screen",
+            parameters=[params_file, {
+                "use_sim_time": use_sim_time,
+                "map_topic": amcl_map_topic,
+                "scan_topic": LaunchConfiguration("scan_topic"),
+                "max_beams": ParameterValue(LaunchConfiguration("max_beams"), value_type=int),
+                **extra,
+            }],
+        )]
+
+    amcl = OpaqueFunction(function=make_amcl)
 
     # claude: 2026-10-16 map→odom の見張り番。AMCL は scan が来たときだけ TF を出すので、R-Fans ディップで
     #   scan が止まると transform_tolerance 秒後に TF が失効し controller が区間失敗 (102) する。
