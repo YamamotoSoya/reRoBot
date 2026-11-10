@@ -42,10 +42,10 @@
 #       - (廃止 2026-10-31) 間隔の広い区間に直線上の中間点を自動で挿む --max-spacing は削除した。5 号館 waypoint2→3 (47 m) で
 #         中間点が植え込みと keepout に落ちて計画失敗 (308) → 追従 BT が旧経路の終点で「成功」→ 本ノードが窓の終点と誤認、
 #         の連鎖になったため (nav_2026-10-30_1757.log、bags/tools/2026-10-30_5goukan_midpoint/)。waypoint は人が道なりに置く。
-#       - 起動時に隣接点の間隔を検査し、--window-half (既定 100 m = 窓 200 m の半幅) を超える区間 (計画不能) と
+#       - 起動時に隣接点の間隔を検査し、--window-half (既定 50 m = 窓 100 m の半幅、claude: 2026-11-09 100 → 50) を超える区間 (計画不能) と
 #         --warn-spacing (既定 30 m) を超える区間 (その点で一度止まる・計画が重い) を全部警告する。
 #         窓は自機中心なので、前の点に立ったとき次の点が窓に入るのは半幅まで。超える区間は間に点を足すこと
-#     send_radius (既定 40 m、claude: 2026-11-07 80 → 40) は窓幅の半分 (100 m) より小さく (差し替えまでに進む分 +
+#     send_radius (既定 40 m、claude: 2026-11-07 80 → 40) は窓幅の半分 (50 m、2026-11-09 に窓 200 → 100 m) より小さく (差し替えまでに進む分 +
 #     costmap 更新 1 Hz の中心ずれの余裕)。1 回の計画距離 ≈ 送り半径なので、小さいほど planner が軽い (11-06 実測: 80 m で
 #     Smac 1 回 中央 2.9 s・planner_server 1 コア張り付き、bags/exp/2026-11-06_load_tsukuba_map/)。
 #     ⚠ 差し替えは「次の点が自機から send_radius 以内に入った」時に起きる。点の間隔 s なら窓の終点の (send_radius − s) m 手前。
@@ -56,7 +56,7 @@
 #
 #   使い方 (rerobot_env 内、nav2.launch.py 起動 + AMCL 初期位置合わせ済みで。キー入力を使うなら -it):
 #     ros2 run rerobot_bringup waypoint_runner.py <course.yaml> [--resume-key g] [--start N] [--auto-retry 10] [--retry-wait 5] \
-#       [--send-radius 40] [--resend-left 2] [--warn-spacing 30] [--window-half 100] \
+#       [--send-radius 40] [--resend-left 2] [--warn-spacing 30] [--window-half 50] \
 #       [--ros-args --params-file <share>/config/joy_teleop.yaml]   # joy ボタンの割り当てを読む (省略時は既定値)
 #     --start N : waypointN から始める (途中で止めて再起動したとき用)
 #     --auto-retry N : 区間失敗の自動再送回数 (0 で無効 = 旧挙動)
@@ -64,7 +64,7 @@
 #     --send-radius R : 1 本の goal に入れる点は自機から R [m] 以内 (既定 40、0 = 区間全点)
 #     --resend-left N : 送った点の残りが N 以下になったら次の窓を送る (既定 2)
 #     --warn-spacing W : 起動時に隣接点の間隔が W [m] を超える区間を警告する (既定 30 = send_radius − 10。そこで一度止まる)
-#     --window-half H : global costmap の窓の半幅 [m] (既定 100)。これを超える区間は計画不能として警告
+#     --window-half H : global costmap の窓の半幅 [m] (既定 50 = 窓 100 m。nav2_params.yaml の global_costmap width/height と対で変える)。これを超える区間は計画不能として警告
 import argparse
 import collections
 import math
@@ -484,7 +484,7 @@ def main():
     ap.add_argument("--resend-left", type=int, default=2, help="送った点の残りが N 以下で次の窓を送る (既定 2)")
     ap.add_argument("--warn-spacing", type=float, default=30.0,
                     help="起動時に隣接点の間隔が W m を超える区間を警告 (既定 30 = send-radius − 10、そこで一度止まる。0 = 検査しない)")
-    ap.add_argument("--window-half", type=float, default=100.0,
+    ap.add_argument("--window-half", type=float, default=50.0,
                     help="global costmap の窓の半幅 m (既定 100 = 200 m 窓)。これを超える区間は計画不能として警告")
     args, ros_args = ap.parse_known_args()
     if len(args.resume_key) != 1 or args.resume_key in "qp":

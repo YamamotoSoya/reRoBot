@@ -91,7 +91,9 @@ controller_server:
     controller_plugins: ["FollowPath"]
     FollowPath:
       plugin: nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController
-      desired_linear_vel: 0.4          # 目標前進速度 [m/s]
+      desired_linear_vel: 0.5          # 目標前進速度 [m/s] (claude: 2026-11-07 0.4 → 0.7 = joy turbo 0.8 より少し遅く。2026-11-09 0.7 → 0.5、ユーザ指定。
+                                       #   0.7 の実走 (bag 1449) で AMCL の更新が 2 回/s 止まり (update_min_d 0.25 m には 2.8 回/s 要る) で σ 最大 8 m・見失い、
+                                       #   計画中 (平均 1.9 s) に進む距離も伸びて差し替え直後の急ブレーキが増えた。velocity_smoother の max_velocity と対で変える)
       lookahead_dist: 0.6              # 先読み距離 [m]
       # claude: 2026-11-03 0.3 → 0.6。停止中・低速時 (v<0.2 m/s) は先読みが min に落ち、経路の横ずれ y に対し曲率 2y/L² が
       #   4 倍になる → RPP の衝突掃引で後端 0.51 m の後角が横 (縁から 0.11〜0.17 m) の物体へ振り出す判定になり、速度 0 のまま
@@ -116,7 +118,12 @@ controller_server:
       max_allowed_time_to_collision_up_to_carrot: 2.0
       max_robot_pose_search_dist: 10.0  # 経路上の自己位置探索範囲 [m]
       use_rotate_to_heading: true     # 経路始端で方位合わせの旋回を許可
-      rotate_to_heading_min_angle: 0.785  # この方位誤差 [rad] 以上でまず旋回
+      rotate_to_heading_min_angle: 1.22   # この方位誤差 [rad] 以上でまず旋回 (claude: 2026-11-09 0.785 (45°) → 1.22 (70°)、ユーザ指定。
+      #   先読み点の角度がこれを超えると前進 0 でその場旋回し、0.7 m/s から減速上限 2.5 m/s² で急停止になる。経路の差し替え直後は
+      #   計画中に進んだ分だけ車体が新経路から横に中央 0.40 m・向き 34° ずれ、先読み円 0.9 m との交点が 45° を超えていた
+      #   (11-07 bag 1449 の急ブレーキ 37 回中 22 回)。同じ 27 瞬間の再計算で 45° 超 22 回 → 70° 超 6 回。45〜70° は止まらず
+      #   回転半径 0.6 m 前後の円弧で戻る (内回りは先読み距離で決まるので変わらない)。残る 70° 超は先読み点が横〜後ろに来る大きなずれ。
+      #   解析 bags/tools/2026-11-07_keepvalid_run/rpp_offset.py。実走未検証)
       rotate_to_heading_angular_vel: 1.0  # 方位合わせ旋回速度 [rad/s]
 
 # ============================================================================
@@ -129,7 +136,7 @@ velocity_smoother:
   ros__parameters:
     smoothing_frequency: 20.0        # 出し直しの周期 [Hz] (controller_frequency と同じ)
     feedback: "OPEN_LOOP"            # 直前の自分の出力を現在速度とみなす (CLOSED_LOOP なら odom_topic: /odometry/filtered)
-    max_velocity: [0.4, 0.0, 1.0]    # [x, y, θ] 上限。RPP の desired_linear_vel / rotate_to_heading_angular_vel と揃える
+    max_velocity: [0.5, 0.0, 1.0]    # [x, y, θ] 上限。RPP の desired_linear_vel / rotate_to_heading_angular_vel と揃える (claude: 2026-11-07 x 0.4 → 0.7、2026-11-09 0.7 → 0.5)
     min_velocity: [-0.4, 0.0, -1.0]  # 後退・逆旋回の下限 (BackUp 用)
     max_accel: [0.5, 0.0, 3.2]       # 加速上限 [m/s^2, -, rad/s^2]。前進 0→0.4 m/s を 0.8 s で。角は RPP max_angular_accel と同じ
     max_decel: [-2.5, 0.0, -3.2]     # 減速上限。緩めると collision ahead の停止が遅れるので大きいまま
@@ -263,8 +270,11 @@ global_costmap:
       #   (3) StaticLayer は rolling だとセルごとに TF 変換して書く別経路になるが、use_maximum はそこでも効く (Jazzy static_layer.cpp 確認)。
       #   戻すときは rolling_window: false にする (width/height は無視される)。
       rolling_window: true      # 自機中心の追従窓にする (2026-10-30)
-      width: 200                # 窓の幅 [m] (claude: 2026-10-30 夕 60→200 = 半径 100 m、ユーザ指定。2000×2000 = 4M セル、つくば全面 47M の 1/12)
-      height: 200               # 窓の高さ [m]。変えたら waypoint_runner の --send-radius / --warn-spacing (半幅基準) も合わせる
+      width: 100                # 窓の幅 [m] (claude: 2026-10-30 夕 60→200 = 半径 100 m、ユーザ指定。2026-11-09 200→100 = 半径 50 m、ユーザ指定。
+                                #   1000×1000 = 1M セル。更新が鍵 (costmap mutex) を持つ時間が最大 0.56 → 0.10 s (台上実測、
+                                #   bags/exp/2026-11-09_costmap_lock/)。IsPathValid (追従 BT 変更点 5) の待ちが締め切りを超えないため。
+                                #   送り半径 40 m (11-07) は半幅 50 m の内側)
+      height: 100               # 窓の高さ [m]。変えたら waypoint_runner の --send-radius / --warn-spacing (半幅基準) も合わせる
       # claude: 2026-10-30 true → false。rolling 窓だと StaticLayer は別経路 (static_layer.cpp updateCosts の isRolling 分岐) で
       #   use_maximum 時に max(地図の値, master の値) を書くが、master は毎周期 既定値に戻る。track_unknown_space: true だと
       #   既定値 = NO_INFORMATION (255) で lethal (254) より大きく、地図も keepout も一度も書かれない (台上で costmap 全面 unknown を実測、
@@ -322,6 +332,10 @@ global_costmap:
           clearing: true             # レイトレースで空き領域を消去
           marking: true              # 障害物として書き込み
           data_type: "LaserScan"
+          # claude: 2026-11-06 inf_is_valid: true (local は 10-15 から true、global は入れ忘れ)。11-06 実走で前を歩く人の跡が
+          #   global に残り planner が避け続けた (ユーザ観察)。既定 false だと無反射 (+inf) のビームは消去に使われず、開けた方向で
+          #   人が去った後のセルが消えない。true で raytrace_max_range (10 m) まで消去。マークはされない (range_max > obstacle_max_range 5)。実走未検証。
+          inf_is_valid: true
           raytrace_max_range: 10.0   # 空き判定の最大レイトレース距離 [m] (claude: 2026-10-12 30→10。marking は 5 m までなので 10 m 超の消去線は無駄)
           obstacle_max_range: 5.0
       inflation_layer:

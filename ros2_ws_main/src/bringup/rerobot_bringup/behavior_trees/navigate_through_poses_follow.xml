@@ -7,14 +7,14 @@
      「区間の通路が全部空くまで完全停止」になる。本 BT では旧経路 (前方ロボットを貫通) を RPP がなぞり、
      RPP の衝突先読み (max_allowed_time_to_collision_up_to_carrot) が手前で速度 0 にする → 前が進めば進む、
      の stop-and-go 追従になる。controller_server の failure_tolerance: -1 (collision ahead でも FollowPath を
-     失敗にしない) が前提。通れる幅が生まれれば次の再計画 (3 s 周期) で新経路に差し替わり、そちらを通る。
+     失敗にしない) が前提。通れる幅が生まれれば次の再計画 (旧経路が塞がれている間は 1 s 周期。変更点 5) で新経路に差し替わり、そちらを通る。
      仕組み: 計画結果は {new_path} で受け、成功時だけ SetBlackboard で {path} へ写す (失敗時 {new_path} は
      空になるが {path} は無傷)。一度も成功していない (have_path=false) なら失敗を上に返す (既定と同じ)。
      ⚠️ 効くのは「計画が失敗する場面」(costmap 上の隙間が車体幅 0.65 未満 かつ地図に迂回路なし) だけ。隙間が
      あれば NavFn は成功しその経路 (追い越し・迂回) を即採用する — 迂回防止は keepout の閂の担当 (critic 10-16)。
      ⚠️ 車間は RPP の掃引 = min(2.0 s × 指令速度, 先読み距離 (実測速度 × 1.5 s を 0.3〜0.9 にクランプ)) なので
      走行中 0.4 m/s で約 0.6 m、停止すると 0.3 m まで縮む → 前方停止物には 0.3 m まで段階的に寄る。
-     旧経路の保持は連続失敗 100 回 (RateController 3 s × 100 ≈ 5 分。2026-11-06 に 20 回 ≈60 s から変更 — 待機列用、ユーザ指定) で諦め、既定と同じ失敗経路 (リカバリ →
+     旧経路の保持は連続失敗 300 回 (1 回 = 1 s + 計画時間 → 5 分以上。2026-11-06 に 20 回 ≈60 s → 100 回 × 3 s、11-07 に判定 1 s 化で 300 回 — 待機列用、ユーザ指定) で諦め、既定と同じ失敗経路 (リカバリ →
      ABORT → waypoint_runner の自動再送で現在位置から引き直し) に落とす。AMCL 跳び等で旧経路が壁を貫いた
      まま永久停止するのを防ぐため (critic H4)。前が 5 分以上止まっていれば再送でも同じ結論になるので、
      waypoint_runner 側の auto-retry 回数を増やして「待ち続ける」を実現する (既定 10 回、2026-10-16)。
@@ -32,6 +32,27 @@
      そのまま完了し (Jazzy の ComputePathThroughPoses は実行中の goals 変化で出し直さない)、消えた wp は
      次の計画要求から外れる (既定 BT と同じ挙動)。
 
+  5. (2026-11-07) 経路が塞がれたときだけ再計画する (KeepValidPath 枝)。3 s ごとの無条件の再計画では、global
+     costmap に残る人の跡 (時間で消えない。11-07 bag で 60 s 超の跡が常に 20〜190 セル) を毎回避け直して経路が
+     左右に入れ替わり、蛇行していた (ユーザ観察)。判定は 1 s ごとに回し、次の 4 条件が全部そろえば今の {path} を
+     そのまま使う (計画しない):
+       - have_path (この航行で 1 度は計画が成功している)
+       - ゴール列が変わっていない: GoalUpdated で waypoint_runner の窓送り・RemovePassedGoals による {goals} の
+         変化を拾う。変化を見たら need_plan を立て、計画が成功するまで下ろさない。計画が失敗して旧経路のままに
+         なっても、新しいゴールへの計画をやめないため (GoalUpdated の SUCCESS は変化 1 回につき 1 度しか出ない)
+       - 最後の採用から 20 s 経っていない (PathExpiringTimer)。消えた跡を避ける迂回を、ずっと引きずらないため
+       - IsPathValid: 経路上の、ロボットに最も近い点から先の各姿勢で、footprint が lethal を踏まない
+         (Nav2 1.3.13 の planner_server は footprint 指定時、LETHAL だけを無効にする。膨張帯は可 = Smac と同じ基準)。
+         server_timeout は 500 ms (2026-11-09 に 200 → 500)。is_path_valid は costmap のロックを取るので、更新が
+         ロックを持つ間は待たされる。待ちが締め切りを超えると FAILURE (= 塞がれている扱い) で不要な再計画になり、
+         取り残された要求が planner_server の主スレッドを塞いで bond heartbeat が 4 s 途絶 → Nav2 リセット、まで
+         起きた (11-07 bag 1449: 200 ms・200 m 窓で 218 回中 207 回が見切り、リセット 2 回。bags/tools/2026-11-07_keepvalid_run/)。
+         台上実測で更新のロック保持は 200 m 窓で最大 0.56 s、100 m 窓で最大 0.10 s (bags/exp/2026-11-09_costmap_lock/)。
+         窓を 100 m にしたうえで、実走の負荷で伸びる分の余裕として 500 ms。待つ間は BT の tick が止まる
+         (通過判定・ゴール差し替えの反応が最大 0.5 s 遅れる) が、経路追従と衝突停止は controller_server 側なので影響しない
+     判定を 3 s → 1 s にしたので、塞がれたことには早く気づく。そのため連続失敗の上限は 100 → 300 回
+     (1 回 = 1 s + 計画時間 → 5 分以上待つ、を維持)。
+
   計画失敗時に global costmap を消して即再試行する既定の内側 RecoveryNode も外した (消すと前方ロボットも
   消え、貫通経路が「成功」として返るだけで追従と同じ結果になる。消さずに旧経路を使う方が素直)。
   ゴースト障害物で global 計画が通らなくなっても、旧経路が良ければそのまま走り切る (RPP は local costmap で判定)。
@@ -40,13 +61,33 @@
   <BehaviorTree ID="MainTree">
     <Sequence name="Root">
       <!-- 航行ごとに「成功した経路を持っているか」を初期化 (前回航行の {path} を誤って使わないため) -->
-      <Script code="have_path := false; plan_fail := 0"/>
+      <Script code="have_path := false; plan_fail := 0; need_plan := false"/>
       <RecoveryNode number_of_retries="6" name="NavigateRecovery">
         <PipelineSequence name="NavigateWithReplanning">
           <ControllerSelector selected_controller="{selected_controller}" default_controller="FollowPath" topic_name="controller_selector"/>
           <PlannerSelector selected_planner="{selected_planner}" default_planner="GridBased" topic_name="planner_selector"/>
-          <RateController hz="0.333">
+          <!-- claude: 2026-11-07 通過判定を毎 tick 回す (変更点 5)。下の計画の枝の中だけだと、経路を使い続けている間は
+               一度も回らない。その結果、通り過ぎた wp が {goals} に残り、次の再計画で引き返した (模擬で再現。10-17 の往復と同じ形)。
+               ここで外れると GoalUpdated → need_plan で再計画される -->
+          <RemovePassedGoals input_goals="{goals}" output_goals="{goals}" radius="2.5"/>
+          <!-- claude: 2026-11-07 0.333 → 1.0 Hz。毎回計画するのではなく、まず KeepValidPath で判定する (変更点 5) -->
+          <RateController hz="1.0">
             <Fallback name="PlanOrKeepOldPath">
+              <!-- claude: 2026-11-07 経路が塞がれていなければ計画しない (変更点 5)。ゴール列の変化は need_plan に溜める -->
+              <Sequence name="KeepValidPath">
+                <ForceSuccess>
+                  <Sequence>
+                    <GoalUpdated/>
+                    <Script code="need_plan := true"/>
+                  </Sequence>
+                </ForceSuccess>
+                <ScriptCondition name="HaveCurrentPath" code="have_path == true &amp;&amp; need_plan == false"/>
+                <Inverter>
+                  <PathExpiringTimer seconds="20.0" path="{path}"/>
+                </Inverter>
+                <IsPathValid path="{path}" server_timeout="500"/>
+                <Script code="plan_fail := 0"/>
+              </Sequence>
               <Sequence name="PlanAndAdopt">
                 <!-- claude: 2026-10-17 ReactiveSequence 必須 (変更点 3)。計画中も通過判定を毎 tick 回す -->
                 <ReactiveSequence name="RemovePassedAndPlan">
@@ -65,12 +106,13 @@
                               smoother_id="simple_smoother" max_smoothing_duration="0.5"/>
                 </ForceSuccess>
                 <SetBlackboard output_key="path" value="{new_path}"/>
-                <Script code="have_path := true; plan_fail := 0"/>
+                <Script code="have_path := true; plan_fail := 0; need_plan := false"/>
               </Sequence>
-              <!-- 計画失敗: 以前の経路があり、連続失敗が 100 回未満ならそれを維持して成功扱い (FollowPath を止めない)。claude: 2026-11-06 20→100 (待機列で 5 分待つ、ユーザ指定) -->
+              <!-- 計画失敗: 以前の経路があり、連続失敗が上限未満ならそれを維持して成功扱い (FollowPath を止めない)。claude: 2026-11-06 20→100 (待機列で 5 分待つ、ユーザ指定)、
+                   2026-11-07 100→300 (判定周期 3 s → 1 s に合わせて 5 分以上を維持) -->
               <Sequence name="KeepOldPath">
                 <Script code="plan_fail := plan_fail + 1"/>
-                <ScriptCondition name="HaveOldPath" code="have_path == true &amp;&amp; plan_fail &lt; 100"/>
+                <ScriptCondition name="HaveOldPath" code="have_path == true &amp;&amp; plan_fail &lt; 300"/>
               </Sequence>
             </Fallback>
           </RateController>
