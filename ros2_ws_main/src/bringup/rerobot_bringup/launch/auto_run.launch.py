@@ -24,9 +24,11 @@
 #     端末 1: ros2 launch rerobot_bringup rerobot_bringup.launch.py rfans_scan_all:=true
 #             (bringup_check の表が出てから端末 2 へ。先に上げると nav が TF 待ちで activate に失敗しうる)
 #     端末 2: ros2 launch rerobot_bringup auto_run.launch.py bringup:=false runner:=false \
-#               map_dir:=/workspace/maps/2d/glim/2026-10-09_1643_5goukan_chal_fixed2_filtered loc_band:=0.3-100.0_r180 \
+#               map_dir:=/workspace/maps/2d/glim/2026-10-09_1643_5goukan_chal_fixed2_filtered loc_band:=raw_traj/0.3-100.0_r180 \
 #               2>&1 | tee /workspace/log/auto_$(TZ=Asia/Tokyo date +%F_%H%M).log
 #             (0.025 m 地図など loc_band 規約に乗らない地図は loc_map_yaml:=<yaml> で直接指定)
+#   claude: 2026-11-06 loc_band は map_dir からの相対ディレクトリに変更 (旧: raw_traj/ 下の名前だけ)。
+#     raw_dump/… や raw_traj_r100/… も選べるように。例 loc_band:=raw_dump/0.3-100.0
 #     端末 3: ros2 run rerobot_bringup waypoint_runner.py <map_dir>/waypoints/course.yaml [--start N]
 #   bringup:=false のときの時間割: nav 0 s / rviz 15 s / record 20 s / 全部品チェック 35 s
 #
@@ -40,7 +42,7 @@
 #   CAN 途絶の実績があるので RViz は 15 s ずらす。AMCL は最初のスキャン後 ≈13 s 尤度場を作るので initialpose は 60 s):
 #     0 s  rerobot_bringup.launch.py rfans_scan_all:=true   (帯は launch 既定: /rfans/scan 0.3〜2.0, /rfans/scan_all 0.3〜100)
 #     0 s  joy_teleop.launch.py   (joy_node + teleop_twist_joy → /joy_vel + teach_marker)   joy:=false で省略
-#    20 s  nav_amcl_scanall.launch.py map_dir loc_map_yaml=<map_dir>/raw_traj/<loc_band>/map.yaml
+#    20 s  nav_amcl_scanall.launch.py map_dir loc_map_yaml=<map_dir>/<loc_band>/map.yaml
 #    30 s  waypoint_runner.py <map_dir>/waypoints/course.yaml  (course.yaml が無ければ起動しない。サーバ待ちは自前)
 #    35 s  RViz (nav2.rviz)   rviz:=false で省略
 #    40 s  ros2 bag record -s mcap -o <bag_dir>/<JST 日時>_<tag>   record:=false で省略
@@ -100,7 +102,7 @@ def setup(context):
     if not map_dir:
         raise RuntimeError("map_dir:=<地図ディレクトリ> は必須 (例 /workspace/maps/2d/glim/2026-10-09_1643_5goukan_chal)")
     # claude: 2026-11-07 loc_map_yaml 直指定 (0.025 m 版 map_r0025.yaml など loc_band 規約に乗らない地図用)
-    loc_map_yaml = cfg("loc_map_yaml").strip() or os.path.join(map_dir, "raw_traj", cfg("loc_band"), "map.yaml")
+    loc_map_yaml = cfg("loc_map_yaml").strip() or os.path.join(map_dir, cfg("loc_band").strip("/"), "map.yaml")
     nav_map_yaml = os.path.join(map_dir, "nav2", "map.yaml")
     course_yaml = os.path.join(map_dir, "waypoints", "course.yaml")
     missing = [p for p in (nav_map_yaml, loc_map_yaml) if not os.path.isfile(p)]
@@ -216,11 +218,12 @@ def setup(context):
 def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument("map_dir", default_value="",
-                              description="地図一式の親ディレクトリ (nav2/, keep_out/, raw_traj/<loc_band>/, waypoints/)。必須"),
-        DeclareLaunchArgument("loc_band", default_value="0.3-100.0_r100",
-                              description="AMCL 用地図 raw_traj/<loc_band>/map.yaml。bringup の scan_all 帯 (既定 0.3〜100) と揃える"),
+                              description="地図一式の親ディレクトリ (nav2/, keep_out/, <loc_band>/, waypoints/)。必須"),
+        DeclareLaunchArgument("loc_band", default_value="raw_traj/0.3-100.0_r100",
+                              description="AMCL 用地図 <map_dir>/<loc_band>/map.yaml (map_dir からの相対、例 raw_traj/0.3-100.0_r100 / raw_dump/0.3-100.0)。"
+                                          "bringup の scan_all 帯 (既定 0.3〜100) と揃える"),
         DeclareLaunchArgument("loc_map_yaml", default_value="",
-                              description="AMCL 用地図 yaml の直接指定。空なら raw_traj/<loc_band>/map.yaml"),
+                              description="AMCL 用地図 yaml の直接指定。空なら <map_dir>/<loc_band>/map.yaml"),
         DeclareLaunchArgument("bringup", default_value="true",
                               description="rerobot_bringup.launch.py をこの launch で起動するか。false = 別端末で起動済み"),
         DeclareLaunchArgument("runner", default_value="true",

@@ -69,6 +69,7 @@ HELP = """\
   u  元に戻す    s  保存    r  順序を反転    o  通過判定・ゴール判定の円の表示切替
   d  区間距離の表示切替 (赤 = --warn_spacing 超: 窓の差し替えが間に合わずその点で一度止まる)
   b  背景の切替 (地図 → realmap + 地図の壁 (青) → realmap のみ)。realmap がある時だけ
+  w  表示範囲の切替 (waypoint の範囲 ⇔ 地図全体)
   h  この説明    q  終了 (未保存なら警告)
   ズーム/パンはツールバー (虫眼鏡/十字)。そのモード中はクリック編集を無視する。"""
 
@@ -306,11 +307,8 @@ class Editor:
         self.ax.set_aspect("equal")
         self.ax.set_xlabel("x [m] (map)")
         self.ax.set_ylabel("y [m] (map)")
-        if self.pts:  # 既存 waypoint があればその範囲に寄せる
-            xs, ys = zip(*self.pts)
-            m = 10.0
-            self.ax.set_xlim(min(xs) - m, max(xs) + m)
-            self.ax.set_ylim(min(ys) - m, max(ys) + m)
+        self.whole = False  # claude: 2026-11-07 w キー / --view full で地図全体を表示
+        self.fit_view()
 
         c = self.fig.canvas
         c.mpl_connect("button_press_event", self.on_press)
@@ -321,6 +319,18 @@ class Editor:
         self.redraw()
 
     # --- 描画 ---------------------------------------------------------------
+    def fit_view(self):
+        """表示範囲を waypoint の範囲 ±10 m (点が無ければ地図全体) か、地図全体に合わせる。"""
+        if self.pts and not self.whole:
+            xs, ys = zip(*self.pts)
+            m = 10.0
+            self.ax.set_xlim(min(xs) - m, max(xs) + m)
+            self.ax.set_ylim(min(ys) - m, max(ys) + m)
+        else:
+            x0, x1, y0, y1 = self.gm.extent
+            self.ax.set_xlim(x0, x1)
+            self.ax.set_ylim(y0, y1)
+
     def color(self, x, y):
         st = self.gm.classify(x, y)
         if st in ("壁", "地図外") or keepout_hit(self.ko, x, y):
@@ -586,6 +596,9 @@ class Editor:
             self.map_im.set_visible(self.bg == 0)
             self.real_im.set_visible(self.bg != 0)
             self.wall_im.set_visible(self.bg == 1)
+        elif k == "w":
+            self.whole = not self.whole
+            self.fit_view()
         elif k == "h":
             print(HELP)
         elif k == "q":
@@ -621,6 +634,8 @@ def main():
     ap.add_argument("--no_realmap", action="store_true", help="realmap を読まない (メモリ節約)")
     ap.add_argument("--background", choices=["map", "overlay", "real"], default="map",
                     help="起動時の背景 (b キーで切替。--render の出力にも効く)")
+    ap.add_argument("--view", choices=["points", "full"], default="points",
+                    help="起動時の表示範囲: points = waypoint の範囲 ±10 m / full = 地図全体 (w キーで切替)")
     ap.add_argument("--radius", type=float, default=2.5,
                     help="中間点の通過判定半径 [m] (追従 BT の RemovePassedGoals radius = 2.5、2026-11-07)")
     ap.add_argument("--goal_tol", type=float, default=0.25,
@@ -654,6 +669,8 @@ def main():
     real = RealMap(real_path) if real_path else None
     ed = Editor(plt, gm, ko, traj, args.out_yaml, pts, manual, stops, args.radius, extras, real,
                 args.goal_tol, args.warn_spacing)
+    if args.view == "full":
+        ed.on_key(type("Ev", (), {"key": "w"})())
     if real is not None:  # claude: 起動時の背景 (b キーと同じ切替を必要回数だけ回す)
         for _ in range(("map", "overlay", "real").index(args.background)):
             ed.on_key(type("Ev", (), {"key": "b"})())
